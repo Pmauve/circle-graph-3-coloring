@@ -1,0 +1,8 @@
+.idea/
+.cache/
+out/
+archive/
+venv/
+__pycache__/
+*.pdf
+*.csv

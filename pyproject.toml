@@ -1,0 +1,45 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "three_col_circle_code"
+version = '0.1.0'
+description = ''
+requires-python = ">=3.7"
+license = "MIT"
+keywords = []
+authors = [
+  { name = "Patricia Bachmann", email = "bachmanp@fim.uni-passau.de" },
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3.7",
+  "Programming Language :: Python :: 3.8",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: Implementation :: CPython",
+  "Programming Language :: Python :: Implementation :: PyPy",
+]
+dependencies = [
+  "networkx",
+  #"pandas",
+  #"seaborn",
+  #"matplotlib",
+  "setuptools",
+  "pysmt",
+  "pydot",
+  #"scipy",
+]
+
+[project.scripts]
+counterexampler = "three_col_circle_code.counterexampler:main"
+graph_generator = "three_col_circle_code.graph_generator:main"
+evaluate_graphs = "three_col_circle_code.sat.main:main"
+evaluate_greedy = "three_col_circle_code.greedy.eval_greedy:main"
+evaluate_coloring = "three_col_circle_code.col.eval_coloring:main"
+bt_eval = "three_col_circle_code.col.eval_backtracking:main"
+var_bt_eval = "three_col_circle_code.col.eval_var_bt:main"
+var_bt_eval_limited = "three_col_circle_code.col.eval_var_bt_w_limit:main"

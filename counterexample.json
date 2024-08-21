@@ -1,0 +1,26 @@
+{"directed": false, "multigraph": false, "graph": {}, 
+"nodes": [
+	{"color": -1, "l": 0, "r": 11, "level": -1, "label": 0, "importantsubgraphs": [], "id": 0}, 
+	{"color": -1, "l": 1, "r": 7, "level": -1, "label": 1, "importantsubgraphs": [], "id": 1}, 
+	{"color": -1, "l": 2, "r": 15, "level": -1, "label": 2, "importantsubgraphs": [], "id": 2}, 
+	{"color": -1, "l": 3, "r": 12, "level": -1, "label": 3, "importantsubgraphs": [], "id": 3}, 
+	{"color": -1, "l": 4, "r": 14, "level": -1, "label": 4, "importantsubgraphs": [], "id": 4}, 
+	{"color": -1, "l": 5, "r": 9, "level": -1, "label": 5, "importantsubgraphs": [], "id": 5}, 
+	{"color": -1, "l": 6, "r": 10, "level": -1, "label": 6, "importantsubgraphs": [], "id": 6}, 
+	{"color": -1, "l": 8, "r": 13, "level": -1, "label": 7, "importantsubgraphs": [], "id": 7}], 
+"links": [
+	{"source": 0, "target": 2}, 
+	{"source": 0, "target": 3}, 
+	{"source": 0, "target": 4}, 
+	{"source": 0, "target": 7}, 
+	{"source": 1, "target": 2}, 
+	{"source": 1, "target": 3}, 
+	{"source": 1, "target": 4}, 
+	{"source": 1, "target": 5}, 
+	{"source": 1, "target": 6}, 
+	{"source": 3, "target": 4}, 
+	{"source": 3, "target": 7}, 
+	{"source": 5, "target": 6}, 
+	{"source": 5, "target": 7}, 
+	{"source": 6, "target": 7}
+]}
