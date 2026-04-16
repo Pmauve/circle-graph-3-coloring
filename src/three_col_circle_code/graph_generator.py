@@ -2,6 +2,15 @@ import random
 import time
 import sys
 
+from three_col_circle_code.generation.families import legacy_cli_families, run_legacy_cli_family
+from three_col_circle_code.generation.constructive_circle import (
+    CONSTRUCTIVE_CONFIGS,
+    generate_random_circle_graph_yes_constructive as generate_random_circle_graph_yes_constructive_backend,
+)
+from three_col_circle_code.generation.legacy_like_circle import (
+    generate_random_circle_graph_fast as generate_random_circle_graph_fast_backend,
+    generate_random_circle_graph_yes_fast as generate_random_circle_graph_yes_fast_backend,
+)
 from three_col_circle_code.util import *
 
 TIME_LIMIT_START = time.time()
@@ -33,17 +42,10 @@ def main():
     n_nodes = random.randint(min_n_nodes, max_n_nodes)
     _timestamp = time.time()
 
-    if _generator == 'r':
-        get_random_graph(n_nodes, timestamp=_timestamp)
-    elif _generator == 'ry':
-        get_random_yes_inst(n_nodes, timestamp=_timestamp)
-    elif _generator == 'rc':
-        get_random_circle_graph(n_nodes, timestamp=_timestamp)
-    elif _generator == 'rcy':
-        get_random_circle_graph_yes_inst(n_nodes, timestamp=_timestamp)
-    else:
-        print("Invalid argument for generator, must be r, c, rc or g")
+    if _generator not in legacy_cli_families():
+        print("Invalid argument for generator, must be " + ", ".join(legacy_cli_families()))
         exit()
+    run_legacy_cli_family(family=_generator, n_nodes=n_nodes, timestamp=_timestamp)
 
 
 def time_limit_reached():
@@ -105,39 +107,66 @@ def get_random_yes_inst(size, timestamp=0.0):
     return graph
 
 
-def get_random_circle_graph(size, timestamp=0.0, save=True):
+def get_random_circle_graph(
+    size, timestamp=0.0, save=True, rng=None, max_attempts_per_node=None, generator_name='rc'
+):
     global TIME_LIMIT_START
+    rng = rng or random
     arr = []
     graph = nx.Graph()
     for i in range(0, size):
         searching = True
+        attempts = 0
         while searching and not time_limit_reached():
+            if max_attempts_per_node is not None and attempts >= max_attempts_per_node:
+                break
             temp_arr = arr.copy()
-            random_insert(temp_arr, i)
-            random_insert(temp_arr, i)
+            random_insert(temp_arr, i, rng=rng)
+            random_insert(temp_arr, i, rng=rng)
             temp_graph = build_graph_from_arr(temp_arr)
             if no_clique_greater_3(temp_graph) and nx.is_connected(temp_graph):
                 graph = temp_graph
                 arr = temp_arr
                 searching = False
+            attempts += 1
+        if searching:
+            raise RuntimeError("failed to generate random circle graph for node " + str(i))
     assign_levels(graph)
     if save:
         filename = str(id(graph)) + '_' + str(int(timestamp))
-        save_graph_json(graph, filename=filename, generator='rc', size=get_size_as_string(size))
+        save_graph_json(graph, filename=filename, generator=generator_name, size=get_size_as_string(size))
     return graph
 
 
-def get_random_circle_graph_yes_inst(size, timestamp=0.0, save=True, _filename=''):
+def get_random_circle_graph_fast(size, timestamp=0.0, save=True, rng=None, max_attempts_per_node=None):
+    graph = generate_random_circle_graph_fast_backend(
+        size,
+        rng=rng,
+        max_attempts_per_node=max_attempts_per_node,
+    )
+    if save:
+        filename = str(id(graph)) + '_' + str(int(timestamp))
+        save_graph_json(graph, filename=filename, generator='rc_fast', size=get_size_as_string(size))
+    return graph
+
+
+def get_random_circle_graph_yes_inst(
+    size, timestamp=0.0, save=True, _filename='', rng=None, max_attempts_per_node=None
+):
     global TIME_LIMIT_START
+    rng = rng or random
     arr = []
     graph = nx.Graph()
     colors = dict()
     for i in range(0, size):
         searching = True
+        attempts = 0
         while searching and not time_limit_reached():
+            if max_attempts_per_node is not None and attempts >= max_attempts_per_node:
+                break
             temp_arr = arr.copy()
-            random_insert(temp_arr, i)
-            random_insert(temp_arr, i)
+            random_insert(temp_arr, i, rng=rng)
+            random_insert(temp_arr, i, rng=rng)
             temp_graph = build_graph_from_arr(temp_arr)
             if len(colors) > 0:
                 for key in colors.keys():
@@ -149,6 +178,9 @@ def get_random_circle_graph_yes_inst(size, timestamp=0.0, save=True, _filename='
                 graph = temp_graph
                 arr = temp_arr
                 searching = False
+            attempts += 1
+        if searching:
+            raise RuntimeError("failed to generate random yes-instance circle graph for node " + str(i))
     assign_levels(graph)
     if save is True:
         filename = str(id(graph)) + '_' + str(int(timestamp)) if _filename == '' else _filename
@@ -156,8 +188,108 @@ def get_random_circle_graph_yes_inst(size, timestamp=0.0, save=True, _filename='
     return graph
 
 
-def random_insert(lst, item):
-    lst.insert(random.randint(0, len(lst)), item)
+def get_random_circle_graph_yes_fast(
+    size, timestamp=0.0, save=True, _filename='', rng=None, max_attempts_per_node=None
+):
+    graph = generate_random_circle_graph_yes_fast_backend(
+        size,
+        rng=rng,
+        max_attempts_per_node=max_attempts_per_node,
+    )
+    if save is True:
+        filename = str(id(graph)) + '_' + str(int(timestamp)) if _filename == '' else _filename
+        save_graph_json(graph, filename=filename, generator='rcy_fast', size=get_size_as_string(size))
+    return graph
+
+
+def get_random_circle_graph_yes_inst_constructive(
+    size, timestamp=0.0, save=True, _filename='', rng=None, max_attempts_per_node=None
+):
+    return _get_random_circle_graph_yes_inst_constructive_for_family(
+        size,
+        family="rccy",
+        timestamp=timestamp,
+        save=save,
+        _filename=_filename,
+        rng=rng,
+        max_attempts_per_node=max_attempts_per_node,
+    )
+
+
+def get_random_circle_graph_yes_inst_constructive_baseline(
+    size, timestamp=0.0, save=True, _filename='', rng=None, max_attempts_per_node=None
+):
+    return _get_random_circle_graph_yes_inst_constructive_for_family(
+        size,
+        family="rccy_baseline",
+        timestamp=timestamp,
+        save=save,
+        _filename=_filename,
+        rng=rng,
+        max_attempts_per_node=max_attempts_per_node,
+    )
+
+
+def get_random_circle_graph_yes_inst_constructive_tuned(
+    size, timestamp=0.0, save=True, _filename='', rng=None, max_attempts_per_node=None
+):
+    return _get_random_circle_graph_yes_inst_constructive_for_family(
+        size,
+        family="rccy_tuned",
+        timestamp=timestamp,
+        save=save,
+        _filename=_filename,
+        rng=rng,
+        max_attempts_per_node=max_attempts_per_node,
+    )
+
+
+def get_random_circle_graph_yes_inst_constructive_full_sweep_weighted_active(
+    size, timestamp=0.0, save=True, _filename='', rng=None, max_attempts_per_node=None
+):
+    return _get_random_circle_graph_yes_inst_constructive_for_family(
+        size,
+        family="rccy_full_sweep_weighted_active",
+        timestamp=timestamp,
+        save=save,
+        _filename=_filename,
+        rng=rng,
+        max_attempts_per_node=max_attempts_per_node,
+    )
+
+
+def get_random_circle_graph_yes_inst_constructive_full_sweep_max_active(
+    size, timestamp=0.0, save=True, _filename='', rng=None, max_attempts_per_node=None
+):
+    return _get_random_circle_graph_yes_inst_constructive_for_family(
+        size,
+        family="rccy_full_sweep_max_active",
+        timestamp=timestamp,
+        save=save,
+        _filename=_filename,
+        rng=rng,
+        max_attempts_per_node=max_attempts_per_node,
+    )
+
+
+def _get_random_circle_graph_yes_inst_constructive_for_family(
+    size, *, family, timestamp=0.0, save=True, _filename='', rng=None, max_attempts_per_node=None
+):
+    graph = generate_random_circle_graph_yes_constructive_backend(
+        size,
+        rng=rng,
+        config=CONSTRUCTIVE_CONFIGS[family],
+        max_attempts_per_node=max_attempts_per_node,
+    )
+    if save is True:
+        filename = str(id(graph)) + '_' + str(int(timestamp)) if _filename == '' else _filename
+        save_graph_json(graph, filename=filename, generator=family, size=get_size_as_string(size))
+    return graph
+
+
+def random_insert(lst, item, rng=None):
+    rng = rng or random
+    lst.insert(rng.randint(0, len(lst)), item)
 
 
 def build_cgraph_from_json(path):

@@ -1,0 +1,364 @@
+import csv
+import json
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
+from three_col_circle_code.bench.report import build_benchmark_report
+from three_col_circle_code.bench.report_data import (
+    SUMMARY_BY_BUCKET_FILENAME,
+    SUMMARY_BY_N_FILENAME,
+    SUMMARY_OVERALL_FILENAME,
+    load_benchmark_report_data,
+    write_summary_csvs,
+)
+from three_col_circle_code.bench.report_html import render_report_html
+from three_col_circle_code.bench.results import MANIFEST_FILENAME, RESULTS_FILENAME
+
+
+class BenchReportDataTests(unittest.TestCase):
+    def test_load_benchmark_report_data_without_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            run_dir = _write_sample_run(Path(tmpdir) / "sample-run", with_manifest=False)
+
+            data = load_benchmark_report_data(run_dir)
+
+        self.assertFalse(data.metadata.manifest_present)
+        self.assertEqual(data.metadata.run_id, "sample-run")
+        self.assertEqual(data.metadata.n_instances, 2)
+        self.assertEqual(
+            data.metadata.solver_targets,
+            ("sat-baseline:pysat-cadical", "sosa"),
+        )
+        self.assertEqual(data.headline_metrics.n_unanimous_agreements, 1)
+        self.assertEqual(data.headline_metrics.n_disagreements, 1)
+
+    def test_load_benchmark_report_data_with_manifest_enriches_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            run_dir = _write_sample_run(Path(tmpdir) / "sample-run", with_manifest=True)
+
+            data = load_benchmark_report_data(run_dir)
+
+        self.assertTrue(data.metadata.manifest_present)
+        self.assertEqual(data.metadata.run_id, "sample-run")
+        self.assertEqual(data.metadata.created_at, "2026-04-17T12:00:00+00:00")
+        self.assertEqual(data.metadata.n_instances, 2)
+        self.assertEqual(data.metadata.n_tasks, 4)
+        self.assertEqual(data.headline_metrics.n_ok, 3)
+        self.assertEqual(data.headline_metrics.n_error, 1)
+        self.assertEqual(data.headline_metrics.n_invalid, 0)
+        self.assertEqual(data.headline_metrics.best_median_runtime_solver_target, "sat-baseline:pysat-cadical")
+        self.assertEqual(len(data.disagreement_rows), 1)
+        disagreement = data.disagreement_rows[0]
+        self.assertEqual(disagreement.instance_id, "rc-n0003-seed2")
+        self.assertEqual(
+            disagreement.statuses,
+            (
+                ("sat-baseline:pysat-cadical", "ok"),
+                ("sosa", "error"),
+            ),
+        )
+
+    def test_write_summary_csvs_matches_expected_structure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            run_dir = _write_summary_run(Path(tmpdir) / "summary-run")
+
+            write_summary_csvs(run_dir)
+
+            by_n_rows = _read_csv_rows(run_dir / SUMMARY_BY_N_FILENAME)
+            by_bucket_rows = _read_csv_rows(run_dir / SUMMARY_BY_BUCKET_FILENAME)
+            overall_rows = _read_csv_rows(run_dir / SUMMARY_OVERALL_FILENAME)
+
+        self.assertEqual(len(by_n_rows), 3)
+        rc_sat = next(
+            row
+            for row in by_n_rows
+            if row["family"] == "rc" and row["solver_target"] == "sat-baseline:pysat-cadical"
+        )
+        self.assertEqual(rc_sat["n_instances"], "2")
+        self.assertEqual(rc_sat["n_ok"], "2")
+        self.assertEqual(rc_sat["n_error"], "0")
+        self.assertEqual(rc_sat["n_invalid"], "0")
+        self.assertEqual(rc_sat["mean_wall_time_s"], "2.0")
+        self.assertEqual(rc_sat["median_wall_time_s"], "2.0")
+        self.assertEqual(rc_sat["max_wall_time_s"], "3.0")
+
+        rc_bucket = next(row for row in by_bucket_rows if row["family"] == "rc" and row["solver_target"] == "sosa")
+        self.assertEqual(rc_bucket["n_error"], "1")
+        self.assertEqual(rc_bucket["mean_wall_time_s"], "")
+
+        invalid_overall = next(row for row in overall_rows if row["family"] == "" and row["solver_target"] == "sosa")
+        self.assertEqual(invalid_overall["n_invalid"], "1")
+
+
+class BenchReportHtmlTests(unittest.TestCase):
+    def test_render_report_html_contains_key_sections(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            run_dir = _write_sample_run(Path(tmpdir) / "sample-run", with_manifest=True)
+            data = load_benchmark_report_data(run_dir)
+
+        html = render_report_html(data=data)
+
+        self.assertIn("Headline Stats", html)
+        self.assertIn("Solver Summary", html)
+        self.assertIn("Disagreements", html)
+        self.assertNotIn("Interactive Plots", html)
+        self.assertNotIn("Plotly.newPlot", html)
+        self.assertIn("rc-n0003-seed2", html)
+
+
+class BenchReportBuildTests(unittest.TestCase):
+    def test_build_benchmark_report_writes_default_output(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            run_dir = _write_sample_run(Path(tmpdir) / "sample-run", with_manifest=True)
+
+            output_path = build_benchmark_report(run_dir)
+            exists = output_path.exists()
+            output_name = output_path.name
+
+        self.assertEqual(output_name, "report.html")
+        self.assertTrue(exists)
+
+    def test_build_benchmark_report_supports_explicit_output_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            run_dir = _write_sample_run(tmp_root / "sample-run", with_manifest=True)
+            explicit_output = tmp_root / "reports" / "custom-report.html"
+
+            output_path = build_benchmark_report(run_dir, explicit_output)
+            has_explicit_report = explicit_output.exists()
+
+        self.assertEqual(output_path, explicit_output)
+        self.assertTrue(has_explicit_report)
+
+
+def _write_sample_run(run_dir: Path, *, with_manifest: bool) -> Path:
+    run_dir.mkdir(parents=True, exist_ok=False)
+    rows = [
+        {
+            "run_id": "sample-run",
+            "instance_id": "rc-n0002-seed1",
+            "instance_path": str(run_dir / ".." / "instances" / "rc-n0002-seed1.json"),
+            "family": "rc",
+            "bucket": "s",
+            "n": 2,
+            "m": 1,
+            "seed": 1,
+            "source": "generated",
+            "solver_target": "sat-baseline:pysat-cadical",
+            "solver": "sat-baseline",
+            "backend": "pysat-cadical",
+            "solver_params": {},
+            "status": "ok",
+            "wall_time_s": 1.0,
+            "is_three_colorable": True,
+            "validation_ok": True,
+            "validation_errors": [],
+            "details": {},
+            "error": None,
+        },
+        {
+            "run_id": "sample-run",
+            "instance_id": "rc-n0002-seed1",
+            "instance_path": str(run_dir / ".." / "instances" / "rc-n0002-seed1.json"),
+            "family": "rc",
+            "bucket": "s",
+            "n": 2,
+            "m": 1,
+            "seed": 1,
+            "source": "generated",
+            "solver_target": "sosa",
+            "solver": "sosa",
+            "backend": None,
+            "solver_params": {"base_case_n": 8},
+            "status": "ok",
+            "wall_time_s": 2.0,
+            "is_three_colorable": True,
+            "validation_ok": True,
+            "validation_errors": [],
+            "details": {},
+            "error": None,
+        },
+        {
+            "run_id": "sample-run",
+            "instance_id": "rc-n0003-seed2",
+            "instance_path": str(run_dir / ".." / "instances" / "rc-n0003-seed2.json"),
+            "family": "rc",
+            "bucket": "s",
+            "n": 3,
+            "m": 2,
+            "seed": 2,
+            "source": "generated",
+            "solver_target": "sat-baseline:pysat-cadical",
+            "solver": "sat-baseline",
+            "backend": "pysat-cadical",
+            "solver_params": {},
+            "status": "ok",
+            "wall_time_s": 1.5,
+            "is_three_colorable": False,
+            "validation_ok": True,
+            "validation_errors": [],
+            "details": {},
+            "error": None,
+        },
+        {
+            "run_id": "sample-run",
+            "instance_id": "rc-n0003-seed2",
+            "instance_path": str(run_dir / ".." / "instances" / "rc-n0003-seed2.json"),
+            "family": "rc",
+            "bucket": "s",
+            "n": 3,
+            "m": 2,
+            "seed": 2,
+            "source": "generated",
+            "solver_target": "sosa",
+            "solver": "sosa",
+            "backend": None,
+            "solver_params": {"base_case_n": 8},
+            "status": "error",
+            "wall_time_s": None,
+            "is_three_colorable": None,
+            "validation_ok": True,
+            "validation_errors": [],
+            "details": {},
+            "error": "solver failed",
+        },
+    ]
+    (run_dir / RESULTS_FILENAME).write_text(
+        "\n".join(json.dumps(row) for row in rows) + "\n",
+        encoding="utf-8",
+    )
+    if with_manifest:
+        manifest = {
+            "run_id": "sample-run",
+            "created_at": "2026-04-17T12:00:00+00:00",
+            "solvers": [
+                {"target": "sat-baseline:pysat-cadical", "params": {}},
+                {"target": "sosa", "params": {"base_case_n": 8}},
+            ],
+            "n_instances": 2,
+            "n_tasks": 4,
+            "environment": {"python_version": "test"},
+        }
+        (run_dir / MANIFEST_FILENAME).write_text(json.dumps(manifest), encoding="utf-8")
+    return run_dir
+
+
+def _write_summary_run(run_dir: Path) -> Path:
+    run_dir.mkdir(parents=True, exist_ok=False)
+    rows = [
+        {
+            "instance_id": "a",
+            "family": "rc",
+            "bucket": "s",
+            "n": 2,
+            "solver_target": "sat-baseline:pysat-cadical",
+            "status": "ok",
+            "wall_time_s": 1.0,
+        },
+        {
+            "instance_id": "b",
+            "family": "rc",
+            "bucket": "s",
+            "n": 2,
+            "solver_target": "sat-baseline:pysat-cadical",
+            "status": "ok",
+            "wall_time_s": 3.0,
+        },
+        {
+            "instance_id": "c",
+            "family": "rc",
+            "bucket": "s",
+            "n": 2,
+            "solver_target": "sosa",
+            "status": "error",
+            "wall_time_s": None,
+        },
+        {
+            "instance_id": "broken",
+            "family": None,
+            "bucket": None,
+            "n": None,
+            "solver_target": "sosa",
+            "status": "invalid",
+            "wall_time_s": None,
+        },
+    ]
+    (run_dir / RESULTS_FILENAME).write_text(
+        "\n".join(json.dumps(row) for row in rows) + "\n",
+        encoding="utf-8",
+    )
+    return run_dir
+
+
+def _write_untimed_solver_run(run_dir: Path) -> Path:
+    run_dir = _write_sample_run(run_dir, with_manifest=True)
+    rows = [
+        {
+            "run_id": "untimed-run",
+            "instance_id": "rc-n0002-seed1",
+            "family": "rc",
+            "bucket": "s",
+            "n": 2,
+            "m": 1,
+            "seed": 1,
+            "source": "generated",
+            "solver_target": "sat-baseline:pysat-cadical",
+            "solver": "sat-baseline",
+            "backend": "pysat-cadical",
+            "solver_params": {},
+            "status": "ok",
+            "wall_time_s": 1.0,
+            "is_three_colorable": True,
+            "validation_ok": True,
+            "error": None,
+        },
+        {
+            "run_id": "untimed-run",
+            "instance_id": "rc-n0002-seed1",
+            "family": "rc",
+            "bucket": "s",
+            "n": 2,
+            "m": 1,
+            "seed": 1,
+            "source": "generated",
+            "solver_target": "sosa",
+            "solver": "sosa",
+            "backend": None,
+            "solver_params": {"base_case_n": 8},
+            "status": "error",
+            "wall_time_s": None,
+            "is_three_colorable": None,
+            "validation_ok": True,
+            "error": "solver failed",
+        },
+    ]
+    (run_dir / RESULTS_FILENAME).write_text(
+        "\n".join(json.dumps(row) for row in rows) + "\n",
+        encoding="utf-8",
+    )
+    manifest = {
+        "run_id": "untimed-run",
+        "created_at": "2026-04-17T12:00:00+00:00",
+        "solvers": [
+            {"target": "sat-baseline:pysat-cadical", "params": {}},
+            {"target": "sosa", "params": {"base_case_n": 8}},
+        ],
+        "n_instances": 1,
+        "n_tasks": 2,
+        "environment": {"python_version": "test"},
+    }
+    (run_dir / MANIFEST_FILENAME).write_text(json.dumps(manifest), encoding="utf-8")
+    return run_dir
+
+
+def _read_csv_rows(path: Path) -> list[dict[str, str]]:
+    with Path(path).open(encoding="utf-8", newline="") as infile:
+        return list(csv.DictReader(infile))
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -72,6 +72,36 @@ The aforementioned scripts create single csv files per graph.
 In order to merge these files to e.g. generate plots, you may use the ```plots.py``` script.
 Just add the functions you want to use to generate the respective plot to the ```main()``` function.
 
+## Benchmark runs
+
+The newer benchmark tooling uses spec-driven run directories under `eval/runs/`.
+
+Run one benchmark spec with:
+
+```bash
+cg_benchmark_run --spec path/to/spec.json
+```
+
+A minimal tracked example spec lives at `eval/sample_specs/sosa-smoke.json`.
+It is paired with a tiny curated starter pool in `eval/instances/`, so you can run it without generating instances first.
+Because the run directory is derived from the spec filename stem, running that file writes to `eval/runs/sosa-smoke/`.
+
+```bash
+cg_benchmark_run --spec eval/sample_specs/sosa-smoke.json
+```
+
+Each run directory stores:
+
+- `spec.json`
+- `manifest.json`
+- `results.jsonl`
+- `summary_by_n.csv`
+- `summary_by_bucket.csv`
+- `summary_overall.csv`
+- `report.html`
+
+The run directory name is derived from the spec filename stem, so rerunning the same spec file automatically resumes the same run directory.
+
 ## Support
 
 For questions or comments feel free to reach out to [bachmanp@fim.uni-passau.de](mailto:bachmanp@fim.uni-passau.de) 

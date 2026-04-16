@@ -1,0 +1,291 @@
+"""Theorem 3.1 recursive SOSA solver.
+
+Paper mapping:
+- the current search state represents the active list-coloring instance `I`,
+- `iter_lemma_33_family(...)` enumerates the fully-separated family `F`,
+- `I_L(P)` and `I_R(P)` are built by restricting the active state to one arc.
+"""
+
+from collections.abc import Mapping
+from time import perf_counter
+from typing import Any, Optional
+
+import networkx as nx
+
+from three_col_circle_code.solvers.common import (
+    SOLVER_STATUS_ERROR,
+    SOLVER_STATUS_OK,
+    SolverResult,
+)
+from three_col_circle_code.solvers.sosa.arc_ops import restrict_state_to_arc
+from three_col_circle_code.solvers.sosa.colors import ALL_COLOR_MASK, COLOR_MASK_ORDER, mask_to_names
+from three_col_circle_code.solvers.sosa.config import SosaConfig
+from three_col_circle_code.solvers.sosa.geometry import SosaGeometry
+from three_col_circle_code.solvers.sosa.lemma_38 import iter_lemma_33_family
+from three_col_circle_code.solvers.sosa.mask_ops import iter_mask_indices
+from three_col_circle_code.solvers.sosa.types import (
+    FullySeparatedInstance,
+    SosaSearchState,
+    SosaStats,
+    VertexColoring,
+    fixed_colors_to_dict,
+)
+
+
+SOSA_SOLVER = "sosa"
+IMPLEMENTATION_STATUS = "paper-faithful-v1"
+
+
+def solve_sosa(
+    graph: nx.Graph,
+    *,
+    params: Optional[Mapping[str, Any]] = None,
+) -> SolverResult:
+    """Run the paper-faithful SOSA solver on a canonical circle-graph instance.
+
+    Precondition:
+    - `graph` must already be a valid canonical chord-annotated
+      circle graph.
+    """
+    try:
+        config = SosaConfig.from_mapping(params)
+    except Exception as exc:
+        return _error_result(
+            graph=graph,
+            config_dict=None,
+            stats=SosaStats(),
+            error=f"invalid SOSA parameters: {exc}",
+        )
+
+    stats = SosaStats()
+    started_at = perf_counter()
+    geometry = SosaGeometry.from_graph(graph)
+    initial_state = SosaSearchState.initial(n_vertices=geometry.n_vertices)
+    witness = _solve_state_recursively(
+        geometry=geometry,
+        state=initial_state,
+        config=config,
+        stats=stats,
+        depth=0,
+    )
+    return SolverResult(
+        solver=SOSA_SOLVER,
+        backend=None,
+        status=SOLVER_STATUS_OK,
+        wall_time_s=perf_counter() - started_at,
+        is_three_colorable=witness is not None,
+        n_vertices=geometry.n_vertices,
+        m_edges=geometry.m_edges,
+        details=_result_details(
+            config_dict=config.to_dict(),
+            stats=stats,
+            geometry=geometry,
+            witness=witness,
+        ),
+        error=None,
+    )
+
+
+def _solve_state_recursively(
+    *,
+    geometry: SosaGeometry,
+    state: SosaSearchState,
+    config: SosaConfig,
+    stats: SosaStats,
+    depth: int,
+) -> VertexColoring | None:
+    """Run ALG-3-Color-Circle-Graph on one list-coloring subinstance `I`."""
+    stats.solver_calls += 1
+    stats.record_depth(depth)
+
+    # Theorem 3.1, Step 1.
+    if state.n_active_vertices <= config.base_case_n:
+        return _solve_base_case(
+            geometry=geometry,
+            state=state,
+            stats=stats,
+            depth=depth,
+        )
+
+    # Theorem 3.1, Step 2.
+    for full_instance in iter_lemma_33_family(
+        geometry=geometry,
+        state=state,
+        stats=stats,
+    ):
+        # Theorem 3.1, Step 3: recurse on I_L(P) and I_R(P).
+        child_instances = _ordered_child_subinstances(
+            geometry=geometry,
+            full_instance=full_instance,
+        )
+        child_witnesses: list[VertexColoring] = []
+        branch_failed = False
+        for child_state in child_instances:
+            child_witness = _solve_state_recursively(
+                geometry=geometry,
+                state=child_state,
+                config=config,
+                stats=stats,
+                depth=depth + 1,
+            )
+            if child_witness is None:
+                branch_failed = True
+                break
+            child_witnesses.append(child_witness)
+        if not branch_failed:
+            return _merge_vertex_colorings(
+                fixed_colors_to_dict(full_instance.fixed_colors),
+                *child_witnesses,
+            )
+    return None
+
+
+def _solve_base_case(
+    *,
+    geometry: SosaGeometry,
+    state: SosaSearchState,
+    stats: SosaStats,
+    depth: int,
+) -> VertexColoring | None:
+    """Solve one small list-coloring state exactly with backtracking."""
+    stats.base_case_calls += 1
+    stats.record_depth(depth)
+
+    active_indices = tuple(iter_mask_indices(state.active_vertices_mask))
+    if any(state.allowed_color_masks[index] == 0 for index in active_indices):
+        return None
+
+    order = sorted(
+        active_indices,
+        key=lambda index: _active_degree(
+            geometry=geometry,
+            state=state,
+            vertex_index=index,
+        ),
+        reverse=True,
+    )
+    colors: VertexColoring = {}
+
+    def backtrack(position: int) -> VertexColoring | None:
+        stats.base_case_search_nodes += 1
+        stats.record_depth(depth + position)
+        if position == len(order):
+            return dict(colors)
+
+        vertex_index = order[position]
+        allowed_mask = state.allowed_color_masks[vertex_index]
+        used_mask = 0
+        for neighbor_index in geometry.neighbor_indices[vertex_index]:
+            neighbor_color = colors.get(neighbor_index)
+            if neighbor_color is not None:
+                used_mask |= neighbor_color
+        available_mask = allowed_mask & (ALL_COLOR_MASK ^ used_mask)
+        for color_mask in COLOR_MASK_ORDER:
+            if not (available_mask & color_mask):
+                continue
+            colors[vertex_index] = color_mask
+            witness = backtrack(position + 1)
+            if witness is not None:
+                return witness
+            del colors[vertex_index]
+        return None
+
+    return backtrack(0)
+
+
+def _ordered_child_subinstances(
+    *,
+    geometry: SosaGeometry,
+    full_instance: FullySeparatedInstance,
+) -> tuple[SosaSearchState, SosaSearchState]:
+    """Return I_L(P) and I_R(P) ordered by the fixed smaller-first convention."""
+    left_state = restrict_state_to_arc(
+        geometry=geometry,
+        state=full_instance.state,
+        partition=full_instance.partition,
+        arc_name="L",
+    )
+    right_state = restrict_state_to_arc(
+        geometry=geometry,
+        state=full_instance.state,
+        partition=full_instance.partition,
+        arc_name="R",
+    )
+    left_child = (left_state.n_active_vertices, 0, left_state)
+    right_child = (right_state.n_active_vertices, 1, right_state)
+    ordered_children = sorted((left_child, right_child), key=lambda item: (item[0], item[1]))
+    return ordered_children[0][2], ordered_children[1][2]
+
+
+def _active_degree(
+    *,
+    geometry: SosaGeometry,
+    state: SosaSearchState,
+    vertex_index: int,
+) -> int:
+    """Count active neighbors of one vertex in the current search state."""
+    return (geometry.adjacency_masks[vertex_index] & state.active_vertices_mask).bit_count()
+
+
+def _merge_vertex_colorings(*colorings: Mapping[int, int]) -> VertexColoring:
+    """Merge disjoint or identical partial colorings into one map."""
+    merged: VertexColoring = {}
+    for coloring in colorings:
+        for vertex_index, color_mask in coloring.items():
+            previous = merged.get(vertex_index)
+            if previous is not None and previous != color_mask:
+                raise AssertionError("conflicting witness assignments")
+            merged[vertex_index] = color_mask
+    return merged
+
+
+def _error_result(
+    *,
+    graph: nx.Graph,
+    config_dict: Optional[dict[str, Any]],
+    stats: SosaStats,
+    error: str,
+) -> SolverResult:
+    """Build a standardized SOSA error result."""
+    details = _result_details(config_dict=config_dict, stats=stats, geometry=None, witness=None)
+    return SolverResult(
+        solver=SOSA_SOLVER,
+        backend=None,
+        status=SOLVER_STATUS_ERROR,
+        wall_time_s=None,
+        is_three_colorable=None,
+        n_vertices=graph.number_of_nodes(),
+        m_edges=graph.number_of_edges(),
+        details=details,
+        error=error,
+    )
+
+
+def _result_details(
+    *,
+    config_dict: Optional[dict[str, Any]],
+    stats: SosaStats,
+    geometry: SosaGeometry | None,
+    witness: VertexColoring | None,
+) -> dict[str, Any]:
+    """Return the standardized SOSA details payload."""
+    details: dict[str, Any] = {
+        "implementation_status": IMPLEMENTATION_STATUS,
+        "config": config_dict or {},
+    }
+    details.update(stats.to_details_dict())
+    if geometry is not None and witness is not None:
+        details["coloring_by_node"] = _coloring_by_node(geometry=geometry, witness=witness)
+    return details
+
+
+def _coloring_by_node(
+    *,
+    geometry: SosaGeometry,
+    witness: Mapping[int, int],
+) -> dict[Any, str]:
+    """Convert an internal vertex-index coloring into node-id/color-name form."""
+    return {
+        geometry.node_ids[vertex_index]: mask_to_names(color_mask)[0]
+        for vertex_index, color_mask in sorted(witness.items())
+    }

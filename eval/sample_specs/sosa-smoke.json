@@ -1,0 +1,17 @@
+{
+  "instances": [
+    {
+      "family": "rc",
+      "n_values": [4, 5],
+      "seeds": [1, 2]
+    }
+  ],
+  "solvers": [
+    {
+      "target": "sosa",
+      "params": {
+        "base_case_n": 8
+      }
+    }
+  ]
+}
