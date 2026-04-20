@@ -32,7 +32,13 @@ class SosaSolverTests(unittest.TestCase):
         self.assertEqual(result.status, SOLVER_STATUS_OK)
         self.assertTrue(result.is_three_colorable)
         self.assertEqual(result.details["implementation_status"], "paper-faithful-v1")
-        self.assertEqual(result.details["config"], {"base_case_n": 8})
+        self.assertEqual(
+            result.details["config"],
+            {
+                "base_case_n": 8,
+                "base_case_algorithm": "backtracking",
+            },
+        )
         self.assertGreater(result.details["solver_calls"], 0)
         self.assertEqual(result.details["base_case_calls"], 1)
         self.assertEqual(result.details["lemma_36_calls"], 0)
@@ -69,7 +75,13 @@ class SosaSolverTests(unittest.TestCase):
         self.assertEqual(result.solver, SOSA_SOLVER)
         self.assertEqual(result.status, SOLVER_STATUS_OK)
         self.assertTrue(result.is_three_colorable)
-        self.assertEqual(result.details["config"], {"base_case_n": 4})
+        self.assertEqual(
+            result.details["config"],
+            {
+                "base_case_n": 4,
+                "base_case_algorithm": "backtracking",
+            },
+        )
         self.assertGreater(result.details["solver_calls"], 1)
         self.assertGreater(result.details["base_case_calls"], 1)
         self.assertGreater(result.details["lemma_36_calls"], 0)
@@ -95,7 +107,13 @@ class SosaSolverTests(unittest.TestCase):
         self.assertEqual(result.solver, SOSA_SOLVER)
         self.assertEqual(result.status, SOLVER_STATUS_OK)
         self.assertFalse(result.is_three_colorable)
-        self.assertEqual(result.details["config"], {"base_case_n": 4})
+        self.assertEqual(
+            result.details["config"],
+            {
+                "base_case_n": 4,
+                "base_case_algorithm": "backtracking",
+            },
+        )
         self.assertGreater(result.details["solver_calls"], 1)
         self.assertGreater(result.details["base_case_calls"], 1)
         self.assertNotIn("coloring_by_node", result.details)
