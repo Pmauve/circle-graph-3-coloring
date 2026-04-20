@@ -78,7 +78,12 @@ def generate_many(
 
 def write_instance(record: InstanceRecord, output_dir: Path) -> Path:
     """Save a generated instance under its deterministic instance id."""
-    path = Path(output_dir) / f"{record.metadata.instance_id}.json"
+    path = (
+        Path(output_dir)
+        / record.metadata.family
+        / record.metadata.bucket
+        / f"{record.metadata.instance_id}.json"
+    )
     save_instance(record, path)
     return path
 

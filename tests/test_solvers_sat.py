@@ -7,7 +7,12 @@ import networkx as nx
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from three_col_circle_code.sat.baseline import BaselineSolveResult, LEGACY_PYSMT_MSAT, PYSAT_CADICAL
+from three_col_circle_code.sat.baseline import (
+    BaselineSolveResult,
+    LEGACY_PYSMT_MSAT,
+    PYSAT_CADICAL,
+    PYSAT_KISSAT404,
+)
 from three_col_circle_code.solvers.common import SOLVER_STATUS_ERROR, SOLVER_STATUS_OK
 from three_col_circle_code.solvers.sat import (
     SAT_BASELINE_SOLVER,
@@ -18,7 +23,10 @@ from three_col_circle_code.solvers.sat import (
 
 class SatSolverTests(unittest.TestCase):
     def test_available_sat_solver_backends_lists_legacy_and_modern_backends(self) -> None:
-        self.assertEqual(available_sat_solver_backends(), (LEGACY_PYSMT_MSAT, PYSAT_CADICAL))
+        self.assertEqual(
+            available_sat_solver_backends(),
+            (LEGACY_PYSMT_MSAT, PYSAT_CADICAL, PYSAT_KISSAT404),
+        )
 
     def test_solve_sat_solver_maps_success_result(self) -> None:
         graph = nx.path_graph(2)

@@ -1,3 +1,4 @@
+import io
 import json
 import sys
 import tempfile
@@ -36,7 +37,7 @@ class BenchRunnerTests(unittest.TestCase):
                     "solvers": [{"target": "sat-baseline:legacy-pysmt-msat", "params": {"cutoff": 5}}],
                 },
             )
-            first = tmp_root / "instances" / "rc-n0002-seed1.json"
+            first = tmp_root / "instances" / "rc" / "s" / "rc-n0002-seed1.json"
 
             with patch(
                 "three_col_circle_code.bench.runner.collect_environment_metadata",
@@ -95,6 +96,88 @@ class BenchRunnerTests(unittest.TestCase):
         self.assertTrue(has_report)
         run_solver.assert_called_once()
 
+    def test_run_benchmark_emits_progress_updates(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            spec_path = _write_spec(
+                tmp_root / "progress-run.json",
+                {
+                    "instance_pool_root": str(tmp_root / "instances"),
+                    "instances": [{"family": "rc", "n_values": [2], "seeds": [1]}],
+                    "solvers": [{"target": "sat-baseline:pysat-cadical", "params": {"cutoff": 5}}],
+                },
+            )
+            progress = io.StringIO()
+
+            with patch(
+                "three_col_circle_code.bench.runner.collect_environment_metadata",
+                return_value={},
+            ), patch(
+                "three_col_circle_code.bench.runner.generate_instance",
+                return_value=_build_record(instance_id="rc-n0002-seed1", family="rc", seed=1),
+            ), patch(
+                "three_col_circle_code.bench.runner.run_solver",
+                return_value=_fake_solver_result(backend="pysat-cadical", wall_time_s=0.25),
+            ):
+                run_benchmark(
+                    output_root=tmp_root / "runs",
+                    spec_path=spec_path,
+                    progress_stream=progress,
+                )
+
+        rendered = progress.getvalue()
+        self.assertIn("Starting benchmark run 'progress-run'", rendered)
+        self.assertIn("Resolving 1 requested instances...", rendered)
+        self.assertIn("Generating missing instances (1 total)...", rendered)
+        self.assertIn("Generated 1/1 missing instances", rendered)
+        self.assertIn("Planned tasks: 1 across 1 instances and 1 solver configs", rendered)
+        self.assertIn("[1/1] rc-n0002-seed1 | sat-baseline:pysat-cadical", rendered)
+        self.assertIn("-> ok in 0.2500s", rendered)
+        self.assertIn("Completed run 'progress-run': ok=1, error=0, invalid=0", rendered)
+
+    def test_run_benchmark_limits_generation_progress_output(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            spec_path = _write_spec(
+                tmp_root / "generation-progress-run.json",
+                {
+                    "instance_pool_root": str(tmp_root / "instances"),
+                    "instances": [{"family": "rc", "n": {"start": 2, "stop": 12, "step": 1}, "seeds": [1]}],
+                    "solvers": [{"target": "sat-baseline:pysat-cadical", "params": {}}],
+                },
+            )
+            progress = io.StringIO()
+
+            with patch(
+                "three_col_circle_code.bench.runner.collect_environment_metadata",
+                return_value={},
+            ), patch(
+                "three_col_circle_code.bench.runner.generate_instance",
+                side_effect=lambda family, n, seed: _build_record(
+                    instance_id=f"{family}-n{n:04d}-seed{seed}",
+                    family=family,
+                    seed=seed,
+                    n=n,
+                ),
+            ), patch(
+                "three_col_circle_code.bench.runner.run_solver",
+                return_value=_fake_solver_result(backend="pysat-cadical", wall_time_s=0.1),
+            ):
+                run_benchmark(
+                    output_root=tmp_root / "runs",
+                    spec_path=spec_path,
+                    progress_stream=progress,
+                )
+
+        rendered = progress.getvalue()
+        self.assertIn("Resolving 11 requested instances...", rendered)
+        self.assertIn("Generating missing instances (11 total)...", rendered)
+        self.assertIn("Generated 1/11 missing instances", rendered)
+        self.assertIn("Generated 10/11 missing instances", rendered)
+        self.assertIn("Generated 11/11 missing instances", rendered)
+        self.assertNotIn("Generated 2/11 missing instances", rendered)
+        self.assertNotIn("Generated 9/11 missing instances", rendered)
+
     def test_execute_benchmark_task_records_invalid_instance(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_root = Path(tmpdir)
@@ -133,7 +216,7 @@ class BenchRunnerTests(unittest.TestCase):
             tmp_root = Path(tmpdir)
             instance_pool_root = tmp_root / "instances"
             _write_instance(
-                instance_pool_root / "rc-n0002-seed1.json",
+                instance_pool_root / "rc" / "s" / "rc-n0002-seed1.json",
                 instance_id="rc-n0002-seed1",
                 family="rc",
                 seed=1,
@@ -189,7 +272,7 @@ class BenchRunnerTests(unittest.TestCase):
                 return_value=_fake_solver_result(backend="pysat-cadical", wall_time_s=0.1),
             ):
                 run_benchmark(output_root=tmp_root / "runs", spec_path=spec_path)
-                generated_exists = (instance_pool_root / "rc-n0002-seed1.json").exists()
+                generated_exists = (instance_pool_root / "rc" / "s" / "rc-n0002-seed1.json").exists()
 
         self.assertTrue(generated_exists)
         generate_instance_mock.assert_called_once_with(family="rc", n=2, seed=1)
@@ -358,6 +441,24 @@ class BenchRunnerTests(unittest.TestCase):
                 run_benchmark(output_root=tmp_root / "runs", spec_path=both_n_shapes)
             with self.assertRaises(ValueError):
                 run_benchmark(output_root=tmp_root / "runs", spec_path=empty_seeds)
+
+    def test_run_benchmark_rejects_kissat404_on_windows_before_creating_run_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            spec_path = _write_spec(
+                tmp_root / "kissat-on-windows.json",
+                {
+                    "instance_pool_root": str(tmp_root / "instances"),
+                    "instances": [{"family": "rc", "n_values": [2], "seeds": [1]}],
+                    "solvers": [{"target": "sat-baseline:pysat-kissat404", "params": {}}],
+                },
+            )
+
+            with patch("three_col_circle_code.bench.runner.platform.system", return_value="Windows"):
+                with self.assertRaisesRegex(ValueError, "not supported on Windows"):
+                    run_benchmark(output_root=tmp_root / "runs", spec_path=spec_path)
+
+            self.assertFalse((tmp_root / "runs" / "kissat-on-windows").exists())
 
     def test_cli_supports_spec_only(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

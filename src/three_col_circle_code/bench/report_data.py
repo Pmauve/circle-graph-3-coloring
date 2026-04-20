@@ -7,6 +7,7 @@ from statistics import mean, median
 from typing import Any, Mapping, Optional
 
 from three_col_circle_code.bench.results import MANIFEST_FILENAME, RESULTS_FILENAME
+from three_col_circle_code.bench.specs import canonical_params_json
 
 
 SUMMARY_BY_N_FILENAME = "summary_by_n.csv"
@@ -110,6 +111,24 @@ class BenchmarkReportData:
         return tuple(row for row in self.agreement_rows if not row.is_agreement)
 
 
+def solver_variant_key(solver_target: str, solver_params: Mapping[str, Any]) -> str:
+    """Build one stable identity key for a solver plus its parameters."""
+    return f"{solver_target}|{canonical_params_json(dict(solver_params))}"
+
+
+def solver_variant_label(solver_target: str, solver_params: Mapping[str, Any]) -> str:
+    """Build one stable display label for a solver plus its parameters."""
+    params_json = canonical_params_json(dict(solver_params))
+    if params_json == "{}":
+        return solver_target
+    params = json.loads(params_json)
+    rendered_params = ", ".join(
+        f"{name}={_render_solver_param_value(value)}"
+        for name, value in params.items()
+    )
+    return f"{solver_target} [{rendered_params}]"
+
+
 def load_benchmark_report_data(run_dir: Path) -> BenchmarkReportData:
     """Load one benchmark run directory into a normalized report model."""
     rows = _load_result_rows(run_dir)
@@ -190,7 +209,14 @@ def _build_run_metadata(
     manifest: Optional[Mapping[str, Any]],
     rows: tuple[ReportRow, ...],
 ) -> ReportRunMetadata:
-    inferred_solver_targets = tuple(sorted({row.solver_target for row in rows}))
+    inferred_solver_targets = tuple(
+        sorted(
+            {
+                solver_variant_label(row.solver_target, row.solver_params)
+                for row in rows
+            }
+        )
+    )
     inferred_instance_count = len({row.instance_id for row in rows})
     if manifest is None:
         return ReportRunMetadata(
@@ -206,7 +232,10 @@ def _build_run_metadata(
     manifest_solver_targets = tuple(
         sorted(
             {
-                str(solver.get("target"))
+                solver_variant_label(
+                    str(solver.get("target")),
+                    dict(solver.get("params", {})),
+                )
                 for solver in manifest.get("solvers", [])
                 if solver.get("target") is not None
             }
@@ -235,10 +264,28 @@ def _build_agreement_rows(
     agreement_rows: list[AgreementRow] = []
     expected_solver_target_set = set(expected_solver_targets)
     for instance_id in sorted(grouped):
-        instance_rows = sorted(grouped[instance_id], key=lambda row: row.solver_target)
-        solver_targets = tuple(row.solver_target for row in instance_rows)
-        statuses = tuple((row.solver_target, row.status) for row in instance_rows)
-        answers = tuple((row.solver_target, row.is_three_colorable) for row in instance_rows)
+        instance_rows = sorted(
+            grouped[instance_id],
+            key=lambda row: solver_variant_label(row.solver_target, row.solver_params),
+        )
+        solver_targets = tuple(
+            solver_variant_label(row.solver_target, row.solver_params)
+            for row in instance_rows
+        )
+        statuses = tuple(
+            (
+                solver_variant_label(row.solver_target, row.solver_params),
+                row.status,
+            )
+            for row in instance_rows
+        )
+        answers = tuple(
+            (
+                solver_variant_label(row.solver_target, row.solver_params),
+                row.is_three_colorable,
+            )
+            for row in instance_rows
+        )
         status_values = {status for _, status in statuses}
         answer_values = {answer for _, answer in answers}
         has_complete_solver_set = (
@@ -273,7 +320,7 @@ def _build_solver_summary_rows(
 ) -> tuple[SolverSummaryRow, ...]:
     grouped: dict[str, list[ReportRow]] = defaultdict(list)
     for row in rows:
-        grouped[row.solver_target].append(row)
+        grouped[solver_variant_label(row.solver_target, row.solver_params)].append(row)
 
     summary_rows: list[SolverSummaryRow] = []
     for solver_target in solver_targets:
@@ -329,7 +376,7 @@ def _write_summary_csv(
 ) -> None:
     grouped: dict[tuple[Any, ...], list[ReportRow]] = defaultdict(list)
     for row in rows:
-        grouped[tuple(getattr(row, field) for field in group_fields)].append(row)
+        grouped[tuple(_summary_group_value(row, field) for field in group_fields)].append(row)
 
     fieldnames = list(group_fields) + [
         "n_instances",
@@ -377,6 +424,18 @@ def _sort_value(value: Any) -> tuple[int, Any]:
     if value is None:
         return (1, "")
     return (0, value)
+
+
+def _summary_group_value(row: ReportRow, field: str) -> Any:
+    if field == "solver_target":
+        return solver_variant_label(row.solver_target, row.solver_params)
+    return getattr(row, field)
+
+
+def _render_solver_param_value(value: Any) -> str:
+    if isinstance(value, str):
+        return value
+    return json.dumps(value, sort_keys=True)
 
 
 def _optional_str(value: Any) -> Optional[str]:

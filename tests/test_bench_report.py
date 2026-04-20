@@ -13,9 +13,11 @@ from three_col_circle_code.bench.report_data import (
     SUMMARY_BY_N_FILENAME,
     SUMMARY_OVERALL_FILENAME,
     load_benchmark_report_data,
+    solver_variant_label,
     write_summary_csvs,
 )
 from three_col_circle_code.bench.report_html import render_report_html
+from three_col_circle_code.bench.report_plots import runtime_vs_size_figure, solver_target_color
 from three_col_circle_code.bench.results import MANIFEST_FILENAME, RESULTS_FILENAME
 
 
@@ -31,7 +33,11 @@ class BenchReportDataTests(unittest.TestCase):
         self.assertEqual(data.metadata.n_instances, 2)
         self.assertEqual(
             data.metadata.solver_targets,
-            ("sat-baseline:pysat-cadical", "sosa"),
+            (
+                "sat-baseline:pysat-cadical",
+                "sosa [base_case_n=64]",
+                "sosa [base_case_n=8]",
+            ),
         )
         self.assertEqual(data.headline_metrics.n_unanimous_agreements, 1)
         self.assertEqual(data.headline_metrics.n_disagreements, 1)
@@ -46,21 +52,15 @@ class BenchReportDataTests(unittest.TestCase):
         self.assertEqual(data.metadata.run_id, "sample-run")
         self.assertEqual(data.metadata.created_at, "2026-04-17T12:00:00+00:00")
         self.assertEqual(data.metadata.n_instances, 2)
-        self.assertEqual(data.metadata.n_tasks, 4)
-        self.assertEqual(data.headline_metrics.n_ok, 3)
+        self.assertEqual(data.metadata.n_tasks, 6)
+        self.assertEqual(data.headline_metrics.n_ok, 5)
         self.assertEqual(data.headline_metrics.n_error, 1)
         self.assertEqual(data.headline_metrics.n_invalid, 0)
-        self.assertEqual(data.headline_metrics.best_median_runtime_solver_target, "sat-baseline:pysat-cadical")
+        self.assertEqual(data.headline_metrics.best_median_runtime_solver_target, "sosa [base_case_n=64]")
         self.assertEqual(len(data.disagreement_rows), 1)
         disagreement = data.disagreement_rows[0]
-        self.assertEqual(disagreement.instance_id, "rc-n0003-seed2")
-        self.assertEqual(
-            disagreement.statuses,
-            (
-                ("sat-baseline:pysat-cadical", "ok"),
-                ("sosa", "error"),
-            ),
-        )
+        self.assertEqual(disagreement.instance_id, "rcy_fast-n0003-seed2")
+        self.assertEqual({label for label, _ in disagreement.statuses}, set(data.metadata.solver_targets))
 
     def test_write_summary_csvs_matches_expected_structure(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -72,7 +72,7 @@ class BenchReportDataTests(unittest.TestCase):
             by_bucket_rows = _read_csv_rows(run_dir / SUMMARY_BY_BUCKET_FILENAME)
             overall_rows = _read_csv_rows(run_dir / SUMMARY_OVERALL_FILENAME)
 
-        self.assertEqual(len(by_n_rows), 3)
+        self.assertEqual(len(by_n_rows), 4)
         rc_sat = next(
             row
             for row in by_n_rows
@@ -86,12 +86,34 @@ class BenchReportDataTests(unittest.TestCase):
         self.assertEqual(rc_sat["median_wall_time_s"], "2.0")
         self.assertEqual(rc_sat["max_wall_time_s"], "3.0")
 
-        rc_bucket = next(row for row in by_bucket_rows if row["family"] == "rc" and row["solver_target"] == "sosa")
-        self.assertEqual(rc_bucket["n_error"], "1")
-        self.assertEqual(rc_bucket["mean_wall_time_s"], "")
+        rc_sosa_small = next(
+            row
+            for row in by_bucket_rows
+            if row["family"] == "rc" and row["solver_target"] == "sosa [base_case_n=8]"
+        )
+        self.assertEqual(rc_sosa_small["n_error"], "1")
+        self.assertEqual(rc_sosa_small["mean_wall_time_s"], "")
 
-        invalid_overall = next(row for row in overall_rows if row["family"] == "" and row["solver_target"] == "sosa")
+        rc_sosa_large = next(
+            row
+            for row in by_bucket_rows
+            if row["family"] == "rc" and row["solver_target"] == "sosa [base_case_n=64]"
+        )
+        self.assertEqual(rc_sosa_large["n_ok"], "1")
+        self.assertEqual(rc_sosa_large["median_wall_time_s"], "2.0")
+
+        invalid_overall = next(
+            row
+            for row in overall_rows
+            if row["family"] == "" and row["solver_target"] == "sosa [base_case_n=8]"
+        )
         self.assertEqual(invalid_overall["n_invalid"], "1")
+
+    def test_solver_variant_label_sorts_params_stably(self) -> None:
+        self.assertEqual(
+            solver_variant_label("sosa", {"beta": 2, "alpha": 1}),
+            "sosa [alpha=1, beta=2]",
+        )
 
 
 class BenchReportHtmlTests(unittest.TestCase):
@@ -100,14 +122,33 @@ class BenchReportHtmlTests(unittest.TestCase):
             run_dir = _write_sample_run(Path(tmpdir) / "sample-run", with_manifest=True)
             data = load_benchmark_report_data(run_dir)
 
-        html = render_report_html(data=data)
+        html = render_report_html(
+            data=data,
+            runtime_vs_size_figure=runtime_vs_size_figure(data),
+        )
 
         self.assertIn("Headline Stats", html)
+        self.assertIn("Runtime vs Size", html)
         self.assertIn("Solver Summary", html)
         self.assertIn("Disagreements", html)
-        self.assertNotIn("Interactive Plots", html)
-        self.assertNotIn("Plotly.newPlot", html)
-        self.assertIn("rc-n0003-seed2", html)
+        self.assertIn("Plotly.newPlot", html)
+        self.assertIn(solver_target_color("sosa [base_case_n=8]"), html)
+        self.assertIn(solver_target_color("sosa [base_case_n=64]"), html)
+        self.assertIn("rcy_fast", html)
+        self.assertIn("All families", html)
+        self.assertIn("sosa [base_case_n=8]", html)
+        self.assertIn("sosa [base_case_n=64]", html)
+        self.assertIn("solver_params", html)
+
+    def test_solver_target_color_is_deterministic(self) -> None:
+        self.assertEqual(
+            solver_target_color("sosa [base_case_n=8]"),
+            solver_target_color("sosa [base_case_n=8]"),
+        )
+        self.assertNotEqual(
+            solver_target_color("sosa [base_case_n=8]"),
+            solver_target_color("sosa [base_case_n=64]"),
+        )
 
 
 class BenchReportBuildTests(unittest.TestCase):
@@ -184,9 +225,31 @@ def _write_sample_run(run_dir: Path, *, with_manifest: bool) -> Path:
         },
         {
             "run_id": "sample-run",
-            "instance_id": "rc-n0003-seed2",
-            "instance_path": str(run_dir / ".." / "instances" / "rc-n0003-seed2.json"),
+            "instance_id": "rc-n0002-seed1",
+            "instance_path": str(run_dir / ".." / "instances" / "rc-n0002-seed1.json"),
             "family": "rc",
+            "bucket": "s",
+            "n": 2,
+            "m": 1,
+            "seed": 1,
+            "source": "generated",
+            "solver_target": "sosa",
+            "solver": "sosa",
+            "backend": None,
+            "solver_params": {"base_case_n": 64},
+            "status": "ok",
+            "wall_time_s": 0.8,
+            "is_three_colorable": True,
+            "validation_ok": True,
+            "validation_errors": [],
+            "details": {},
+            "error": None,
+        },
+        {
+            "run_id": "sample-run",
+            "instance_id": "rcy_fast-n0003-seed2",
+            "instance_path": str(run_dir / ".." / "instances" / "rcy_fast-n0003-seed2.json"),
+            "family": "rcy_fast",
             "bucket": "s",
             "n": 3,
             "m": 2,
@@ -206,9 +269,9 @@ def _write_sample_run(run_dir: Path, *, with_manifest: bool) -> Path:
         },
         {
             "run_id": "sample-run",
-            "instance_id": "rc-n0003-seed2",
-            "instance_path": str(run_dir / ".." / "instances" / "rc-n0003-seed2.json"),
-            "family": "rc",
+            "instance_id": "rcy_fast-n0003-seed2",
+            "instance_path": str(run_dir / ".." / "instances" / "rcy_fast-n0003-seed2.json"),
+            "family": "rcy_fast",
             "bucket": "s",
             "n": 3,
             "m": 2,
@@ -226,6 +289,28 @@ def _write_sample_run(run_dir: Path, *, with_manifest: bool) -> Path:
             "details": {},
             "error": "solver failed",
         },
+        {
+            "run_id": "sample-run",
+            "instance_id": "rcy_fast-n0003-seed2",
+            "instance_path": str(run_dir / ".." / "instances" / "rcy_fast-n0003-seed2.json"),
+            "family": "rcy_fast",
+            "bucket": "s",
+            "n": 3,
+            "m": 2,
+            "seed": 2,
+            "source": "generated",
+            "solver_target": "sosa",
+            "solver": "sosa",
+            "backend": None,
+            "solver_params": {"base_case_n": 64},
+            "status": "ok",
+            "wall_time_s": 1.2,
+            "is_three_colorable": False,
+            "validation_ok": True,
+            "validation_errors": [],
+            "details": {},
+            "error": None,
+        },
     ]
     (run_dir / RESULTS_FILENAME).write_text(
         "\n".join(json.dumps(row) for row in rows) + "\n",
@@ -238,9 +323,10 @@ def _write_sample_run(run_dir: Path, *, with_manifest: bool) -> Path:
             "solvers": [
                 {"target": "sat-baseline:pysat-cadical", "params": {}},
                 {"target": "sosa", "params": {"base_case_n": 8}},
+                {"target": "sosa", "params": {"base_case_n": 64}},
             ],
             "n_instances": 2,
-            "n_tasks": 4,
+            "n_tasks": 6,
             "environment": {"python_version": "test"},
         }
         (run_dir / MANIFEST_FILENAME).write_text(json.dumps(manifest), encoding="utf-8")
@@ -256,6 +342,7 @@ def _write_summary_run(run_dir: Path) -> Path:
             "bucket": "s",
             "n": 2,
             "solver_target": "sat-baseline:pysat-cadical",
+            "solver_params": {},
             "status": "ok",
             "wall_time_s": 1.0,
         },
@@ -265,6 +352,7 @@ def _write_summary_run(run_dir: Path) -> Path:
             "bucket": "s",
             "n": 2,
             "solver_target": "sat-baseline:pysat-cadical",
+            "solver_params": {},
             "status": "ok",
             "wall_time_s": 3.0,
         },
@@ -274,8 +362,19 @@ def _write_summary_run(run_dir: Path) -> Path:
             "bucket": "s",
             "n": 2,
             "solver_target": "sosa",
+            "solver_params": {"base_case_n": 8},
             "status": "error",
             "wall_time_s": None,
+        },
+        {
+            "instance_id": "d",
+            "family": "rc",
+            "bucket": "s",
+            "n": 2,
+            "solver_target": "sosa",
+            "solver_params": {"base_case_n": 64},
+            "status": "ok",
+            "wall_time_s": 2.0,
         },
         {
             "instance_id": "broken",
@@ -283,6 +382,7 @@ def _write_summary_run(run_dir: Path) -> Path:
             "bucket": None,
             "n": None,
             "solver_target": "sosa",
+            "solver_params": {"base_case_n": 8},
             "status": "invalid",
             "wall_time_s": None,
         },
@@ -335,6 +435,25 @@ def _write_untimed_solver_run(run_dir: Path) -> Path:
             "validation_ok": True,
             "error": "solver failed",
         },
+        {
+            "run_id": "untimed-run",
+            "instance_id": "rc-n0002-seed1",
+            "family": "rc",
+            "bucket": "s",
+            "n": 2,
+            "m": 1,
+            "seed": 1,
+            "source": "generated",
+            "solver_target": "sosa",
+            "solver": "sosa",
+            "backend": None,
+            "solver_params": {"base_case_n": 64},
+            "status": "ok",
+            "wall_time_s": 0.8,
+            "is_three_colorable": True,
+            "validation_ok": True,
+            "error": None,
+        },
     ]
     (run_dir / RESULTS_FILENAME).write_text(
         "\n".join(json.dumps(row) for row in rows) + "\n",
@@ -346,9 +465,10 @@ def _write_untimed_solver_run(run_dir: Path) -> Path:
         "solvers": [
             {"target": "sat-baseline:pysat-cadical", "params": {}},
             {"target": "sosa", "params": {"base_case_n": 8}},
+            {"target": "sosa", "params": {"base_case_n": 64}},
         ],
         "n_instances": 1,
-        "n_tasks": 2,
+        "n_tasks": 3,
         "environment": {"python_version": "test"},
     }
     (run_dir / MANIFEST_FILENAME).write_text(json.dumps(manifest), encoding="utf-8")

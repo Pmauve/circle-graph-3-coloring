@@ -146,7 +146,10 @@ class RandomInstanceGenerationTests(unittest.TestCase):
             loaded = load_instance(path)
             report = validate_instance_file(path)
 
-        self.assertEqual(path.name, f"{record.metadata.instance_id}.json")
+        self.assertEqual(
+            path,
+            output_dir / record.metadata.family / record.metadata.bucket / f"{record.metadata.instance_id}.json",
+        )
         self.assertIn("metadata", payload)
         self.assertIn("graph", payload)
         self.assertEqual(loaded.metadata.instance_id, record.metadata.instance_id)

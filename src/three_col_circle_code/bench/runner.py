@@ -2,8 +2,10 @@ import argparse
 import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
+import platform
 from pathlib import Path
-from typing import Any, Iterable, Optional
+import sys
+from typing import Any, Iterable, Optional, TextIO
 
 from three_col_circle_code.bench.env import collect_environment_metadata
 from three_col_circle_code.bench.report import build_benchmark_report
@@ -24,10 +26,11 @@ from three_col_circle_code.bench.specs import (
 )
 from three_col_circle_code.generation.random_instances import generate_instance, write_instance
 from three_col_circle_code.instances.io import load_instance
-from three_col_circle_code.instances.model import InstanceFormatError, InstanceRecord
+from three_col_circle_code.instances.model import InstanceFormatError, InstanceRecord, bucket_for_n
 from three_col_circle_code.instances.validate import validate_instance
 from three_col_circle_code.solvers.common import SolverConfig
 from three_col_circle_code.solvers.registry import run_solver
+from three_col_circle_code.solvers.sat import PYSAT_KISSAT404, SAT_BASELINE_SOLVER
 
 BENCH_STATUS_INVALID = "invalid"
 RUN_SPEC_FILENAME = "spec.json"
@@ -48,14 +51,24 @@ class BenchmarkTask:
         )
 
 
+@dataclass(frozen=True)
+class MaterializedInstances:
+    paths: dict[str, Path]
+    n_found_flat: int
+    n_found_nested: int
+    n_generated: int
+
+
 def run_benchmark(
     *,
     output_root: Path,
     spec_path: Path,
+    progress_stream: TextIO | None = None,
 ) -> Path:
     """Run a resumable benchmark run from a JSON run spec."""
     spec_source, run_spec = load_run_spec(spec_path)
     spec_path = Path(spec_path)
+    _validate_run_environment(run_spec)
     run_dir = _prepare_run_directory(
         output_root=output_root,
         spec_source=spec_source,
@@ -64,8 +77,31 @@ def run_benchmark(
     run_id_value = run_dir.name
     created_at = _load_existing_created_at(run_dir)
 
-    instance_paths = _materialize_run_instances(run_spec)
-    tasks = _iter_benchmark_tasks(run_spec, instance_paths)
+    _emit_progress(progress_stream, f"Starting benchmark run '{run_id_value}' from {spec_path}")
+    _emit_progress(progress_stream, f"Run directory: {run_dir}")
+    _emit_progress(progress_stream, f"Resolving {len(run_spec.instance_requests)} requested instances...")
+
+    materialized = _materialize_run_instances(
+        run_spec,
+        progress_stream=progress_stream,
+    )
+    tasks = _iter_benchmark_tasks(run_spec, materialized.paths)
+    _emit_progress(
+        progress_stream,
+        (
+            f"Planned tasks: {len(tasks)} across {len(run_spec.instance_requests)} instances "
+            f"and {len(run_spec.solver_configs)} solver configs"
+        ),
+    )
+    _emit_progress(
+        progress_stream,
+        (
+            "Instance pool: "
+            f"{materialized.n_found_flat} flat, "
+            f"{materialized.n_found_nested} nested, "
+            f"{materialized.n_generated} generated"
+        ),
+    )
 
     write_manifest(
         run_dir,
@@ -77,17 +113,38 @@ def run_benchmark(
     )
 
     completed_task_keys = _load_completed_task_keys(run_dir)
-    for task in tasks:
+    if completed_task_keys:
+        _emit_progress(
+            progress_stream,
+            f"Resuming existing run: skipping {len(completed_task_keys)} completed tasks",
+        )
+
+    for index, task in enumerate(tasks, start=1):
         if task.key in completed_task_keys:
             continue
+        _emit_progress(progress_stream, f"[{index}/{len(tasks)}] {_format_task(task)}")
         _execute_benchmark_task(
             run_dir=run_dir,
             run_id=run_id_value,
             task=task,
         )
+        _emit_progress(progress_stream, f"  -> {_format_result_summary(_load_last_result(run_dir))}")
 
     write_summary_csvs(run_dir)
-    build_benchmark_report(run_dir)
+    report_path = build_benchmark_report(run_dir)
+    status_counts = _load_status_counts(run_dir)
+    _emit_progress(
+        progress_stream,
+        (
+            f"Completed run '{run_id_value}': "
+            f"ok={status_counts.get('ok', 0)}, "
+            f"error={status_counts.get('error', 0)}, "
+            f"invalid={status_counts.get('invalid', 0)}"
+        ),
+    )
+    _emit_progress(progress_stream, f"Results: {run_dir / RESULTS_FILENAME}")
+    _emit_progress(progress_stream, f"Manifest: {run_dir / MANIFEST_FILENAME}")
+    _emit_progress(progress_stream, f"Report: {report_path}")
     return run_dir
 
 
@@ -98,10 +155,15 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     parser.add_argument("--output-root", type=Path, default=DEFAULT_RUNS_ROOT)
     args = parser.parse_args(list(argv) if argv is not None else None)
 
-    run_dir = run_benchmark(
-        output_root=args.output_root,
-        spec_path=args.spec,
-    )
+    try:
+        run_dir = run_benchmark(
+            output_root=args.output_root,
+            spec_path=args.spec,
+            progress_stream=sys.stderr,
+        )
+    except ValueError as exc:
+        print(f"benchmark run failed: {exc}", file=sys.stderr)
+        return 2
     print(run_dir)
     return 0
 
@@ -140,22 +202,90 @@ def _load_existing_created_at(run_dir: Path) -> Optional[str]:
     return str(created_at)
 
 
-def _materialize_run_instances(run_spec: RunSpec) -> dict[str, Path]:
+def _materialize_run_instances(
+    run_spec: RunSpec,
+    *,
+    progress_stream: TextIO | None = None,
+) -> MaterializedInstances:
     resolved: dict[str, Path] = {}
+    n_found_flat = 0
+    n_found_nested = 0
+    n_generated = 0
+    missing_requests = [
+        request
+        for request in run_spec.instance_requests
+        if _resolve_existing_instance_path(
+            instance_pool_root=run_spec.instance_pool_root,
+            request=request,
+        )[0] is None
+    ]
+    if missing_requests:
+        _emit_progress(
+            progress_stream,
+            f"Generating missing instances ({len(missing_requests)} total)...",
+        )
     for request in run_spec.instance_requests:
-        resolved[request.instance_id] = _resolve_or_generate_instance(
+        instance_path, resolution = _resolve_or_generate_instance(
             instance_pool_root=run_spec.instance_pool_root,
             request=request,
         )
-    return resolved
+        resolved[request.instance_id] = instance_path
+        if resolution == "flat":
+            n_found_flat += 1
+        elif resolution == "nested":
+            n_found_nested += 1
+        else:
+            n_generated += 1
+            if _should_emit_generation_progress(
+                generated_count=n_generated,
+                generated_total=len(missing_requests),
+            ):
+                _emit_progress(
+                    progress_stream,
+                    f"Generated {n_generated}/{len(missing_requests)} missing instances",
+                )
+    return MaterializedInstances(
+        paths=resolved,
+        n_found_flat=n_found_flat,
+        n_found_nested=n_found_nested,
+        n_generated=n_generated,
+    )
 
 
-def _resolve_or_generate_instance(*, instance_pool_root: Path, request: InstanceRequest) -> Path:
-    instance_path = Path(instance_pool_root) / f"{request.instance_id}.json"
-    if instance_path.exists():
-        return instance_path
+def _resolve_or_generate_instance(
+    *,
+    instance_pool_root: Path,
+    request: InstanceRequest,
+) -> tuple[Path, str]:
+    existing_instance_path, existing_resolution = _resolve_existing_instance_path(
+        instance_pool_root=instance_pool_root,
+        request=request,
+    )
+    if existing_instance_path is not None and existing_resolution is not None:
+        return existing_instance_path, existing_resolution
+
     record = generate_instance(family=request.family, n=request.n, seed=request.seed)
-    return write_instance(record, instance_pool_root)
+    return write_instance(record, instance_pool_root), "generated"
+
+
+def _resolve_existing_instance_path(
+    *,
+    instance_pool_root: Path,
+    request: InstanceRequest,
+) -> tuple[Optional[Path], Optional[str]]:
+    flat_instance_path = Path(instance_pool_root) / f"{request.instance_id}.json"
+    if flat_instance_path.exists():
+        return flat_instance_path, "flat"
+
+    nested_instance_path = (
+        Path(instance_pool_root)
+        / request.family
+        / bucket_for_n(request.n)
+        / f"{request.instance_id}.json"
+    )
+    if nested_instance_path.exists():
+        return nested_instance_path, "nested"
+    return None, None
 
 
 def _iter_benchmark_tasks(
@@ -204,6 +334,33 @@ def _load_completed_task_keys(run_dir: Path) -> set[tuple[str, str, str]]:
                 )
             )
     return completed
+
+
+def _load_last_result(run_dir: Path) -> dict[str, Any]:
+    results_path = Path(run_dir) / RESULTS_FILENAME
+    last_line = ""
+    with results_path.open(encoding="utf-8") as infile:
+        for line in infile:
+            if line.strip():
+                last_line = line
+    if not last_line:
+        raise ValueError(f"expected at least one result row in {results_path}")
+    return json.loads(last_line)
+
+
+def _load_status_counts(run_dir: Path) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    results_path = Path(run_dir) / RESULTS_FILENAME
+    if not results_path.exists():
+        return counts
+    with results_path.open(encoding="utf-8") as infile:
+        for line in infile:
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            status = str(row["status"])
+            counts[status] = counts.get(status, 0) + 1
+    return counts
 
 
 def _execute_benchmark_task(
@@ -346,6 +503,47 @@ def _build_invalid_result_record(
 
 def _serialize_validation_errors(errors: Iterable[Any]) -> list[dict[str, Any]]:
     return [{"code": issue.code, "message": issue.message} for issue in errors]
+
+
+def _validate_run_environment(run_spec: RunSpec) -> None:
+    system_name = platform.system()
+    for solver_config in run_spec.solver_configs:
+        if (
+            system_name == "Windows"
+            and solver_config.solver == SAT_BASELINE_SOLVER
+            and solver_config.backend == PYSAT_KISSAT404
+        ):
+            raise ValueError(
+                "SAT backend 'pysat-kissat404' is not supported on Windows; "
+                "use WSL/Linux or remove it from the run spec"
+            )
+
+
+def _emit_progress(progress_stream: TextIO | None, message: str) -> None:
+    if progress_stream is None:
+        return
+    print(message, file=progress_stream, flush=True)
+
+
+def _format_task(task: BenchmarkTask) -> str:
+    return f"{task.instance_request.instance_id} | {task.solver_config.target} | params={task.solver_config.params}"
+
+
+def _format_result_summary(result_row: dict[str, Any]) -> str:
+    status = str(result_row["status"])
+    wall_time_s = result_row.get("wall_time_s")
+    error = result_row.get("error")
+    if wall_time_s is not None:
+        return f"{status} in {float(wall_time_s):.4f}s"
+    if error:
+        return f"{status}: {error}"
+    return status
+
+
+def _should_emit_generation_progress(*, generated_count: int, generated_total: int) -> bool:
+    if generated_total < 1:
+        return False
+    return generated_count in {1, generated_total} or generated_count % 10 == 0
 
 
 if __name__ == "__main__":

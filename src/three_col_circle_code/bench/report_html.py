@@ -1,4 +1,5 @@
 from jinja2 import Environment, select_autoescape
+from plotly.io import to_html
 
 from three_col_circle_code.bench.report_data import BenchmarkReportData
 
@@ -86,6 +87,9 @@ _TEMPLATE = """
       .table-wrap {
         overflow-x: auto;
       }
+      .plot-wrap {
+        overflow-x: auto;
+      }
       @media (max-width: 720px) {
         body { padding: 16px; }
         .section { padding: 14px; }
@@ -106,7 +110,7 @@ _TEMPLATE = """
             <tr><th>Created At</th><td>{{ metadata.created_at or "Unavailable" }}</td></tr>
             <tr><th>Instances</th><td>{{ metadata.n_instances }}</td></tr>
             <tr><th>Tasks</th><td>{{ metadata.n_tasks }}</td></tr>
-            <tr><th>Solver Targets</th><td class="mono">{{ metadata.solver_targets | join(", ") }}</td></tr>
+            <tr><th>Solver Variants</th><td class="mono">{{ metadata.solver_targets | join(", ") }}</td></tr>
           </tbody>
         </table>
         </div>
@@ -128,13 +132,20 @@ _TEMPLATE = """
 
       <section class="section">
         <div class="section-header">
+        <h2>Runtime vs Size</h2>
+        </div>
+        <div class="plot-wrap">{{ runtime_vs_size_html | safe }}</div>
+      </section>
+
+      <section class="section">
+        <div class="section-header">
         <h2>Solver Summary</h2>
         </div>
         <div class="table-wrap">
         <table>
           <thead>
             <tr>
-              <th>Solver Target</th>
+              <th>Solver Variant</th>
               <th>ok</th>
               <th>error</th>
               <th>invalid</th>
@@ -202,6 +213,7 @@ _TEMPLATE = """
 def render_report_html(
     *,
     data: BenchmarkReportData,
+    runtime_vs_size_figure: object,
 ) -> str:
     """Render the benchmark report HTML document."""
     template = Environment(
@@ -211,6 +223,17 @@ def render_report_html(
         title=data.metadata.run_id,
         metadata=data.metadata,
         headline=data.headline_metrics,
+        runtime_vs_size_html=_figure_html(runtime_vs_size_figure, include_plotlyjs="inline"),
         solver_summary_rows=data.solver_summary_rows,
         disagreement_rows=data.disagreement_rows,
+    )
+
+
+def _figure_html(figure: object, *, include_plotlyjs: object) -> str:
+    return to_html(
+        figure,
+        full_html=False,
+        include_plotlyjs=include_plotlyjs,
+        config={"responsive": True},
+        default_width="100%",
     )

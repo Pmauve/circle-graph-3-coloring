@@ -19,10 +19,10 @@ pysmt-install --msat
 To verify if the installation was successful, execute:
 
 ```
-which graph_generator
+which benchmark_run
 ```
 
-If the response is ```path_to_repo/3-col-code/venv/bin/graph_generator``` then the project has been successfully installed.
+If the response is ```path_to_repo/3-col-code/venv/bin/benchmark_run``` then the project has been successfully installed.
 To verify that the SAT solver has been successfully installed, execute ```pysmt-install --check```.
 You should see that the msat solver is installed.
 
@@ -79,7 +79,7 @@ The newer benchmark tooling uses spec-driven run directories under `eval/runs/`.
 Run one benchmark spec with:
 
 ```bash
-cg_benchmark_run --spec path/to/spec.json
+benchmark_run --spec path/to/spec.json
 ```
 
 A minimal tracked example spec lives at `eval/sample_specs/sosa-smoke.json`.
@@ -87,7 +87,7 @@ It is paired with a tiny curated starter pool in `eval/instances/`, so you can r
 Because the run directory is derived from the spec filename stem, running that file writes to `eval/runs/sosa-smoke/`.
 
 ```bash
-cg_benchmark_run --spec eval/sample_specs/sosa-smoke.json
+benchmark_run --spec eval/sample_specs/sosa-smoke.json
 ```
 
 Each run directory stores:

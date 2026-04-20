@@ -29,6 +29,7 @@ dependencies = [
   #"seaborn",
   #"matplotlib",
   "jinja2",
+  "plotly",
   "setuptools",
   "pysmt",
   "python-sat",
@@ -38,12 +39,12 @@ dependencies = [
 
 [project.scripts]
 counterexampler = "three_col_circle_code.counterexampler:main"
-graph_generator = "three_col_circle_code.graph_generator:main"
+#graph_generator = "three_col_circle_code.graph_generator:main"
 evaluate_graphs = "three_col_circle_code.sat.main:main"
 evaluate_greedy = "three_col_circle_code.greedy.eval_greedy:main"
 evaluate_coloring = "three_col_circle_code.col.eval_coloring:main"
 bt_eval = "three_col_circle_code.col.eval_backtracking:main"
 var_bt_eval = "three_col_circle_code.col.eval_var_bt:main"
 var_bt_eval_limited = "three_col_circle_code.col.eval_var_bt_w_limit:main"
-cg_instance_generate = "three_col_circle_code.generation.random_instances:main"
-cg_benchmark_run = "three_col_circle_code.bench.runner:main"
+instance_generate = "three_col_circle_code.generation.random_instances:main"
+benchmark_run = "three_col_circle_code.bench.runner:main"
