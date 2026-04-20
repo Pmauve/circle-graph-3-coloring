@@ -4,6 +4,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Optional
 from unittest.mock import patch
 
@@ -19,7 +20,7 @@ from three_col_circle_code.bench.report_data import (
 from three_col_circle_code.bench.results import MANIFEST_FILENAME, RESULTS_FILENAME
 from three_col_circle_code.bench.runner import BenchmarkTask, _execute_benchmark_task, main, run_benchmark
 from three_col_circle_code.bench.specs import InstanceRequest
-from three_col_circle_code.instances.io import save_instance
+from three_col_circle_code.instances.io import load_instance, save_instance
 from three_col_circle_code.instances.model import InstanceMetadata, InstanceRecord
 from three_col_circle_code.solvers.common import SOLVER_STATUS_OK, SolverConfig, SolverResult
 from three_col_circle_code.solvers.sat import SAT_BASELINE_SOLVER
@@ -360,6 +361,53 @@ class BenchRunnerTests(unittest.TestCase):
         self.assertEqual(first_run_dir, second_run_dir)
         self.assertEqual(first_manifest["created_at"], second_manifest["created_at"])
         self.assertEqual(run_solver.call_count, 1)
+
+    def test_run_benchmark_loads_and_validates_each_instance_once_across_solver_configs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            instance_pool_root = tmp_root / "instances"
+            instance_path = _write_instance(
+                instance_pool_root / "rc" / "s" / "rc-n0002-seed1.json",
+                instance_id="rc-n0002-seed1",
+                family="rc",
+                seed=1,
+            )
+            spec_path = _write_spec(
+                tmp_root / "cache-run.json",
+                {
+                    "instance_pool_root": str(instance_pool_root),
+                    "instances": [{"family": "rc", "n_values": [2], "seeds": [1]}],
+                    "solvers": [
+                        {"target": "sat-baseline:pysat-cadical", "params": {"limit": 1}},
+                        {"target": "sat-baseline:pysat-cadical", "params": {"limit": 2}},
+                    ],
+                },
+            )
+
+            with patch(
+                "three_col_circle_code.bench.runner.collect_environment_metadata",
+                return_value={},
+            ), patch(
+                "three_col_circle_code.bench.runner.load_instance",
+                wraps=load_instance,
+            ) as load_instance_mock, patch(
+                "three_col_circle_code.bench.runner.validate_instance",
+                return_value=SimpleNamespace(ok=True, errors=[]),
+            ) as validate_instance_mock, patch(
+                "three_col_circle_code.bench.runner.run_solver",
+                return_value=_fake_solver_result(backend="pysat-cadical", wall_time_s=0.1),
+            ) as run_solver_mock:
+                run_dir = run_benchmark(output_root=tmp_root / "runs", spec_path=spec_path)
+
+            results = [
+                json.loads(line)
+                for line in (run_dir / RESULTS_FILENAME).read_text(encoding="utf-8").strip().splitlines()
+            ]
+
+        self.assertEqual(len(results), 2)
+        load_instance_mock.assert_called_once_with(instance_path)
+        validate_instance_mock.assert_called_once()
+        self.assertEqual(run_solver_mock.call_count, 2)
 
     def test_run_benchmark_different_solver_params_are_distinct_tasks(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

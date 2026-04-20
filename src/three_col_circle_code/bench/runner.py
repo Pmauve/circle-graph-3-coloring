@@ -119,16 +119,42 @@ def run_benchmark(
             f"Resuming existing run: skipping {len(completed_task_keys)} completed tasks",
         )
 
+    cached_records: dict[Path, InstanceRecord] = {}
+    cached_validations: dict[Path, tuple[bool, list[dict[str, Any]]]] = {}
     for index, task in enumerate(tasks, start=1):
         if task.key in completed_task_keys:
             continue
         _emit_progress(progress_stream, f"[{index}/{len(tasks)}] {_format_task(task)}")
-        _execute_benchmark_task(
-            run_dir=run_dir,
-            run_id=run_id_value,
-            task=task,
-        )
-        _emit_progress(progress_stream, f"  -> {_format_result_summary(_load_last_result(run_dir))}")
+        loaded_record = cached_records.get(task.instance_path)
+        try:
+            if loaded_record is None:
+                loaded_record = load_instance(task.instance_path)
+                cached_records[task.instance_path] = loaded_record
+        except (InstanceFormatError, json.JSONDecodeError, OSError) as exc:
+            result_row = _build_invalid_result_record(
+                run_id=run_id_value,
+                task=task,
+                error=exc,
+            )
+            append_result(run_dir, result_row)
+        else:
+            validation_info = cached_validations.get(task.instance_path)
+            if validation_info is None:
+                validation = validate_instance(loaded_record.graph, metadata=loaded_record.metadata.to_dict())
+                validation_info = (
+                    validation.ok,
+                    _serialize_validation_errors(validation.errors),
+                )
+                cached_validations[task.instance_path] = validation_info
+            result_row = _execute_benchmark_task(
+                run_dir=run_dir,
+                run_id=run_id_value,
+                task=task,
+                record=loaded_record,
+                validation_ok=validation_info[0],
+                validation_errors=validation_info[1],
+            )
+        _emit_progress(progress_stream, f"  -> {_format_result_summary(result_row)}")
 
     write_summary_csvs(run_dir)
     report_path = build_benchmark_report(run_dir)
@@ -336,18 +362,6 @@ def _load_completed_task_keys(run_dir: Path) -> set[tuple[str, str, str]]:
     return completed
 
 
-def _load_last_result(run_dir: Path) -> dict[str, Any]:
-    results_path = Path(run_dir) / RESULTS_FILENAME
-    last_line = ""
-    with results_path.open(encoding="utf-8") as infile:
-        for line in infile:
-            if line.strip():
-                last_line = line
-    if not last_line:
-        raise ValueError(f"expected at least one result row in {results_path}")
-    return json.loads(last_line)
-
-
 def _load_status_counts(run_dir: Path) -> dict[str, int]:
     counts: dict[str, int] = {}
     results_path = Path(run_dir) / RESULTS_FILENAME
@@ -369,33 +383,35 @@ def _execute_benchmark_task(
     run_id: str,
     task: BenchmarkTask,
     record: Optional[InstanceRecord] = None,
-) -> None:
+    validation_ok: Optional[bool] = None,
+    validation_errors: Optional[list[dict[str, Any]]] = None,
+) -> dict[str, Any]:
     try:
         loaded_record = record or load_instance(task.instance_path)
     except (InstanceFormatError, json.JSONDecodeError, OSError) as exc:
-        append_result(
-            run_dir,
-            _build_invalid_result_record(
-                run_id=run_id,
-                task=task,
-                error=exc,
-            ),
-        )
-        return
-
-    validation = validate_instance(loaded_record.graph, metadata=loaded_record.metadata.to_dict())
-    solve_result = run_solver(loaded_record, task.solver_config)
-    append_result(
-        run_dir,
-        _build_result_record(
+        result_row = _build_invalid_result_record(
             run_id=run_id,
             task=task,
-            record=loaded_record,
-            validation_ok=validation.ok,
-            validation_errors=_serialize_validation_errors(validation.errors),
-            solve_result=solve_result,
-        ),
+            error=exc,
+        )
+        append_result(run_dir, result_row)
+        return result_row
+
+    if validation_ok is None or validation_errors is None:
+        validation = validate_instance(loaded_record.graph, metadata=loaded_record.metadata.to_dict())
+        validation_ok = validation.ok
+        validation_errors = _serialize_validation_errors(validation.errors)
+    solve_result = run_solver(loaded_record, task.solver_config)
+    result_row = _build_result_record(
+        run_id=run_id,
+        task=task,
+        record=loaded_record,
+        validation_ok=validation_ok,
+        validation_errors=validation_errors,
+        solve_result=solve_result,
     )
+    append_result(run_dir, result_row)
+    return result_row
 
 
 def _build_manifest(
