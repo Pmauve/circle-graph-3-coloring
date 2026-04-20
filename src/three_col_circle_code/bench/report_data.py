@@ -179,7 +179,19 @@ def _load_result_rows(run_dir: Path) -> tuple[ReportRow, ...]:
         raise FileNotFoundError(f"benchmark run {run_dir} does not contain {RESULTS_FILENAME}")
     with results_path.open(encoding="utf-8") as infile:
         rows = [json.loads(line) for line in infile if line.strip()]
-    return tuple(_normalize_report_row(row) for row in rows)
+    normalized_rows = tuple(_normalize_report_row(row) for row in rows)
+    return _dedupe_result_rows(normalized_rows)
+
+
+def _dedupe_result_rows(rows: tuple[ReportRow, ...]) -> tuple[ReportRow, ...]:
+    deduped: dict[tuple[str, str], ReportRow] = {}
+    for row in rows:
+        key = (row.instance_id, solver_variant_key(row.solver_target, row.solver_params))
+        if key in deduped:
+            # Keep the last occurrence to match the final recorded task result.
+            deduped.pop(key)
+        deduped[key] = row
+    return tuple(deduped.values())
 
 
 def _normalize_report_row(row: Mapping[str, Any]) -> ReportRow:

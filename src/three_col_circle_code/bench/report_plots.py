@@ -83,16 +83,36 @@ def runtime_vs_size_figure(data: BenchmarkReportData) -> go.Figure:
                 "direction": "down",
                 "x": 1.0,
                 "xanchor": "right",
-                "y": 1.18,
+                "y": 1.22,
                 "yanchor": "top",
                 "buttons": _family_filter_buttons(trace_rows_by_variant, families, family_symbols),
-            }
+            },
+            {
+                "type": "buttons",
+                "direction": "right",
+                "showactive": True,
+                "x": 0.06,
+                "xanchor": "left",
+                "y": 1.22,
+                "yanchor": "top",
+                "buttons": _axis_scale_buttons(axis_name="yaxis"),
+                "active": 1,
+            },
         ]
     )
     figure.add_annotation(
         text="Family",
         x=0.84,
-        y=1.19,
+        y=1.23,
+        xref="paper",
+        yref="paper",
+        showarrow=False,
+        font={"color": "#5d6470", "size": 12},
+    )
+    figure.add_annotation(
+        text="Y scale",
+        x=0.0,
+        y=1.23,
         xref="paper",
         yref="paper",
         showarrow=False,
@@ -104,7 +124,7 @@ def runtime_vs_size_figure(data: BenchmarkReportData) -> go.Figure:
         yaxis_title="wall_time_s",
         legend_title="Solver Variant",
         template="plotly_white",
-        margin={"l": 56, "r": 24, "t": 56, "b": 48},
+        margin={"l": 56, "r": 24, "t": 82, "b": 48},
     )
     figure.update_yaxes(type="log")
     return figure
@@ -202,6 +222,21 @@ def _family_filter_button(
             }
         ],
     }
+
+
+def _axis_scale_buttons(*, axis_name: str) -> list[dict[str, object]]:
+    return [
+        {
+            "label": "Linear",
+            "method": "relayout",
+            "args": [{f"{axis_name}.type": "linear"}],
+        },
+        {
+            "label": "Log",
+            "method": "relayout",
+            "args": [{f"{axis_name}.type": "log"}],
+        },
+    ]
 
 
 def _render_solver_params(params: dict[str, Any]) -> str:

@@ -234,6 +234,11 @@ def _figure_html(figure: object, *, include_plotlyjs: object) -> str:
         figure,
         full_html=False,
         include_plotlyjs=include_plotlyjs,
-        config={"responsive": True},
+        config={
+            "responsive": True,
+            "scrollZoom": True,
+            "displayModeBar": True,
+            "displaylogo": False,
+        },
         default_width="100%",
     )

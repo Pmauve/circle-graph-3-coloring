@@ -115,8 +115,42 @@ class BenchReportDataTests(unittest.TestCase):
             "sosa [alpha=1, beta=2]",
         )
 
+    def test_load_benchmark_report_data_dedupes_duplicate_task_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            run_dir = _write_duplicate_row_run(Path(tmpdir) / "duplicate-run")
+
+            data = load_benchmark_report_data(run_dir)
+
+        self.assertEqual(len(data.rows), 3)
+        self.assertEqual(data.headline_metrics.total_rows, 3)
+        self.assertEqual(data.headline_metrics.n_unanimous_agreements, 1)
+        self.assertEqual(data.headline_metrics.n_disagreements, 0)
+        self.assertEqual(len(data.solver_summary_rows), 3)
+        sosa_small = next(
+            row for row in data.solver_summary_rows if row.solver_target == "sosa [base_case_n=8]"
+        )
+        self.assertEqual(sosa_small.n_rows, 1)
+        self.assertEqual(sosa_small.median_wall_time_s, 9.0)
+
 
 class BenchReportHtmlTests(unittest.TestCase):
+    def test_runtime_vs_size_figure_exposes_family_and_y_axis_controls(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            run_dir = _write_sample_run(Path(tmpdir) / "sample-run", with_manifest=True)
+            data = load_benchmark_report_data(run_dir)
+
+        figure = runtime_vs_size_figure(data)
+
+        self.assertEqual(figure.layout.yaxis.type, "log")
+        self.assertEqual(len(figure.layout.updatemenus), 2)
+        self.assertEqual(figure.layout.updatemenus[0].buttons[0].label, "All families")
+        self.assertEqual(figure.layout.updatemenus[1].buttons[0].label, "Linear")
+        self.assertEqual(figure.layout.updatemenus[1].buttons[1].label, "Log")
+        self.assertEqual(
+            tuple(annotation.text for annotation in figure.layout.annotations),
+            ("Family", "Y scale"),
+        )
+
     def test_render_report_html_contains_key_sections(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             run_dir = _write_sample_run(Path(tmpdir) / "sample-run", with_manifest=True)
@@ -136,9 +170,13 @@ class BenchReportHtmlTests(unittest.TestCase):
         self.assertIn(solver_target_color("sosa [base_case_n=64]"), html)
         self.assertIn("rcy_fast", html)
         self.assertIn("All families", html)
+        self.assertIn("Y scale", html)
+        self.assertNotIn("X scale", html)
         self.assertIn("sosa [base_case_n=8]", html)
         self.assertIn("sosa [base_case_n=64]", html)
         self.assertIn("solver_params", html)
+        self.assertIn("scrollZoom", html)
+        self.assertIn("displayModeBar", html)
 
     def test_solver_target_color_is_deterministic(self) -> None:
         self.assertEqual(
@@ -391,6 +429,106 @@ def _write_summary_run(run_dir: Path) -> Path:
         "\n".join(json.dumps(row) for row in rows) + "\n",
         encoding="utf-8",
     )
+    return run_dir
+
+
+def _write_duplicate_row_run(run_dir: Path) -> Path:
+    run_dir.mkdir(parents=True, exist_ok=False)
+    rows = [
+        {
+            "run_id": "duplicate-run",
+            "instance_id": "rc-n0002-seed1",
+            "family": "rc",
+            "bucket": "s",
+            "n": 2,
+            "m": 1,
+            "seed": 1,
+            "source": "generated",
+            "solver_target": "sat-baseline:pysat-cadical",
+            "solver": "sat-baseline",
+            "backend": "pysat-cadical",
+            "solver_params": {},
+            "status": "ok",
+            "wall_time_s": 1.0,
+            "is_three_colorable": True,
+            "validation_ok": True,
+            "error": None,
+        },
+        {
+            "run_id": "duplicate-run",
+            "instance_id": "rc-n0002-seed1",
+            "family": "rc",
+            "bucket": "s",
+            "n": 2,
+            "m": 1,
+            "seed": 1,
+            "source": "generated",
+            "solver_target": "sosa",
+            "solver": "sosa",
+            "backend": None,
+            "solver_params": {"base_case_n": 8},
+            "status": "ok",
+            "wall_time_s": 2.0,
+            "is_three_colorable": True,
+            "validation_ok": True,
+            "error": None,
+        },
+        {
+            "run_id": "duplicate-run",
+            "instance_id": "rc-n0002-seed1",
+            "family": "rc",
+            "bucket": "s",
+            "n": 2,
+            "m": 1,
+            "seed": 1,
+            "source": "generated",
+            "solver_target": "sosa",
+            "solver": "sosa",
+            "backend": None,
+            "solver_params": {"base_case_n": 8},
+            "status": "ok",
+            "wall_time_s": 9.0,
+            "is_three_colorable": True,
+            "validation_ok": True,
+            "error": None,
+        },
+        {
+            "run_id": "duplicate-run",
+            "instance_id": "rc-n0002-seed1",
+            "family": "rc",
+            "bucket": "s",
+            "n": 2,
+            "m": 1,
+            "seed": 1,
+            "source": "generated",
+            "solver_target": "sosa",
+            "solver": "sosa",
+            "backend": None,
+            "solver_params": {"base_case_n": 64},
+            "status": "ok",
+            "wall_time_s": 0.8,
+            "is_three_colorable": True,
+            "validation_ok": True,
+            "error": None,
+        },
+    ]
+    (run_dir / RESULTS_FILENAME).write_text(
+        "\n".join(json.dumps(row) for row in rows) + "\n",
+        encoding="utf-8",
+    )
+    manifest = {
+        "run_id": "duplicate-run",
+        "created_at": "2026-04-20T12:00:00+00:00",
+        "solvers": [
+            {"target": "sat-baseline:pysat-cadical", "params": {}},
+            {"target": "sosa", "params": {"base_case_n": 8}},
+            {"target": "sosa", "params": {"base_case_n": 64}},
+        ],
+        "n_instances": 1,
+        "n_tasks": 3,
+        "environment": {"python_version": "test"},
+    }
+    (run_dir / MANIFEST_FILENAME).write_text(json.dumps(manifest), encoding="utf-8")
     return run_dir
 
 
