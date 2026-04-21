@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 
+from three_col_circle_code.sat.baseline import PYSAT_CADICAL
+from three_col_circle_code.sat.pysat_baseline import solve_reduced_list_coloring_cnf
 from three_col_circle_code.solvers.sosa.colors import ALL_COLOR_MASK, COLOR_MASK_ORDER
 from three_col_circle_code.solvers.sosa.geometry import SosaGeometry
 from three_col_circle_code.solvers.sosa.mask_ops import iter_mask_indices
@@ -68,6 +70,32 @@ def solve_base_case_backtracking(
     return BaseCaseResult(
         is_colorable=witness is not None,
         witness=witness,
+    )
+
+
+def solve_base_case_sat(
+    *,
+    geometry: SosaGeometry,
+    state: SosaSearchState,
+    stats: SosaStats,
+    depth: int,
+    num_colors: int = 3,
+    backend: str = PYSAT_CADICAL,
+) -> BaseCaseResult:
+    """Solve one small list-coloring state exactly with SAT."""
+    stats.base_case_calls += 1
+    stats.record_depth(depth)
+
+    is_colorable = solve_reduced_list_coloring_cnf(
+        active_vertices_mask=state.active_vertices_mask,
+        neighbor_indices=geometry.neighbor_indices,
+        allowed_color_masks=state.allowed_color_masks,
+        num_colors=num_colors,
+        backend=backend,
+    )
+    return BaseCaseResult(
+        is_colorable=is_colorable,
+        witness=None,
     )
 
 
