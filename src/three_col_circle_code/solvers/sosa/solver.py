@@ -18,11 +18,11 @@ from three_col_circle_code.solvers.common import (
     SolverResult,
 )
 from three_col_circle_code.solvers.sosa.arc_ops import restrict_state_to_arc
-from three_col_circle_code.solvers.sosa.colors import ALL_COLOR_MASK, COLOR_MASK_ORDER, mask_to_names
+from three_col_circle_code.solvers.sosa.base_case import solve_base_case_backtracking
+from three_col_circle_code.solvers.sosa.colors import mask_to_names
 from three_col_circle_code.solvers.sosa.config import SosaConfig
 from three_col_circle_code.solvers.sosa.geometry import SosaGeometry
 from three_col_circle_code.solvers.sosa.lemma_38 import iter_lemma_33_family
-from three_col_circle_code.solvers.sosa.mask_ops import iter_mask_indices
 from three_col_circle_code.solvers.sosa.types import (
     FullySeparatedInstance,
     SosaSearchState,
@@ -100,12 +100,13 @@ def _solve_state_recursively(
 
     # Theorem 3.1, Step 1.
     if state.n_active_vertices <= config.base_case_n:
-        return _solve_base_case(
+        base_case_result = solve_base_case_backtracking(
             geometry=geometry,
             state=state,
             stats=stats,
             depth=depth,
         )
+        return base_case_result.witness
 
     # Theorem 3.1, Step 2.
     for full_instance in iter_lemma_33_family(
@@ -140,59 +141,6 @@ def _solve_state_recursively(
     return None
 
 
-def _solve_base_case(
-    *,
-    geometry: SosaGeometry,
-    state: SosaSearchState,
-    stats: SosaStats,
-    depth: int,
-) -> VertexColoring | None:
-    """Solve one small list-coloring state exactly with backtracking."""
-    stats.base_case_calls += 1
-    stats.record_depth(depth)
-
-    active_indices = tuple(iter_mask_indices(state.active_vertices_mask))
-    if any(state.allowed_color_masks[index] == 0 for index in active_indices):
-        return None
-
-    order = sorted(
-        active_indices,
-        key=lambda index: _active_degree(
-            geometry=geometry,
-            state=state,
-            vertex_index=index,
-        ),
-        reverse=True,
-    )
-    colors: VertexColoring = {}
-
-    def backtrack(position: int) -> VertexColoring | None:
-        stats.base_case_search_nodes += 1
-        stats.record_depth(depth + position)
-        if position == len(order):
-            return dict(colors)
-
-        vertex_index = order[position]
-        allowed_mask = state.allowed_color_masks[vertex_index]
-        used_mask = 0
-        for neighbor_index in geometry.neighbor_indices[vertex_index]:
-            neighbor_color = colors.get(neighbor_index)
-            if neighbor_color is not None:
-                used_mask |= neighbor_color
-        available_mask = allowed_mask & (ALL_COLOR_MASK ^ used_mask)
-        for color_mask in COLOR_MASK_ORDER:
-            if not (available_mask & color_mask):
-                continue
-            colors[vertex_index] = color_mask
-            witness = backtrack(position + 1)
-            if witness is not None:
-                return witness
-            del colors[vertex_index]
-        return None
-
-    return backtrack(0)
-
-
 def _ordered_child_subinstances(
     *,
     geometry: SosaGeometry,
@@ -215,16 +163,6 @@ def _ordered_child_subinstances(
     right_child = (right_state.n_active_vertices, 1, right_state)
     ordered_children = sorted((left_child, right_child), key=lambda item: (item[0], item[1]))
     return ordered_children[0][2], ordered_children[1][2]
-
-
-def _active_degree(
-    *,
-    geometry: SosaGeometry,
-    state: SosaSearchState,
-    vertex_index: int,
-) -> int:
-    """Count active neighbors of one vertex in the current search state."""
-    return (geometry.adjacency_masks[vertex_index] & state.active_vertices_mask).bit_count()
 
 
 def _merge_vertex_colorings(*colorings: Mapping[int, int]) -> VertexColoring:
