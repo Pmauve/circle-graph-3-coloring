@@ -90,6 +90,25 @@ Because the run directory is derived from the spec filename stem, running that f
 benchmark_run --spec eval/sample_specs/sosa-smoke.json
 ```
 
+SOSA benchmark params currently support:
+
+- `base_case_n`: switch to the exact base-case solver once the active subinstance has at most this many vertices
+- `base_case_algorithm`: choose the exact base-case solver, either `backtracking` or `sat`
+
+Example:
+
+```json
+{
+  "target": "sosa",
+  "params": {
+    "base_case_n": 8,
+    "base_case_algorithm": "sat"
+  }
+}
+```
+
+In the current SAT-backed SOSA mode, successful runs report the yes/no result but may omit `coloring_by_node`.
+
 Each run directory stores:
 
 - `spec.json`

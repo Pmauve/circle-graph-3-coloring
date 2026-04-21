@@ -150,6 +150,41 @@ class SosaSolverTests(unittest.TestCase):
         self.assertGreater(result.details["lemma_36_calls"], 0)
         self.assertNotIn("coloring_by_node", result.details)
 
+    @unittest.skipUnless(HAS_PYSAT, "python-sat is required for the SOSA SAT-mode tests")
+    def test_sosa_sat_mode_detects_large_non_three_colorable_instance_recursively_without_witness(self) -> None:
+        graph = graph_from_endpoints(
+            (
+                (0, 4),
+                (1, 5),
+                (2, 6),
+                (3, 7),
+                (8, 9),
+                (10, 11),
+                (12, 13),
+                (14, 15),
+                (16, 17),
+            )
+        )
+
+        result = solve_sosa(
+            graph,
+            params={"base_case_n": 4, "base_case_algorithm": "sat"},
+        )
+
+        self.assertEqual(result.solver, SOSA_SOLVER)
+        self.assertEqual(result.status, SOLVER_STATUS_OK)
+        self.assertFalse(result.is_three_colorable)
+        self.assertEqual(
+            result.details["config"],
+            {
+                "base_case_n": 4,
+                "base_case_algorithm": "sat",
+            },
+        )
+        self.assertGreater(result.details["solver_calls"], 1)
+        self.assertGreater(result.details["base_case_calls"], 1)
+        self.assertNotIn("coloring_by_node", result.details)
+
     def test_sosa_detects_large_non_three_colorable_instance_recursively(self) -> None:
         graph = graph_from_endpoints(
             (
@@ -180,6 +215,31 @@ class SosaSolverTests(unittest.TestCase):
         self.assertGreater(result.details["solver_calls"], 1)
         self.assertGreater(result.details["base_case_calls"], 1)
         self.assertNotIn("coloring_by_node", result.details)
+
+    @unittest.skipUnless(HAS_PYSAT, "python-sat is required for the SOSA SAT-mode tests")
+    def test_sosa_backtracking_and_sat_agree_on_yes_no_answer(self) -> None:
+        graphs = (
+            graph_from_endpoints(((0, 3), (1, 4), (2, 5))),
+            graph_from_endpoints(((0, 4), (1, 5), (2, 6), (3, 7))),
+        )
+
+        for graph in graphs:
+            with self.subTest(n_vertices=graph.number_of_nodes(), edges=tuple(sorted(graph.edges()))):
+                backtracking_result = solve_sosa(
+                    graph,
+                    params={"base_case_n": 8, "base_case_algorithm": "backtracking"},
+                )
+                sat_result = solve_sosa(
+                    graph,
+                    params={"base_case_n": 8, "base_case_algorithm": "sat"},
+                )
+
+                self.assertEqual(backtracking_result.status, SOLVER_STATUS_OK)
+                self.assertEqual(sat_result.status, SOLVER_STATUS_OK)
+                self.assertEqual(
+                    backtracking_result.is_three_colorable,
+                    sat_result.is_three_colorable,
+                )
 
 if __name__ == "__main__":
     unittest.main()

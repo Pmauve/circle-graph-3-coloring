@@ -19,7 +19,15 @@
     {
       "target": "sosa",
       "params": {
-        "base_case_n": 8
+        "base_case_n": 8,
+        "base_case_algorithm": "backtracking"
+      }
+    },
+    {
+      "target": "sosa",
+      "params": {
+        "base_case_n": 8,
+        "base_case_algorithm": "sat"
       }
     }
   ]
