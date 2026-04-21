@@ -1,5 +1,6 @@
 import sys
 import unittest
+from importlib.util import find_spec
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -14,6 +15,8 @@ from three_col_circle_code.solvers.sosa.colors import (
     mask_to_names,
 )
 from sosa_test_utils import graph_from_endpoints, is_valid_coloring_by_node
+
+HAS_PYSAT = find_spec("pysat") is not None
 
 
 class SosaSolverTests(unittest.TestCase):
@@ -55,6 +58,42 @@ class SosaSolverTests(unittest.TestCase):
         self.assertEqual(result.details["base_case_calls"], 1)
         self.assertNotIn("coloring_by_node", result.details)
 
+    @unittest.skipUnless(HAS_PYSAT, "python-sat is required for the SOSA SAT-mode tests")
+    def test_sosa_sat_mode_solves_small_three_colorable_graph_without_witness(self) -> None:
+        graph = graph_from_endpoints(((0, 3), (1, 4), (2, 5)))
+
+        result = solve_sosa(
+            graph,
+            params={"base_case_n": 8, "base_case_algorithm": "sat"},
+        )
+
+        self.assertEqual(result.solver, SOSA_SOLVER)
+        self.assertEqual(result.status, SOLVER_STATUS_OK)
+        self.assertTrue(result.is_three_colorable)
+        self.assertEqual(
+            result.details["config"],
+            {
+                "base_case_n": 8,
+                "base_case_algorithm": "sat",
+            },
+        )
+        self.assertEqual(result.details["base_case_calls"], 1)
+        self.assertNotIn("coloring_by_node", result.details)
+
+    @unittest.skipUnless(HAS_PYSAT, "python-sat is required for the SOSA SAT-mode tests")
+    def test_sosa_sat_mode_detects_small_non_three_colorable_graph_without_witness(self) -> None:
+        graph = graph_from_endpoints(((0, 4), (1, 5), (2, 6), (3, 7)))
+
+        result = solve_sosa(
+            graph,
+            params={"base_case_n": 8, "base_case_algorithm": "sat"},
+        )
+
+        self.assertEqual(result.status, SOLVER_STATUS_OK)
+        self.assertFalse(result.is_three_colorable)
+        self.assertEqual(result.details["base_case_calls"], 1)
+        self.assertNotIn("coloring_by_node", result.details)
+
     def test_sosa_rejects_invalid_parameters(self) -> None:
         graph = graph_from_endpoints(((0, 1),))
 
@@ -86,6 +125,30 @@ class SosaSolverTests(unittest.TestCase):
         self.assertGreater(result.details["base_case_calls"], 1)
         self.assertGreater(result.details["lemma_36_calls"], 0)
         self.assertTrue(is_valid_coloring_by_node(graph, result.details["coloring_by_node"]))
+
+    @unittest.skipUnless(HAS_PYSAT, "python-sat is required for the SOSA SAT-mode tests")
+    def test_sosa_sat_mode_solves_large_three_colorable_instance_recursively_without_witness(self) -> None:
+        graph = graph_from_endpoints(tuple((2 * i, 2 * i + 1) for i in range(9)))
+
+        result = solve_sosa(
+            graph,
+            params={"base_case_n": 4, "base_case_algorithm": "sat"},
+        )
+
+        self.assertEqual(result.solver, SOSA_SOLVER)
+        self.assertEqual(result.status, SOLVER_STATUS_OK)
+        self.assertTrue(result.is_three_colorable)
+        self.assertEqual(
+            result.details["config"],
+            {
+                "base_case_n": 4,
+                "base_case_algorithm": "sat",
+            },
+        )
+        self.assertGreater(result.details["solver_calls"], 1)
+        self.assertGreater(result.details["base_case_calls"], 1)
+        self.assertGreater(result.details["lemma_36_calls"], 0)
+        self.assertNotIn("coloring_by_node", result.details)
 
     def test_sosa_detects_large_non_three_colorable_instance_recursively(self) -> None:
         graph = graph_from_endpoints(
