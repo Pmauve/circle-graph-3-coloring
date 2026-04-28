@@ -218,6 +218,7 @@ def _solve_base_case(
         state=state,
         stats=stats,
         depth=depth,
+        num_colors=config.num_colors,
         produce_witness=config.produce_witness,
     )
 

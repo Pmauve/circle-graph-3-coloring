@@ -73,6 +73,43 @@ class SosaSatBaseCaseTests(unittest.TestCase):
         self.assertFalse(result.is_colorable)
         self.assertIsNone(result.witness)
 
+    def test_sat_base_case_allows_extra_k_colors(self) -> None:
+        graph = graph_from_endpoints(((0, 4), (1, 5), (2, 6), (3, 7)))
+        geometry = SosaGeometry.from_graph(graph)
+        state = SosaSearchState.initial(n_vertices=geometry.n_vertices)
+        stats = SosaStats()
+
+        result = solve_base_case_sat(
+            geometry=geometry,
+            state=state,
+            stats=stats,
+            depth=0,
+            num_colors=4,
+        )
+
+        self.assertTrue(result.is_colorable)
+        self.assertIsNone(result.witness)
+
+    def test_sat_base_case_honors_empty_rgb_list_with_extra_k_colors(self) -> None:
+        graph = graph_from_endpoints(((0, 1),))
+        geometry = SosaGeometry.from_graph(graph)
+        state = SosaSearchState(
+            active_vertices_mask=(1 << geometry.n_vertices) - 1,
+            allowed_color_masks=(0,) + tuple(ALL_COLOR_MASK for _ in range(geometry.n_vertices - 1)),
+        )
+        stats = SosaStats()
+
+        result = solve_base_case_sat(
+            geometry=geometry,
+            state=state,
+            stats=stats,
+            depth=0,
+            num_colors=4,
+        )
+
+        self.assertTrue(result.is_colorable)
+        self.assertIsNone(result.witness)
+
 
 if __name__ == "__main__":
     unittest.main()

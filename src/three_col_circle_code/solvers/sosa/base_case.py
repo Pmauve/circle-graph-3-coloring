@@ -22,6 +22,7 @@ def solve_base_case_backtracking(
     state: SosaSearchState,
     stats: SosaStats,
     depth: int,
+    num_colors: int = 3,
     produce_witness: bool = True,
 ) -> BaseCaseResult:
     """Solve one small list-coloring state exactly with backtracking."""
@@ -29,9 +30,15 @@ def solve_base_case_backtracking(
     stats.record_depth(depth)
 
     active_indices = tuple(iter_mask_indices(state.active_vertices_mask))
-    if any(state.allowed_color_masks[index] == 0 for index in active_indices):
+    allowed_color_masks = _base_case_allowed_color_masks(
+        allowed_color_masks=state.allowed_color_masks,
+        num_colors=num_colors,
+    )
+    if any(allowed_color_masks[index] == 0 for index in active_indices):
         return BaseCaseResult(is_colorable=False, witness=None)
 
+    color_mask_limit = (1 << num_colors) - 1
+    color_mask_order = _color_mask_order(num_colors)
     order = sorted(
         active_indices,
         key=lambda index: _active_degree(
@@ -52,14 +59,14 @@ def solve_base_case_backtracking(
             return True
 
         vertex_index = order[position]
-        allowed_mask = state.allowed_color_masks[vertex_index]
+        allowed_mask = allowed_color_masks[vertex_index]
         used_mask = 0
         for neighbor_index in geometry.neighbor_indices[vertex_index]:
             neighbor_color = colors.get(neighbor_index)
             if neighbor_color is not None:
                 used_mask |= neighbor_color
-        available_mask = allowed_mask & (ALL_COLOR_MASK ^ used_mask)
-        for color_mask in COLOR_MASK_ORDER:
+        available_mask = allowed_mask & (color_mask_limit ^ used_mask)
+        for color_mask in color_mask_order:
             if not (available_mask & color_mask):
                 continue
             colors[vertex_index] = color_mask
@@ -92,7 +99,10 @@ def solve_base_case_sat(
     is_colorable = solve_reduced_list_coloring_cnf(
         active_vertices_mask=state.active_vertices_mask,
         neighbor_indices=geometry.neighbor_indices,
-        allowed_color_masks=state.allowed_color_masks,
+        allowed_color_masks=_base_case_allowed_color_masks(
+            allowed_color_masks=state.allowed_color_masks,
+            num_colors=num_colors,
+        ),
         num_colors=num_colors,
         backend=backend,
     )
@@ -110,3 +120,21 @@ def _active_degree(
 ) -> int:
     """Count active neighbors of one vertex in the current search state."""
     return (geometry.adjacency_masks[vertex_index] & state.active_vertices_mask).bit_count()
+
+
+def _base_case_allowed_color_masks(
+    *,
+    allowed_color_masks: tuple[int, ...],
+    num_colors: int,
+) -> tuple[int, ...]:
+    """Extend SOSA RGB lists with extra k-color choices for base-case checks."""
+    if num_colors <= 3:
+        return allowed_color_masks
+    extra_color_mask = ((1 << num_colors) - 1) & ~ALL_COLOR_MASK
+    return tuple(allowed_mask | extra_color_mask for allowed_mask in allowed_color_masks)
+
+
+def _color_mask_order(num_colors: int) -> tuple[int, ...]:
+    if num_colors == 3:
+        return COLOR_MASK_ORDER
+    return tuple(1 << color_index for color_index in range(num_colors))
