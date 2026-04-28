@@ -35,8 +35,8 @@ class BenchReportDataTests(unittest.TestCase):
             data.metadata.solver_targets,
             (
                 "sat-baseline:pysat-cadical",
-                "sosa [base_case_n=64]",
-                "sosa [base_case_n=8]",
+                "sosa-3-col-exact [base_case_n=64]",
+                "sosa-3-col-exact [base_case_n=8]",
             ),
         )
         self.assertEqual(data.headline_metrics.n_unanimous_agreements, 1)
@@ -56,7 +56,7 @@ class BenchReportDataTests(unittest.TestCase):
         self.assertEqual(data.headline_metrics.n_ok, 5)
         self.assertEqual(data.headline_metrics.n_error, 1)
         self.assertEqual(data.headline_metrics.n_invalid, 0)
-        self.assertEqual(data.headline_metrics.best_median_runtime_solver_target, "sosa [base_case_n=64]")
+        self.assertEqual(data.headline_metrics.best_median_runtime_solver_target, "sosa-3-col-exact [base_case_n=64]")
         self.assertEqual(len(data.disagreement_rows), 1)
         disagreement = data.disagreement_rows[0]
         self.assertEqual(disagreement.instance_id, "rcy_fast-n0003-seed2")
@@ -89,7 +89,7 @@ class BenchReportDataTests(unittest.TestCase):
         rc_sosa_small = next(
             row
             for row in by_bucket_rows
-            if row["family"] == "rc" and row["solver_target"] == "sosa [base_case_n=8]"
+            if row["family"] == "rc" and row["solver_target"] == "sosa-3-col-exact [base_case_n=8]"
         )
         self.assertEqual(rc_sosa_small["n_error"], "1")
         self.assertEqual(rc_sosa_small["mean_wall_time_s"], "")
@@ -97,7 +97,7 @@ class BenchReportDataTests(unittest.TestCase):
         rc_sosa_large = next(
             row
             for row in by_bucket_rows
-            if row["family"] == "rc" and row["solver_target"] == "sosa [base_case_n=64]"
+            if row["family"] == "rc" and row["solver_target"] == "sosa-3-col-exact [base_case_n=64]"
         )
         self.assertEqual(rc_sosa_large["n_ok"], "1")
         self.assertEqual(rc_sosa_large["median_wall_time_s"], "2.0")
@@ -105,14 +105,14 @@ class BenchReportDataTests(unittest.TestCase):
         invalid_overall = next(
             row
             for row in overall_rows
-            if row["family"] == "" and row["solver_target"] == "sosa [base_case_n=8]"
+            if row["family"] == "" and row["solver_target"] == "sosa-3-col-exact [base_case_n=8]"
         )
         self.assertEqual(invalid_overall["n_invalid"], "1")
 
     def test_solver_variant_label_sorts_params_stably(self) -> None:
         self.assertEqual(
-            solver_variant_label("sosa", {"beta": 2, "alpha": 1}),
-            "sosa [alpha=1, beta=2]",
+            solver_variant_label("sosa-3-col-exact", {"beta": 2, "alpha": 1}),
+            "sosa-3-col-exact [alpha=1, beta=2]",
         )
 
     def test_load_benchmark_report_data_dedupes_duplicate_task_rows(self) -> None:
@@ -127,7 +127,7 @@ class BenchReportDataTests(unittest.TestCase):
         self.assertEqual(data.headline_metrics.n_disagreements, 0)
         self.assertEqual(len(data.solver_summary_rows), 3)
         sosa_small = next(
-            row for row in data.solver_summary_rows if row.solver_target == "sosa [base_case_n=8]"
+            row for row in data.solver_summary_rows if row.solver_target == "sosa-3-col-exact [base_case_n=8]"
         )
         self.assertEqual(sosa_small.n_rows, 1)
         self.assertEqual(sosa_small.median_wall_time_s, 9.0)
@@ -166,26 +166,26 @@ class BenchReportHtmlTests(unittest.TestCase):
         self.assertIn("Solver Summary", html)
         self.assertIn("Disagreements", html)
         self.assertIn("Plotly.newPlot", html)
-        self.assertIn(solver_target_color("sosa [base_case_n=8]"), html)
-        self.assertIn(solver_target_color("sosa [base_case_n=64]"), html)
+        self.assertIn(solver_target_color("sosa-3-col-exact [base_case_n=8]"), html)
+        self.assertIn(solver_target_color("sosa-3-col-exact [base_case_n=64]"), html)
         self.assertIn("rcy_fast", html)
         self.assertIn("All families", html)
         self.assertIn("Y scale", html)
         self.assertNotIn("X scale", html)
-        self.assertIn("sosa [base_case_n=8]", html)
-        self.assertIn("sosa [base_case_n=64]", html)
+        self.assertIn("sosa-3-col-exact [base_case_n=8]", html)
+        self.assertIn("sosa-3-col-exact [base_case_n=64]", html)
         self.assertIn("solver_params", html)
         self.assertIn("scrollZoom", html)
         self.assertIn("displayModeBar", html)
 
     def test_solver_target_color_is_deterministic(self) -> None:
         self.assertEqual(
-            solver_target_color("sosa [base_case_n=8]"),
-            solver_target_color("sosa [base_case_n=8]"),
+            solver_target_color("sosa-3-col-exact [base_case_n=8]"),
+            solver_target_color("sosa-3-col-exact [base_case_n=8]"),
         )
         self.assertNotEqual(
-            solver_target_color("sosa [base_case_n=8]"),
-            solver_target_color("sosa [base_case_n=64]"),
+            solver_target_color("sosa-3-col-exact [base_case_n=8]"),
+            solver_target_color("sosa-3-col-exact [base_case_n=64]"),
         )
 
 
@@ -249,8 +249,8 @@ def _write_sample_run(run_dir: Path, *, with_manifest: bool) -> Path:
             "m": 1,
             "seed": 1,
             "source": "generated",
-            "solver_target": "sosa",
-            "solver": "sosa",
+            "solver_target": "sosa-3-col-exact",
+            "solver": "sosa-3-col-exact",
             "backend": None,
             "solver_params": {"base_case_n": 8},
             "status": "ok",
@@ -271,8 +271,8 @@ def _write_sample_run(run_dir: Path, *, with_manifest: bool) -> Path:
             "m": 1,
             "seed": 1,
             "source": "generated",
-            "solver_target": "sosa",
-            "solver": "sosa",
+            "solver_target": "sosa-3-col-exact",
+            "solver": "sosa-3-col-exact",
             "backend": None,
             "solver_params": {"base_case_n": 64},
             "status": "ok",
@@ -315,8 +315,8 @@ def _write_sample_run(run_dir: Path, *, with_manifest: bool) -> Path:
             "m": 2,
             "seed": 2,
             "source": "generated",
-            "solver_target": "sosa",
-            "solver": "sosa",
+            "solver_target": "sosa-3-col-exact",
+            "solver": "sosa-3-col-exact",
             "backend": None,
             "solver_params": {"base_case_n": 8},
             "status": "error",
@@ -337,8 +337,8 @@ def _write_sample_run(run_dir: Path, *, with_manifest: bool) -> Path:
             "m": 2,
             "seed": 2,
             "source": "generated",
-            "solver_target": "sosa",
-            "solver": "sosa",
+            "solver_target": "sosa-3-col-exact",
+            "solver": "sosa-3-col-exact",
             "backend": None,
             "solver_params": {"base_case_n": 64},
             "status": "ok",
@@ -360,8 +360,8 @@ def _write_sample_run(run_dir: Path, *, with_manifest: bool) -> Path:
             "created_at": "2026-04-17T12:00:00+00:00",
             "solvers": [
                 {"target": "sat-baseline:pysat-cadical", "params": {}},
-                {"target": "sosa", "params": {"base_case_n": 8}},
-                {"target": "sosa", "params": {"base_case_n": 64}},
+                {"target": "sosa-3-col-exact", "params": {"base_case_n": 8}},
+                {"target": "sosa-3-col-exact", "params": {"base_case_n": 64}},
             ],
             "n_instances": 2,
             "n_tasks": 6,
@@ -399,7 +399,7 @@ def _write_summary_run(run_dir: Path) -> Path:
             "family": "rc",
             "bucket": "s",
             "n": 2,
-            "solver_target": "sosa",
+            "solver_target": "sosa-3-col-exact",
             "solver_params": {"base_case_n": 8},
             "status": "error",
             "wall_time_s": None,
@@ -409,7 +409,7 @@ def _write_summary_run(run_dir: Path) -> Path:
             "family": "rc",
             "bucket": "s",
             "n": 2,
-            "solver_target": "sosa",
+            "solver_target": "sosa-3-col-exact",
             "solver_params": {"base_case_n": 64},
             "status": "ok",
             "wall_time_s": 2.0,
@@ -419,7 +419,7 @@ def _write_summary_run(run_dir: Path) -> Path:
             "family": None,
             "bucket": None,
             "n": None,
-            "solver_target": "sosa",
+            "solver_target": "sosa-3-col-exact",
             "solver_params": {"base_case_n": 8},
             "status": "invalid",
             "wall_time_s": None,
@@ -463,8 +463,8 @@ def _write_duplicate_row_run(run_dir: Path) -> Path:
             "m": 1,
             "seed": 1,
             "source": "generated",
-            "solver_target": "sosa",
-            "solver": "sosa",
+            "solver_target": "sosa-3-col-exact",
+            "solver": "sosa-3-col-exact",
             "backend": None,
             "solver_params": {"base_case_n": 8},
             "status": "ok",
@@ -482,8 +482,8 @@ def _write_duplicate_row_run(run_dir: Path) -> Path:
             "m": 1,
             "seed": 1,
             "source": "generated",
-            "solver_target": "sosa",
-            "solver": "sosa",
+            "solver_target": "sosa-3-col-exact",
+            "solver": "sosa-3-col-exact",
             "backend": None,
             "solver_params": {"base_case_n": 8},
             "status": "ok",
@@ -501,8 +501,8 @@ def _write_duplicate_row_run(run_dir: Path) -> Path:
             "m": 1,
             "seed": 1,
             "source": "generated",
-            "solver_target": "sosa",
-            "solver": "sosa",
+            "solver_target": "sosa-3-col-exact",
+            "solver": "sosa-3-col-exact",
             "backend": None,
             "solver_params": {"base_case_n": 64},
             "status": "ok",
@@ -521,8 +521,8 @@ def _write_duplicate_row_run(run_dir: Path) -> Path:
         "created_at": "2026-04-20T12:00:00+00:00",
         "solvers": [
             {"target": "sat-baseline:pysat-cadical", "params": {}},
-            {"target": "sosa", "params": {"base_case_n": 8}},
-            {"target": "sosa", "params": {"base_case_n": 64}},
+            {"target": "sosa-3-col-exact", "params": {"base_case_n": 8}},
+            {"target": "sosa-3-col-exact", "params": {"base_case_n": 64}},
         ],
         "n_instances": 1,
         "n_tasks": 3,
@@ -563,8 +563,8 @@ def _write_untimed_solver_run(run_dir: Path) -> Path:
             "m": 1,
             "seed": 1,
             "source": "generated",
-            "solver_target": "sosa",
-            "solver": "sosa",
+            "solver_target": "sosa-3-col-exact",
+            "solver": "sosa-3-col-exact",
             "backend": None,
             "solver_params": {"base_case_n": 8},
             "status": "error",
@@ -582,8 +582,8 @@ def _write_untimed_solver_run(run_dir: Path) -> Path:
             "m": 1,
             "seed": 1,
             "source": "generated",
-            "solver_target": "sosa",
-            "solver": "sosa",
+            "solver_target": "sosa-3-col-exact",
+            "solver": "sosa-3-col-exact",
             "backend": None,
             "solver_params": {"base_case_n": 64},
             "status": "ok",
@@ -602,8 +602,8 @@ def _write_untimed_solver_run(run_dir: Path) -> Path:
         "created_at": "2026-04-17T12:00:00+00:00",
         "solvers": [
             {"target": "sat-baseline:pysat-cadical", "params": {}},
-            {"target": "sosa", "params": {"base_case_n": 8}},
-            {"target": "sosa", "params": {"base_case_n": 64}},
+            {"target": "sosa-3-col-exact", "params": {"base_case_n": 8}},
+            {"target": "sosa-3-col-exact", "params": {"base_case_n": 64}},
         ],
         "n_instances": 1,
         "n_tasks": 3,

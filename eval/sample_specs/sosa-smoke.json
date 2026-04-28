@@ -17,17 +17,21 @@
   ],
   "solvers": [
     {
-      "target": "sosa",
+      "target": "sosa-3-col-exact",
       "params": {
         "base_case_n": 8,
-        "base_case_algorithm": "backtracking"
+        "base_case_algorithm": "backtracking",
+        "num_colors": 3,
+        "produce_witness": true
       }
     },
     {
-      "target": "sosa",
+      "target": "sosa-3-col-exact",
       "params": {
         "base_case_n": 8,
-        "base_case_algorithm": "sat"
+        "base_case_algorithm": "sat",
+        "num_colors": 3,
+        "produce_witness": false
       }
     }
   ]
