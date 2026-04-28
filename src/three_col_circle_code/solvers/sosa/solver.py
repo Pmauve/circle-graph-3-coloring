@@ -66,23 +66,11 @@ def solve_sosa_k_col_heuristic(
     params: Optional[Mapping[str, Any]] = None,
 ) -> SolverResult:
     """Run experimental SOSA branching with a k-color base-case check."""
-    try:
-        config = SosaConfig.from_mapping(params)
-        _validate_sosa_k_col_heuristic_config(config)
-    except Exception as exc:
-        return _error_result(
-            graph=graph,
-            solver=SOSA_K_COL_HEURISTIC_SOLVER,
-            config_dict=None,
-            stats=SosaStats(),
-            error=f"invalid SOSA parameters: {exc}",
-        )
-    return _error_result(
-        graph=graph,
+    return _solve_sosa(
+        graph,
         solver=SOSA_K_COL_HEURISTIC_SOLVER,
-        config_dict=config.to_dict(),
-        stats=SosaStats(),
-        error="SOSA k-color heuristic base-case support is not implemented yet",
+        params=params,
+        validate_config=_validate_sosa_k_col_heuristic_config,
     )
 
 

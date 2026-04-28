@@ -183,8 +183,8 @@ class SosaSolverTests(unittest.TestCase):
         self.assertIsNone(result.is_colorable)
         self.assertIn("does not support witness output", result.error)
 
-    def test_k_color_heuristic_reports_not_implemented_for_valid_config(self) -> None:
-        graph = graph_from_endpoints(((0, 1),))
+    def test_k_color_heuristic_solves_valid_config_without_witness(self) -> None:
+        graph = graph_from_endpoints(((0, 4), (1, 5), (2, 6), (3, 7)))
 
         result = solve_sosa_k_col_heuristic(
             graph,
@@ -192,8 +192,8 @@ class SosaSolverTests(unittest.TestCase):
         )
 
         self.assertEqual(result.solver, SOSA_K_COL_HEURISTIC_SOLVER)
-        self.assertEqual(result.status, SOLVER_STATUS_ERROR)
-        self.assertIsNone(result.is_colorable)
+        self.assertEqual(result.status, SOLVER_STATUS_OK)
+        self.assertTrue(result.is_colorable)
         self.assertEqual(
             result.details["config"],
             {
@@ -203,7 +203,22 @@ class SosaSolverTests(unittest.TestCase):
                 "produce_witness": False,
             },
         )
-        self.assertIn("not implemented yet", result.error)
+        self.assertEqual(result.details["base_case_calls"], 1)
+        self.assertNotIn("coloring_by_node", result.details)
+
+    def test_k_color_heuristic_detects_base_case_too_large_for_k(self) -> None:
+        graph = graph_from_endpoints(tuple((i, i + 5) for i in range(5)))
+
+        result = solve_sosa_k_col_heuristic(
+            graph,
+            params={"num_colors": 4, "produce_witness": False},
+        )
+
+        self.assertEqual(result.solver, SOSA_K_COL_HEURISTIC_SOLVER)
+        self.assertEqual(result.status, SOLVER_STATUS_OK)
+        self.assertFalse(result.is_colorable)
+        self.assertEqual(result.details["base_case_calls"], 1)
+        self.assertNotIn("coloring_by_node", result.details)
 
     def test_sosa_solves_large_three_colorable_instance_recursively(self) -> None:
         graph = graph_from_endpoints(tuple((2 * i, 2 * i + 1) for i in range(9)))
