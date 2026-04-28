@@ -90,24 +90,47 @@ Because the run directory is derived from the spec filename stem, running that f
 benchmark_run --spec eval/sample_specs/sosa-smoke.json
 ```
 
-SOSA benchmark params currently support:
+SOSA benchmark targets:
 
-- `base_case_n`: switch to the exact base-case solver once the active subinstance has at most this many vertices
-- `base_case_algorithm`: choose the exact base-case solver, either `backtracking` or `sat`
+- `sosa-3-col-exact`: theorem-backed exact 3-color SOSA
+- `sosa-k-col-heuristic`: experimental SOSA branching with k-color base-case checks
 
-Example:
+SOSA params:
+
+- `base_case_n`: switch to the base-case solver at this active subinstance size
+- `base_case_algorithm`: `backtracking` or `sat`
+- `num_colors`: `3` for exact SOSA, at least `4` for the heuristic target
+- `produce_witness`: whether to output `coloring_by_node` where supported
+
+Exact example:
 
 ```json
 {
-  "target": "sosa",
+  "target": "sosa-3-col-exact",
   "params": {
     "base_case_n": 8,
-    "base_case_algorithm": "sat"
+    "base_case_algorithm": "backtracking",
+    "num_colors": 3,
+    "produce_witness": true
   }
 }
 ```
 
-In the current SAT-backed SOSA mode, successful runs report the yes/no result but may omit `coloring_by_node`.
+Heuristic example:
+
+```json
+{
+  "target": "sosa-k-col-heuristic",
+  "params": {
+    "base_case_n": 8,
+    "base_case_algorithm": "backtracking",
+    "num_colors": 4,
+    "produce_witness": false
+  }
+}
+```
+
+Unsupported combinations are rejected. The exact target requires `num_colors=3`; SAT-backed SOSA and the k-color heuristic are decision-only for now, so they require `produce_witness=false`.
 
 Each run directory stores:
 
