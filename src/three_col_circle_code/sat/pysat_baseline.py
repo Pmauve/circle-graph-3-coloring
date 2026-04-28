@@ -152,6 +152,9 @@ def solve_pysat_kissat404(graph):
 
 
 def _solve_pysat_cnf(*, clauses: list[list[int]], backend: str) -> bool:
+    if any(not clause for clause in clauses):
+        return False
+
     if backend == PYSAT_CADICAL:
         try:
             from pysat.solvers import NoSuchSolverError, Solver
