@@ -40,6 +40,8 @@ class SosaSolverTests(unittest.TestCase):
             {
                 "base_case_n": 8,
                 "base_case_algorithm": "backtracking",
+                "num_colors": 3,
+                "produce_witness": True,
             },
         )
         self.assertGreater(result.details["solver_calls"], 0)
@@ -75,6 +77,8 @@ class SosaSolverTests(unittest.TestCase):
             {
                 "base_case_n": 8,
                 "base_case_algorithm": "sat",
+                "num_colors": 3,
+                "produce_witness": True,
             },
         )
         self.assertEqual(result.details["base_case_calls"], 1)
@@ -119,6 +123,8 @@ class SosaSolverTests(unittest.TestCase):
             {
                 "base_case_n": 4,
                 "base_case_algorithm": "backtracking",
+                "num_colors": 3,
+                "produce_witness": True,
             },
         )
         self.assertGreater(result.details["solver_calls"], 1)
@@ -143,6 +149,8 @@ class SosaSolverTests(unittest.TestCase):
             {
                 "base_case_n": 4,
                 "base_case_algorithm": "sat",
+                "num_colors": 3,
+                "produce_witness": True,
             },
         )
         self.assertGreater(result.details["solver_calls"], 1)
@@ -179,6 +187,8 @@ class SosaSolverTests(unittest.TestCase):
             {
                 "base_case_n": 4,
                 "base_case_algorithm": "sat",
+                "num_colors": 3,
+                "produce_witness": True,
             },
         )
         self.assertGreater(result.details["solver_calls"], 1)
@@ -210,6 +220,8 @@ class SosaSolverTests(unittest.TestCase):
             {
                 "base_case_n": 4,
                 "base_case_algorithm": "backtracking",
+                "num_colors": 3,
+                "produce_witness": True,
             },
         )
         self.assertGreater(result.details["solver_calls"], 1)

@@ -4,6 +4,12 @@ from typing import Any, Optional
 
 
 SUPPORTED_BASE_CASE_ALGORITHMS = ("backtracking", "sat")
+SUPPORTED_CONFIG_KEYS = (
+    "base_case_n",
+    "base_case_algorithm",
+    "num_colors",
+    "produce_witness",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -12,6 +18,8 @@ class SosaConfig:
 
     base_case_n: int = 8
     base_case_algorithm: str = "backtracking"
+    num_colors: int = 3
+    produce_witness: bool = True
 
     @classmethod
     def from_mapping(cls, params: Optional[Mapping[str, Any]] = None) -> "SosaConfig":
@@ -19,10 +27,13 @@ class SosaConfig:
         defaults = cls()
         if not params:
             return defaults
+        unsupported_keys = sorted(set(params) - set(SUPPORTED_CONFIG_KEYS))
+        if unsupported_keys:
+            raise ValueError(
+                "unsupported SOSA parameter(s): " + ", ".join(unsupported_keys)
+            )
 
-        base_case_n = int(
-            params.get("base_case_n", params.get("brute_force_cutoff", defaults.base_case_n))
-        )
+        base_case_n = int(params.get("base_case_n", defaults.base_case_n))
         if base_case_n < 0:
             raise ValueError("SOSA parameter 'base_case_n' must be non-negative")
 
@@ -35,9 +46,19 @@ class SosaConfig:
                 f"{SUPPORTED_BASE_CASE_ALGORITHMS}"
             )
 
+        num_colors = int(params.get("num_colors", defaults.num_colors))
+        if num_colors < 1:
+            raise ValueError("SOSA parameter 'num_colors' must be positive")
+
+        produce_witness = params.get("produce_witness", defaults.produce_witness)
+        if not isinstance(produce_witness, bool):
+            raise ValueError("SOSA parameter 'produce_witness' must be a boolean")
+
         return cls(
             base_case_n=base_case_n,
             base_case_algorithm=base_case_algorithm,
+            num_colors=num_colors,
+            produce_witness=produce_witness,
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -45,4 +66,6 @@ class SosaConfig:
         return {
             "base_case_n": self.base_case_n,
             "base_case_algorithm": self.base_case_algorithm,
+            "num_colors": self.num_colors,
+            "produce_witness": self.produce_witness,
         }

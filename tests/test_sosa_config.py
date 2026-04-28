@@ -16,14 +16,18 @@ class SosaConfigTests(unittest.TestCase):
             {
                 "base_case_n": 8,
                 "base_case_algorithm": "backtracking",
+                "num_colors": 3,
+                "produce_witness": True,
             },
         )
 
-    def test_accepts_explicit_algorithm(self) -> None:
+    def test_accepts_explicit_config(self) -> None:
         config = SosaConfig.from_mapping(
             {
                 "base_case_n": 5,
                 "base_case_algorithm": "sat",
+                "num_colors": 4,
+                "produce_witness": False,
             }
         )
 
@@ -32,14 +36,10 @@ class SosaConfigTests(unittest.TestCase):
             SosaConfig(
                 base_case_n=5,
                 base_case_algorithm="sat",
+                num_colors=4,
+                produce_witness=False,
             ),
         )
-
-    def test_legacy_cutoff_name_still_works(self) -> None:
-        config = SosaConfig.from_mapping({"brute_force_cutoff": 6})
-
-        self.assertEqual(config.base_case_n, 6)
-        self.assertEqual(config.base_case_algorithm, "backtracking")
 
     def test_rejects_invalid_algorithm(self) -> None:
         with self.assertRaisesRegex(ValueError, "base_case_algorithm"):
@@ -48,6 +48,22 @@ class SosaConfigTests(unittest.TestCase):
     def test_rejects_negative_base_case_n(self) -> None:
         with self.assertRaisesRegex(ValueError, "base_case_n"):
             SosaConfig.from_mapping({"base_case_n": -1})
+
+    def test_rejects_invalid_num_colors(self) -> None:
+        with self.assertRaisesRegex(ValueError, "num_colors"):
+            SosaConfig.from_mapping({"num_colors": 0})
+
+    def test_rejects_non_boolean_produce_witness(self) -> None:
+        with self.assertRaisesRegex(ValueError, "produce_witness"):
+            SosaConfig.from_mapping({"produce_witness": "false"})
+
+    def test_rejects_unsupported_aliases(self) -> None:
+        with self.assertRaisesRegex(ValueError, "unsupported SOSA parameter"):
+            SosaConfig.from_mapping({"k": 4})
+        with self.assertRaisesRegex(ValueError, "unsupported SOSA parameter"):
+            SosaConfig.from_mapping({"witness": False})
+        with self.assertRaisesRegex(ValueError, "unsupported SOSA parameter"):
+            SosaConfig.from_mapping({"brute_force_cutoff": 6})
 
 
 if __name__ == "__main__":
