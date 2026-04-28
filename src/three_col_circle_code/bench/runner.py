@@ -1,13 +1,19 @@
 import argparse
 import json
-from dataclasses import dataclass
-from datetime import UTC, datetime
-import platform
 from pathlib import Path
 import sys
 from typing import Any, Iterable, Optional, TextIO
 
 from three_col_circle_code.bench.env import collect_environment_metadata
+from three_col_circle_code.bench.planning import (
+    BenchmarkTask,
+    build_run_manifest,
+    iter_benchmark_tasks,
+    load_spec_for_run,
+    materialize_run_instances,
+    prepare_run_directory,
+    validate_run_environment,
+)
 from three_col_circle_code.bench.report import build_benchmark_report
 from three_col_circle_code.bench.report_data import write_summary_csvs
 from three_col_circle_code.bench.results import (
@@ -15,48 +21,17 @@ from three_col_circle_code.bench.results import (
     RESULTS_FILENAME,
     append_result,
     MANIFEST_FILENAME,
-    normalize_run_label,
     write_manifest,
 )
 from three_col_circle_code.bench.specs import (
-    InstanceRequest,
-    RunSpec,
     canonical_params_json,
-    load_run_spec,
 )
-from three_col_circle_code.generation.random_instances import generate_instance, write_instance
 from three_col_circle_code.instances.io import load_instance
-from three_col_circle_code.instances.model import InstanceFormatError, InstanceRecord, bucket_for_n
+from three_col_circle_code.instances.model import InstanceFormatError, InstanceRecord
 from three_col_circle_code.instances.validate import validate_instance
-from three_col_circle_code.solvers.common import SolverConfig
 from three_col_circle_code.solvers.registry import run_solver
-from three_col_circle_code.solvers.sat import PYSAT_KISSAT404, SAT_BASELINE_SOLVER
 
 BENCH_STATUS_INVALID = "invalid"
-RUN_SPEC_FILENAME = "spec.json"
-
-
-@dataclass(frozen=True)
-class BenchmarkTask:
-    instance_request: InstanceRequest
-    instance_path: Path
-    solver_config: SolverConfig
-
-    @property
-    def key(self) -> tuple[str, str, str]:
-        return (
-            self.instance_request.instance_id,
-            self.solver_config.target,
-            canonical_params_json(self.solver_config.params),
-        )
-
-
-@dataclass(frozen=True)
-class MaterializedInstances:
-    paths: dict[str, Path]
-    n_found_flat: int
-    n_found_nested: int
-    n_generated: int
 
 
 def run_benchmark(
@@ -66,10 +41,10 @@ def run_benchmark(
     progress_stream: TextIO | None = None,
 ) -> Path:
     """Run a resumable benchmark run from a JSON run spec."""
-    spec_source, run_spec = load_run_spec(spec_path)
+    spec_source, run_spec = load_spec_for_run(spec_path)
     spec_path = Path(spec_path)
-    _validate_run_environment(run_spec)
-    run_dir = _prepare_run_directory(
+    validate_run_environment(run_spec)
+    run_dir = prepare_run_directory(
         output_root=output_root,
         spec_source=spec_source,
         run_id=spec_path.stem,
@@ -81,11 +56,11 @@ def run_benchmark(
     _emit_progress(progress_stream, f"Run directory: {run_dir}")
     _emit_progress(progress_stream, f"Resolving {len(run_spec.instance_requests)} requested instances...")
 
-    materialized = _materialize_run_instances(
+    materialized = materialize_run_instances(
         run_spec,
-        progress_stream=progress_stream,
+        progress_callback=lambda message: _emit_progress(progress_stream, message),
     )
-    tasks = _iter_benchmark_tasks(run_spec, materialized.paths)
+    tasks = iter_benchmark_tasks(run_spec, materialized.paths)
     _emit_progress(
         progress_stream,
         (
@@ -105,10 +80,11 @@ def run_benchmark(
 
     write_manifest(
         run_dir,
-        _build_manifest(
+        build_run_manifest(
             run_id=run_id_value,
             run_spec=run_spec,
             created_at=created_at,
+            environment=collect_environment_metadata(),
         ),
     )
 
@@ -194,29 +170,6 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     return 0
 
 
-def _prepare_run_directory(
-    *,
-    output_root: Path,
-    spec_source: str,
-    run_id: str,
-) -> Path:
-    run_dir = Path(output_root) / normalize_run_label(run_id)
-    if run_dir.exists():
-        if not run_dir.is_dir():
-            raise ValueError(f"run path {run_dir} exists but is not a directory")
-    else:
-        run_dir.mkdir(parents=True, exist_ok=False)
-
-    spec_copy_path = run_dir / RUN_SPEC_FILENAME
-    if spec_copy_path.exists():
-        existing_source = spec_copy_path.read_text(encoding="utf-8")
-        if existing_source != spec_source:
-            raise ValueError("existing run_id refers to a run directory with a different benchmark spec")
-    else:
-        spec_copy_path.write_text(spec_source, encoding="utf-8")
-    return run_dir
-
-
 def _load_existing_created_at(run_dir: Path) -> Optional[str]:
     manifest_path = Path(run_dir) / MANIFEST_FILENAME
     if not manifest_path.exists():
@@ -226,119 +179,6 @@ def _load_existing_created_at(run_dir: Path) -> Optional[str]:
     if created_at is None:
         return None
     return str(created_at)
-
-
-def _materialize_run_instances(
-    run_spec: RunSpec,
-    *,
-    progress_stream: TextIO | None = None,
-) -> MaterializedInstances:
-    resolved: dict[str, Path] = {}
-    n_found_flat = 0
-    n_found_nested = 0
-    n_generated = 0
-    missing_requests = [
-        request
-        for request in run_spec.instance_requests
-        if _resolve_existing_instance_path(
-            instance_pool_root=run_spec.instance_pool_root,
-            request=request,
-        )[0] is None
-    ]
-    if missing_requests:
-        _emit_progress(
-            progress_stream,
-            f"Generating missing instances ({len(missing_requests)} total)...",
-        )
-    for request in run_spec.instance_requests:
-        instance_path, resolution = _resolve_or_generate_instance(
-            instance_pool_root=run_spec.instance_pool_root,
-            request=request,
-        )
-        resolved[request.instance_id] = instance_path
-        if resolution == "flat":
-            n_found_flat += 1
-        elif resolution == "nested":
-            n_found_nested += 1
-        else:
-            n_generated += 1
-            if _should_emit_generation_progress(
-                generated_count=n_generated,
-                generated_total=len(missing_requests),
-            ):
-                _emit_progress(
-                    progress_stream,
-                    f"Generated {n_generated}/{len(missing_requests)} missing instances",
-                )
-    return MaterializedInstances(
-        paths=resolved,
-        n_found_flat=n_found_flat,
-        n_found_nested=n_found_nested,
-        n_generated=n_generated,
-    )
-
-
-def _resolve_or_generate_instance(
-    *,
-    instance_pool_root: Path,
-    request: InstanceRequest,
-) -> tuple[Path, str]:
-    existing_instance_path, existing_resolution = _resolve_existing_instance_path(
-        instance_pool_root=instance_pool_root,
-        request=request,
-    )
-    if existing_instance_path is not None and existing_resolution is not None:
-        return existing_instance_path, existing_resolution
-
-    record = generate_instance(family=request.family, n=request.n, seed=request.seed)
-    return write_instance(record, instance_pool_root), "generated"
-
-
-def _resolve_existing_instance_path(
-    *,
-    instance_pool_root: Path,
-    request: InstanceRequest,
-) -> tuple[Optional[Path], Optional[str]]:
-    flat_instance_path = Path(instance_pool_root) / f"{request.instance_id}.json"
-    if flat_instance_path.exists():
-        return flat_instance_path, "flat"
-
-    nested_instance_path = (
-        Path(instance_pool_root)
-        / request.family
-        / bucket_for_n(request.n)
-        / f"{request.instance_id}.json"
-    )
-    if nested_instance_path.exists():
-        return nested_instance_path, "nested"
-    return None, None
-
-
-def _iter_benchmark_tasks(
-    run_spec: RunSpec,
-    instance_paths: dict[str, Path],
-) -> tuple[BenchmarkTask, ...]:
-    tasks = [
-        BenchmarkTask(
-            instance_request=request,
-            instance_path=instance_paths[request.instance_id],
-            solver_config=solver_config,
-        )
-        for request in run_spec.instance_requests
-        for solver_config in run_spec.solver_configs
-    ]
-    return tuple(
-        sorted(
-            tasks,
-            key=lambda task: (
-                task.instance_request.family,
-                task.instance_request.n,
-                task.instance_request.seed,
-                task.solver_config.target,
-                canonical_params_json(task.solver_config.params),
-            ),
-        )
-    )
 
 
 def _load_completed_task_keys(run_dir: Path) -> set[tuple[str, str, str]]:
@@ -412,45 +252,6 @@ def _execute_benchmark_task(
     )
     append_result(run_dir, result_row)
     return result_row
-
-
-def _build_manifest(
-    *,
-    run_id: str,
-    run_spec: RunSpec,
-    created_at: Optional[str],
-) -> dict[str, Any]:
-    return {
-        "run_id": run_id,
-        "created_at": created_at or datetime.now(UTC).isoformat(),
-        "spec_filename": RUN_SPEC_FILENAME,
-        "instance_pool_root": str(run_spec.instance_pool_root),
-        "instance_requests": [
-            {
-                "instance_id": request.instance_id,
-                "family": request.family,
-                "n": request.n,
-                "seed": request.seed,
-            }
-            for request in run_spec.instance_requests
-        ],
-        "solvers": [_solver_manifest_entry(config) for config in run_spec.solver_configs],
-        "n_instances": len(run_spec.instance_requests),
-        "n_tasks": len(run_spec.instance_requests) * len(run_spec.solver_configs),
-        "environment": collect_environment_metadata(),
-    }
-
-
-def _solver_manifest_entry(config: SolverConfig) -> dict[str, Any]:
-    entry: dict[str, Any] = {
-        "solver": config.solver,
-        "backend": config.backend,
-        "target": config.target,
-        "params": dict(config.params),
-    }
-    if config.label is not None:
-        entry["label"] = config.label
-    return entry
 
 
 def _build_result_record(
@@ -527,20 +328,6 @@ def _serialize_validation_errors(errors: Iterable[Any]) -> list[dict[str, Any]]:
     return [{"code": issue.code, "message": issue.message} for issue in errors]
 
 
-def _validate_run_environment(run_spec: RunSpec) -> None:
-    system_name = platform.system()
-    for solver_config in run_spec.solver_configs:
-        if (
-            system_name == "Windows"
-            and solver_config.solver == SAT_BASELINE_SOLVER
-            and solver_config.backend == PYSAT_KISSAT404
-        ):
-            raise ValueError(
-                "SAT backend 'pysat-kissat404' is not supported on Windows; "
-                "use WSL/Linux or remove it from the run spec"
-            )
-
-
 def _emit_progress(progress_stream: TextIO | None, message: str) -> None:
     if progress_stream is None:
         return
@@ -560,12 +347,6 @@ def _format_result_summary(result_row: dict[str, Any]) -> str:
     if error:
         return f"{status}: {error}"
     return status
-
-
-def _should_emit_generation_progress(*, generated_count: int, generated_total: int) -> bool:
-    if generated_total < 1:
-        return False
-    return generated_count in {1, generated_total} or generated_count % 10 == 0
 
 
 if __name__ == "__main__":

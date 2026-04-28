@@ -50,7 +50,7 @@ class BenchRunnerTests(unittest.TestCase):
                 "three_col_circle_code.bench.runner.collect_environment_metadata",
                 return_value={"python_version": "test"},
             ), patch(
-                "three_col_circle_code.bench.runner.generate_instance",
+                "three_col_circle_code.bench.planning.generate_instance",
                 return_value=_build_record(instance_id="rc-n0002-seed1", family="rc", seed=1),
             ), patch(
                 "three_col_circle_code.bench.runner.run_solver",
@@ -122,7 +122,7 @@ class BenchRunnerTests(unittest.TestCase):
                 "three_col_circle_code.bench.runner.collect_environment_metadata",
                 return_value={},
             ), patch(
-                "three_col_circle_code.bench.runner.generate_instance",
+                "three_col_circle_code.bench.planning.generate_instance",
                 return_value=_build_record(instance_id="rc-n0002-seed1", family="rc", seed=1),
             ), patch(
                 "three_col_circle_code.bench.runner.run_solver",
@@ -161,7 +161,7 @@ class BenchRunnerTests(unittest.TestCase):
                 "three_col_circle_code.bench.runner.collect_environment_metadata",
                 return_value={},
             ), patch(
-                "three_col_circle_code.bench.runner.generate_instance",
+                "three_col_circle_code.bench.planning.generate_instance",
                 side_effect=lambda family, n, seed: _build_record(
                     instance_id=f"{family}-n{n:04d}-seed{seed}",
                     family=family,
@@ -243,7 +243,7 @@ class BenchRunnerTests(unittest.TestCase):
                 "three_col_circle_code.bench.runner.collect_environment_metadata",
                 return_value={},
             ), patch(
-                "three_col_circle_code.bench.runner.generate_instance",
+                "three_col_circle_code.bench.planning.generate_instance",
             ) as generate_instance_mock, patch(
                 "three_col_circle_code.bench.runner.run_solver",
                 return_value=_fake_solver_result(backend="pysat-cadical", wall_time_s=0.1),
@@ -274,7 +274,7 @@ class BenchRunnerTests(unittest.TestCase):
                 "three_col_circle_code.bench.runner.collect_environment_metadata",
                 return_value={},
             ), patch(
-                "three_col_circle_code.bench.runner.generate_instance",
+                "three_col_circle_code.bench.planning.generate_instance",
                 return_value=_build_record(instance_id="rc-n0002-seed1", family="rc", seed=1),
             ) as generate_instance_mock, patch(
                 "three_col_circle_code.bench.runner.run_solver",
@@ -300,7 +300,7 @@ class BenchRunnerTests(unittest.TestCase):
                 "three_col_circle_code.bench.runner.collect_environment_metadata",
                 return_value={},
             ), patch(
-                "three_col_circle_code.bench.runner.generate_instance",
+                "three_col_circle_code.bench.planning.generate_instance",
                 side_effect=lambda family, n, seed: _build_record(
                     instance_id=f"{family}-n{n:04d}-seed{seed}",
                     family=family,
@@ -349,7 +349,7 @@ class BenchRunnerTests(unittest.TestCase):
                 "three_col_circle_code.bench.runner.collect_environment_metadata",
                 return_value={},
             ), patch(
-                "three_col_circle_code.bench.runner.generate_instance",
+                "three_col_circle_code.bench.planning.generate_instance",
                 return_value=_build_record(instance_id="rc-n0002-seed1", family="rc", seed=1),
             ), patch(
                 "three_col_circle_code.bench.runner.run_solver",
@@ -436,7 +436,7 @@ class BenchRunnerTests(unittest.TestCase):
                 "three_col_circle_code.bench.runner.collect_environment_metadata",
                 return_value={},
             ), patch(
-                "three_col_circle_code.bench.runner.generate_instance",
+                "three_col_circle_code.bench.planning.generate_instance",
                 return_value=_build_record(instance_id="rc-n0002-seed1", family="rc", seed=1),
             ), patch(
                 "three_col_circle_code.bench.runner.run_solver",
@@ -531,7 +531,7 @@ class BenchRunnerTests(unittest.TestCase):
                 },
             )
 
-            with patch("three_col_circle_code.bench.runner.platform.system", return_value="Windows"):
+            with patch("three_col_circle_code.bench.planning.platform.system", return_value="Windows"):
                 with self.assertRaisesRegex(ValueError, "not supported on Windows"):
                     run_benchmark(output_root=tmp_root / "runs", spec_path=spec_path)
 
@@ -553,7 +553,7 @@ class BenchRunnerTests(unittest.TestCase):
                 "three_col_circle_code.bench.runner.collect_environment_metadata",
                 return_value={},
             ), patch(
-                "three_col_circle_code.bench.runner.generate_instance",
+                "three_col_circle_code.bench.planning.generate_instance",
                 return_value=_build_record(instance_id="rc-n0002-seed1", family="rc", seed=1),
             ), patch(
                 "three_col_circle_code.bench.runner.run_solver",
