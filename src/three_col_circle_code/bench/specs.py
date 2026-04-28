@@ -126,7 +126,13 @@ def _normalize_solver_block(block: Any) -> dict[str, Any]:
     params = block.get("params", {})
     if not isinstance(params, Mapping):
         raise ValueError("run spec solver block field 'params' must be an object")
-    return {"target": str(block["target"]), "params": dict(params)}
+    normalized: dict[str, Any] = {"target": str(block["target"]), "params": dict(params)}
+    if "label" in block:
+        label = str(block["label"]).strip()
+        if not label:
+            raise ValueError("run spec solver block field 'label' must not be empty")
+        normalized["label"] = label
+    return normalized
 
 
 def _expand_instance_requests(instance_blocks: Sequence[Mapping[str, Any]]) -> tuple[InstanceRequest, ...]:
@@ -158,13 +164,23 @@ def _expand_n_range(n_range: Mapping[str, Any]) -> list[int]:
 def _resolve_solver_configs(solver_blocks: Sequence[Mapping[str, Any]]) -> tuple[SolverConfig, ...]:
     configs: list[SolverConfig] = []
     seen_configs: set[tuple[str, str]] = set()
+    seen_labels: set[str] = set()
     for block in solver_blocks:
         resolved = resolve_solver_configs((block["target"],))
         for config in resolved:
+            label = block.get("label")
+            if label is not None:
+                label = str(label)
+                if label in seen_labels:
+                    raise ValueError(
+                        f"benchmark run spec contains duplicate solver label {label!r}"
+                    )
+                seen_labels.add(label)
             configured = SolverConfig(
                 solver=config.solver,
                 backend=config.backend,
                 params=dict(block["params"]),
+                label=label,
             )
             config_key = (configured.target, canonical_params_json(configured.params))
             if config_key in seen_configs:

@@ -21,11 +21,16 @@ class SolverCommonTests(unittest.TestCase):
         self.assertEqual(solver_target("sat-baseline", "pysat-cadical"), "sat-baseline:pysat-cadical")
 
     def test_solver_config_normalizes_optional_params(self) -> None:
-        config = SolverConfig.from_mapping("sosa-3-col-exact", params={"cutoff": 5})
+        config = SolverConfig.from_mapping(
+            "sosa-3-col-exact",
+            params={"cutoff": 5},
+            label="Exact SOSA",
+        )
 
         self.assertEqual(config.solver, "sosa-3-col-exact")
         self.assertIsNone(config.backend)
         self.assertEqual(config.params, {"cutoff": 5})
+        self.assertEqual(config.label, "Exact SOSA")
         self.assertEqual(config.target, "sosa-3-col-exact")
 
     def test_solver_result_stores_shared_result_fields(self) -> None:

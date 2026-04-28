@@ -40,6 +40,7 @@ class ReportRow:
     solver: Optional[str]
     backend: Optional[str]
     solver_params: dict[str, Any]
+    solver_label: Optional[str]
     status: str
     wall_time_s: Optional[float]
     is_colorable: Optional[bool]
@@ -116,8 +117,14 @@ def solver_variant_key(solver_target: str, solver_params: Mapping[str, Any]) -> 
     return f"{solver_target}|{canonical_params_json(dict(solver_params))}"
 
 
-def solver_variant_label(solver_target: str, solver_params: Mapping[str, Any]) -> str:
+def solver_variant_label(
+    solver_target: str,
+    solver_params: Mapping[str, Any],
+    solver_label: Optional[str] = None,
+) -> str:
     """Build one stable display label for a solver plus its parameters."""
+    if solver_label is not None:
+        return solver_label
     params_json = canonical_params_json(dict(solver_params))
     if params_json == "{}":
         return solver_target
@@ -208,6 +215,7 @@ def _normalize_report_row(row: Mapping[str, Any]) -> ReportRow:
         solver=_optional_str(row.get("solver")),
         backend=_optional_str(row.get("backend")),
         solver_params=dict(row.get("solver_params", {})),
+        solver_label=_optional_str(row.get("solver_label")),
         status=str(row.get("status", "unknown")),
         wall_time_s=_optional_float(row.get("wall_time_s")),
         is_colorable=_optional_bool(row.get("is_colorable")),
@@ -224,7 +232,7 @@ def _build_run_metadata(
     inferred_solver_targets = tuple(
         sorted(
             {
-                solver_variant_label(row.solver_target, row.solver_params)
+                solver_variant_label(row.solver_target, row.solver_params, row.solver_label)
                 for row in rows
             }
         )
@@ -247,6 +255,7 @@ def _build_run_metadata(
                 solver_variant_label(
                     str(solver.get("target")),
                     dict(solver.get("params", {})),
+                    _optional_str(solver.get("label")),
                 )
                 for solver in manifest.get("solvers", [])
                 if solver.get("target") is not None
@@ -278,22 +287,22 @@ def _build_agreement_rows(
     for instance_id in sorted(grouped):
         instance_rows = sorted(
             grouped[instance_id],
-            key=lambda row: solver_variant_label(row.solver_target, row.solver_params),
+            key=lambda row: solver_variant_label(row.solver_target, row.solver_params, row.solver_label),
         )
         solver_targets = tuple(
-            solver_variant_label(row.solver_target, row.solver_params)
+            solver_variant_label(row.solver_target, row.solver_params, row.solver_label)
             for row in instance_rows
         )
         statuses = tuple(
             (
-                solver_variant_label(row.solver_target, row.solver_params),
+                solver_variant_label(row.solver_target, row.solver_params, row.solver_label),
                 row.status,
             )
             for row in instance_rows
         )
         answers = tuple(
             (
-                solver_variant_label(row.solver_target, row.solver_params),
+                solver_variant_label(row.solver_target, row.solver_params, row.solver_label),
                 row.is_colorable,
             )
             for row in instance_rows
@@ -332,7 +341,7 @@ def _build_solver_summary_rows(
 ) -> tuple[SolverSummaryRow, ...]:
     grouped: dict[str, list[ReportRow]] = defaultdict(list)
     for row in rows:
-        grouped[solver_variant_label(row.solver_target, row.solver_params)].append(row)
+        grouped[solver_variant_label(row.solver_target, row.solver_params, row.solver_label)].append(row)
 
     summary_rows: list[SolverSummaryRow] = []
     for solver_target in solver_targets:
@@ -440,7 +449,7 @@ def _sort_value(value: Any) -> tuple[int, Any]:
 
 def _summary_group_value(row: ReportRow, field: str) -> Any:
     if field == "solver_target":
-        return solver_variant_label(row.solver_target, row.solver_params)
+        return solver_variant_label(row.solver_target, row.solver_params, row.solver_label)
     return getattr(row, field)
 
 

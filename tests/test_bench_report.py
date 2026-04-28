@@ -115,6 +115,61 @@ class BenchReportDataTests(unittest.TestCase):
             "sosa-3-col-exact [alpha=1, beta=2]",
         )
 
+    def test_solver_variant_label_uses_explicit_label(self) -> None:
+        self.assertEqual(
+            solver_variant_label("sosa-3-col-exact", {"base_case_n": 8}, "SOSA backtracking"),
+            "SOSA backtracking",
+        )
+
+    def test_load_benchmark_report_data_uses_manifest_and_row_labels(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            run_dir = Path(tmpdir) / "labeled-run"
+            run_dir.mkdir()
+            row = {
+                "run_id": "labeled-run",
+                "instance_id": "rc-n0002-seed1",
+                "instance_path": "instance.json",
+                "family": "rc",
+                "bucket": "s",
+                "n": 2,
+                "m": 1,
+                "seed": 1,
+                "source": "generated",
+                "solver_target": "sosa-3-col-exact",
+                "solver": "sosa-3-col-exact",
+                "backend": None,
+                "solver_params": {"base_case_n": 8},
+                "solver_label": "SOSA backtracking",
+                "status": "ok",
+                "wall_time_s": 1.0,
+                "is_colorable": True,
+                "validation_ok": True,
+                "validation_errors": [],
+                "details": {},
+                "error": None,
+            }
+            manifest = {
+                "run_id": "labeled-run",
+                "created_at": "2026-04-17T12:00:00+00:00",
+                "solvers": [
+                    {
+                        "target": "sosa-3-col-exact",
+                        "label": "SOSA backtracking",
+                        "params": {"base_case_n": 8},
+                    }
+                ],
+                "n_instances": 1,
+                "n_tasks": 1,
+                "environment": {},
+            }
+            (run_dir / RESULTS_FILENAME).write_text(json.dumps(row) + "\n", encoding="utf-8")
+            (run_dir / MANIFEST_FILENAME).write_text(json.dumps(manifest), encoding="utf-8")
+
+            data = load_benchmark_report_data(run_dir)
+
+        self.assertEqual(data.metadata.solver_targets, ("SOSA backtracking",))
+        self.assertEqual(data.solver_summary_rows[0].solver_target, "SOSA backtracking")
+
     def test_load_benchmark_report_data_dedupes_duplicate_task_rows(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             run_dir = _write_duplicate_row_run(Path(tmpdir) / "duplicate-run")

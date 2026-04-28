@@ -35,7 +35,13 @@ class BenchRunnerTests(unittest.TestCase):
                 {
                     "instance_pool_root": str(tmp_root / "instances"),
                     "instances": [{"family": "rc", "n_values": [2], "seeds": [1]}],
-                    "solvers": [{"target": "sat-baseline:legacy-pysmt-msat", "params": {"cutoff": 5}}],
+                    "solvers": [
+                        {
+                            "target": "sat-baseline:legacy-pysmt-msat",
+                            "label": "MathSAT legacy",
+                            "params": {"cutoff": 5},
+                        }
+                    ],
                 },
             )
             first = tmp_root / "instances" / "rc" / "s" / "rc-n0002-seed1.json"
@@ -73,6 +79,7 @@ class BenchRunnerTests(unittest.TestCase):
                     "solver": "sat-baseline",
                     "backend": "legacy-pysmt-msat",
                     "target": "sat-baseline:legacy-pysmt-msat",
+                    "label": "MathSAT legacy",
                     "params": {"cutoff": 5},
                 }
             ],
@@ -87,6 +94,7 @@ class BenchRunnerTests(unittest.TestCase):
         self.assertEqual(result["instance_id"], "rc-n0002-seed1")
         self.assertEqual(result["solver_target"], "sat-baseline:legacy-pysmt-msat")
         self.assertEqual(result["solver_params"], {"cutoff": 5})
+        self.assertEqual(result["solver_label"], "MathSAT legacy")
         self.assertEqual(result["solver"], SAT_BASELINE_SOLVER)
         self.assertEqual(result["backend"], "legacy-pysmt-msat")
         self.assertTrue(result["validation_ok"])
@@ -480,6 +488,23 @@ class BenchRunnerTests(unittest.TestCase):
                     "solvers": [{"target": "sat-baseline:pysat-cadical"}],
                 },
             )
+            duplicate_labels = _write_spec(
+                tmp_root / "duplicate-labels.json",
+                {
+                    "instances": [{"family": "rc", "n_values": [2], "seeds": [1]}],
+                    "solvers": [
+                        {"target": "sat-baseline:pysat-cadical", "label": "SAT"},
+                        {"target": "sat-baseline:legacy-pysmt-msat", "label": "SAT"},
+                    ],
+                },
+            )
+            empty_label = _write_spec(
+                tmp_root / "empty-label.json",
+                {
+                    "instances": [{"family": "rc", "n_values": [2], "seeds": [1]}],
+                    "solvers": [{"target": "sat-baseline:pysat-cadical", "label": ""}],
+                },
+            )
 
             with self.assertRaises(ValueError):
                 run_benchmark(output_root=tmp_root / "runs", spec_path=missing_fields)
@@ -489,6 +514,10 @@ class BenchRunnerTests(unittest.TestCase):
                 run_benchmark(output_root=tmp_root / "runs", spec_path=both_n_shapes)
             with self.assertRaises(ValueError):
                 run_benchmark(output_root=tmp_root / "runs", spec_path=empty_seeds)
+            with self.assertRaises(ValueError):
+                run_benchmark(output_root=tmp_root / "runs", spec_path=duplicate_labels)
+            with self.assertRaises(ValueError):
+                run_benchmark(output_root=tmp_root / "runs", spec_path=empty_label)
 
     def test_run_benchmark_rejects_kissat404_on_windows_before_creating_run_dir(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

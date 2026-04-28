@@ -18,6 +18,7 @@
   "solvers": [
     {
       "target": "sosa-3-col-exact",
+      "label": "SOSA backtracking",
       "params": {
         "base_case_n": 8,
         "base_case_algorithm": "backtracking",
@@ -27,6 +28,7 @@
     },
     {
       "target": "sosa-3-col-exact",
+      "label": "SOSA SAT",
       "params": {
         "base_case_n": 8,
         "base_case_algorithm": "sat",

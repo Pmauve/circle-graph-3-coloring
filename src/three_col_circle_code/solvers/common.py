@@ -13,6 +13,7 @@ class SolverConfig:
     solver: str
     backend: Optional[str] = None
     params: dict[str, Any] = field(default_factory=dict)
+    label: Optional[str] = None
 
     @classmethod
     def from_mapping(
@@ -21,12 +22,14 @@ class SolverConfig:
         *,
         backend: Optional[str] = None,
         params: Optional[Mapping[str, Any]] = None,
+        label: Optional[str] = None,
     ) -> "SolverConfig":
         """Build a config from optional mapping inputs."""
         return cls(
             solver=solver,
             backend=backend,
             params=dict(params or {}),
+            label=label,
         )
 
     @property

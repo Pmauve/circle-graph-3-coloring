@@ -434,19 +434,23 @@ def _build_manifest(
             }
             for request in run_spec.instance_requests
         ],
-        "solvers": [
-            {
-                "solver": config.solver,
-                "backend": config.backend,
-                "target": config.target,
-                "params": dict(config.params),
-            }
-            for config in run_spec.solver_configs
-        ],
+        "solvers": [_solver_manifest_entry(config) for config in run_spec.solver_configs],
         "n_instances": len(run_spec.instance_requests),
         "n_tasks": len(run_spec.instance_requests) * len(run_spec.solver_configs),
         "environment": collect_environment_metadata(),
     }
+
+
+def _solver_manifest_entry(config: SolverConfig) -> dict[str, Any]:
+    entry: dict[str, Any] = {
+        "solver": config.solver,
+        "backend": config.backend,
+        "target": config.target,
+        "params": dict(config.params),
+    }
+    if config.label is not None:
+        entry["label"] = config.label
+    return entry
 
 
 def _build_result_record(
@@ -472,6 +476,7 @@ def _build_result_record(
         "solver": solve_result.solver,
         "backend": solve_result.backend,
         "solver_params": dict(task.solver_config.params),
+        "solver_label": task.solver_config.label,
         "status": solve_result.status,
         "wall_time_s": solve_result.wall_time_s,
         "is_colorable": solve_result.is_colorable,
@@ -502,6 +507,7 @@ def _build_invalid_result_record(
         "solver": task.solver_config.solver,
         "backend": task.solver_config.backend,
         "solver_params": dict(task.solver_config.params),
+        "solver_label": task.solver_config.label,
         "status": BENCH_STATUS_INVALID,
         "wall_time_s": None,
         "is_colorable": None,

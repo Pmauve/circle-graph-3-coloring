@@ -102,11 +102,14 @@ SOSA params:
 - `num_colors`: `3` for exact SOSA, at least `4` for the heuristic target
 - `produce_witness`: whether to output `coloring_by_node` where supported
 
+Solver blocks may also include an optional display-only `label` used in reports.
+
 Exact example:
 
 ```json
 {
   "target": "sosa-3-col-exact",
+  "label": "SOSA backtracking",
   "params": {
     "base_case_n": 8,
     "base_case_algorithm": "backtracking",
@@ -121,6 +124,7 @@ Heuristic example:
 ```json
 {
   "target": "sosa-k-col-heuristic",
+  "label": "SOSA k=4",
   "params": {
     "base_case_n": 8,
     "base_case_algorithm": "backtracking",

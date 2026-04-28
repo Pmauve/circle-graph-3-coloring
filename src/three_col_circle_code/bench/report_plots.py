@@ -45,7 +45,11 @@ def runtime_vs_size_figure(data: BenchmarkReportData) -> go.Figure:
             continue
         variant_key = solver_variant_key(row.solver_target, row.solver_params)
         grouped[variant_key].append(row)
-        variant_labels[variant_key] = solver_variant_label(row.solver_target, row.solver_params)
+        variant_labels[variant_key] = solver_variant_label(
+            row.solver_target,
+            row.solver_params,
+            row.solver_label,
+        )
 
     ordered_variant_keys = sorted(grouped, key=lambda key: variant_labels[key])
     trace_rows_by_variant: list[tuple[ReportRow, ...]] = []
@@ -148,7 +152,7 @@ def _row_hover_data(row: ReportRow) -> list[object]:
     return [
         row.instance_id,
         row.solver_target,
-        solver_variant_label(row.solver_target, row.solver_params),
+        solver_variant_label(row.solver_target, row.solver_params, row.solver_label),
         _render_solver_params(row.solver_params),
         row.family,
         row.n,
