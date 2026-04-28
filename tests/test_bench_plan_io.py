@@ -82,15 +82,9 @@ class BenchPlanIoTests(unittest.TestCase):
             manifest = {
                 "run_id": "smoke",
                 "created_at": "2026-04-29T00:00:00+00:00",
-                "spec_filename": "spec.json",
-                "instances_filename": "instances.jsonl",
-                "trials_filename": "trials.jsonl",
-                "instance_pool_root": Path("eval/instances"),
                 "work_root": Path("eval/benchmark_work/smoke"),
                 "n_instances": 1,
                 "n_trials": 1,
-                "solvers": [{"target": "sosa-3-col-exact", "params": {}}],
-                "environment": {"python_version": "test"},
             }
 
             write_plan_manifest(plan_dir, manifest)
@@ -100,7 +94,6 @@ class BenchPlanIoTests(unittest.TestCase):
             loaded,
             {
                 **manifest,
-                "instance_pool_root": str(Path("eval/instances")),
                 "work_root": str(Path("eval/benchmark_work/smoke")),
             },
         )
