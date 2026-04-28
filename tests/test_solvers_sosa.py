@@ -65,13 +65,35 @@ class SosaSolverTests(unittest.TestCase):
         self.assertEqual(result.details["base_case_calls"], 1)
         self.assertNotIn("coloring_by_node", result.details)
 
+    def test_sosa_backtracking_decision_mode_omits_witness(self) -> None:
+        graph = graph_from_endpoints(((0, 3), (1, 4), (2, 5)))
+
+        result = solve_sosa_3_col_exact(
+            graph,
+            params={"base_case_n": 8, "produce_witness": False},
+        )
+
+        self.assertEqual(result.solver, SOSA_3_COL_EXACT_SOLVER)
+        self.assertEqual(result.status, SOLVER_STATUS_OK)
+        self.assertTrue(result.is_colorable)
+        self.assertEqual(
+            result.details["config"],
+            {
+                "base_case_n": 8,
+                "base_case_algorithm": "backtracking",
+                "num_colors": 3,
+                "produce_witness": False,
+            },
+        )
+        self.assertNotIn("coloring_by_node", result.details)
+
     @unittest.skipUnless(HAS_PYSAT, "python-sat is required for the SOSA SAT-mode tests")
     def test_sosa_sat_mode_solves_small_three_colorable_graph_without_witness(self) -> None:
         graph = graph_from_endpoints(((0, 3), (1, 4), (2, 5)))
 
         result = solve_sosa_3_col_exact(
             graph,
-            params={"base_case_n": 8, "base_case_algorithm": "sat"},
+            params={"base_case_n": 8, "base_case_algorithm": "sat", "produce_witness": False},
         )
 
         self.assertEqual(result.solver, SOSA_3_COL_EXACT_SOLVER)
@@ -83,7 +105,7 @@ class SosaSolverTests(unittest.TestCase):
                 "base_case_n": 8,
                 "base_case_algorithm": "sat",
                 "num_colors": 3,
-                "produce_witness": True,
+                "produce_witness": False,
             },
         )
         self.assertEqual(result.details["base_case_calls"], 1)
@@ -95,7 +117,7 @@ class SosaSolverTests(unittest.TestCase):
 
         result = solve_sosa_3_col_exact(
             graph,
-            params={"base_case_n": 8, "base_case_algorithm": "sat"},
+            params={"base_case_n": 8, "base_case_algorithm": "sat", "produce_witness": False},
         )
 
         self.assertEqual(result.status, SOLVER_STATUS_OK)
@@ -124,6 +146,19 @@ class SosaSolverTests(unittest.TestCase):
         self.assertEqual(result.status, SOLVER_STATUS_ERROR)
         self.assertIsNone(result.is_colorable)
         self.assertIn("requires 'num_colors' to be 3", result.error)
+
+    def test_exact_sosa_rejects_sat_witness_output(self) -> None:
+        graph = graph_from_endpoints(((0, 1),))
+
+        result = solve_sosa_3_col_exact(
+            graph,
+            params={"base_case_algorithm": "sat", "produce_witness": True},
+        )
+
+        self.assertEqual(result.solver, SOSA_3_COL_EXACT_SOLVER)
+        self.assertEqual(result.status, SOLVER_STATUS_ERROR)
+        self.assertIsNone(result.is_colorable)
+        self.assertIn("does not support witness output", result.error)
 
     def test_k_color_heuristic_rejects_default_three_color_config(self) -> None:
         graph = graph_from_endpoints(((0, 1),))
@@ -198,7 +233,7 @@ class SosaSolverTests(unittest.TestCase):
 
         result = solve_sosa_3_col_exact(
             graph,
-            params={"base_case_n": 4, "base_case_algorithm": "sat"},
+            params={"base_case_n": 4, "base_case_algorithm": "sat", "produce_witness": False},
         )
 
         self.assertEqual(result.solver, SOSA_3_COL_EXACT_SOLVER)
@@ -210,7 +245,7 @@ class SosaSolverTests(unittest.TestCase):
                 "base_case_n": 4,
                 "base_case_algorithm": "sat",
                 "num_colors": 3,
-                "produce_witness": True,
+                "produce_witness": False,
             },
         )
         self.assertGreater(result.details["solver_calls"], 1)
@@ -236,7 +271,7 @@ class SosaSolverTests(unittest.TestCase):
 
         result = solve_sosa_3_col_exact(
             graph,
-            params={"base_case_n": 4, "base_case_algorithm": "sat"},
+            params={"base_case_n": 4, "base_case_algorithm": "sat", "produce_witness": False},
         )
 
         self.assertEqual(result.solver, SOSA_3_COL_EXACT_SOLVER)
@@ -248,7 +283,7 @@ class SosaSolverTests(unittest.TestCase):
                 "base_case_n": 4,
                 "base_case_algorithm": "sat",
                 "num_colors": 3,
-                "produce_witness": True,
+                "produce_witness": False,
             },
         )
         self.assertGreater(result.details["solver_calls"], 1)
@@ -303,7 +338,7 @@ class SosaSolverTests(unittest.TestCase):
                 )
                 sat_result = solve_sosa_3_col_exact(
                     graph,
-                    params={"base_case_n": 8, "base_case_algorithm": "sat"},
+                    params={"base_case_n": 8, "base_case_algorithm": "sat", "produce_witness": False},
                 )
 
                 self.assertEqual(backtracking_result.status, SOLVER_STATUS_OK)

@@ -22,6 +22,7 @@ def solve_base_case_backtracking(
     state: SosaSearchState,
     stats: SosaStats,
     depth: int,
+    produce_witness: bool = True,
 ) -> BaseCaseResult:
     """Solve one small list-coloring state exactly with backtracking."""
     stats.base_case_calls += 1
@@ -42,11 +43,13 @@ def solve_base_case_backtracking(
     )
     colors: VertexColoring = {}
 
-    def backtrack(position: int) -> VertexColoring | None:
+    def backtrack(position: int) -> VertexColoring | bool | None:
         stats.base_case_search_nodes += 1
         stats.record_depth(depth + position)
         if position == len(order):
-            return dict(colors)
+            if produce_witness:
+                return dict(colors)
+            return True
 
         vertex_index = order[position]
         allowed_mask = state.allowed_color_masks[vertex_index]
@@ -69,7 +72,7 @@ def solve_base_case_backtracking(
     witness = backtrack(0)
     return BaseCaseResult(
         is_colorable=witness is not None,
-        witness=witness,
+        witness=witness if produce_witness and isinstance(witness, dict) else None,
     )
 
 

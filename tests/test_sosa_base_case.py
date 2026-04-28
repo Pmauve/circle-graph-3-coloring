@@ -32,6 +32,25 @@ class SosaBaseCaseTests(unittest.TestCase):
         self.assertEqual(stats.base_case_calls, 1)
         self.assertGreater(stats.base_case_search_nodes, 0)
 
+    def test_backtracking_base_case_can_solve_without_witness(self) -> None:
+        graph = graph_from_endpoints(((0, 3), (1, 4), (2, 5)))
+        geometry = SosaGeometry.from_graph(graph)
+        state = SosaSearchState.initial(n_vertices=geometry.n_vertices)
+        stats = SosaStats()
+
+        result = solve_base_case_backtracking(
+            geometry=geometry,
+            state=state,
+            stats=stats,
+            depth=0,
+            produce_witness=False,
+        )
+
+        self.assertTrue(result.is_colorable)
+        self.assertIsNone(result.witness)
+        self.assertEqual(stats.base_case_calls, 1)
+        self.assertGreater(stats.base_case_search_nodes, 0)
+
     def test_backtracking_base_case_reports_unsat_for_empty_allowed_mask(self) -> None:
         graph = graph_from_endpoints(((0, 1),))
         geometry = SosaGeometry.from_graph(graph)

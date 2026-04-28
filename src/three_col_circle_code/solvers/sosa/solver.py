@@ -211,12 +211,14 @@ def _solve_base_case(
             state=state,
             stats=stats,
             depth=depth,
+            num_colors=config.num_colors,
         )
     return solve_base_case_backtracking(
         geometry=geometry,
         state=state,
         stats=stats,
         depth=depth,
+        produce_witness=config.produce_witness,
     )
 
 
@@ -282,6 +284,8 @@ def _error_result(
 def _validate_sosa_3_col_exact_config(config: SosaConfig) -> None:
     if config.num_colors != 3:
         raise ValueError("SOSA exact 3-color solver requires 'num_colors' to be 3")
+    if config.base_case_algorithm == "sat" and config.produce_witness:
+        raise ValueError("SOSA SAT base-case solver does not support witness output")
 
 
 def _validate_sosa_k_col_heuristic_config(config: SosaConfig) -> None:
