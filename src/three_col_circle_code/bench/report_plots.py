@@ -147,7 +147,7 @@ def _row_hover_data(row: ReportRow) -> list[object]:
         row.family,
         row.n,
         row.m,
-        row.is_three_colorable,
+        row.is_colorable,
         row.status,
     ]
 
@@ -162,7 +162,7 @@ def _runtime_scatter_hovertemplate() -> str:
         "n=%{customdata[5]}<br>"
         "m=%{customdata[6]}<br>"
         "wall_time_s=%{y:.6f}<br>"
-        "is_three_colorable=%{customdata[7]}<br>"
+        "is_colorable=%{customdata[7]}<br>"
         "status=%{customdata[8]}<extra></extra>"
     )
 

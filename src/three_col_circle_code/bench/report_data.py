@@ -42,7 +42,7 @@ class ReportRow:
     solver_params: dict[str, Any]
     status: str
     wall_time_s: Optional[float]
-    is_three_colorable: Optional[bool]
+    is_colorable: Optional[bool]
     validation_ok: bool
     error: Optional[str]
 
@@ -210,7 +210,7 @@ def _normalize_report_row(row: Mapping[str, Any]) -> ReportRow:
         solver_params=dict(row.get("solver_params", {})),
         status=str(row.get("status", "unknown")),
         wall_time_s=_optional_float(row.get("wall_time_s")),
-        is_three_colorable=_optional_bool(row.get("is_three_colorable")),
+        is_colorable=_optional_bool(row.get("is_colorable")),
         validation_ok=bool(row.get("validation_ok", False)),
         error=_optional_str(row.get("error")),
     )
@@ -294,7 +294,7 @@ def _build_agreement_rows(
         answers = tuple(
             (
                 solver_variant_label(row.solver_target, row.solver_params),
-                row.is_three_colorable,
+                row.is_colorable,
             )
             for row in instance_rows
         )

@@ -588,7 +588,7 @@ def _fake_solver_result(
         backend=backend,
         status=SOLVER_STATUS_OK,
         wall_time_s=wall_time_s,
-        is_three_colorable=True,
+        is_colorable=True,
         n_vertices=2,
         m_edges=1,
         details=details or {"requested_params": {}},

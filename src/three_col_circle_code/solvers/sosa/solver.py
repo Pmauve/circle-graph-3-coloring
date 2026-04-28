@@ -77,7 +77,7 @@ def solve_sosa(
         backend=None,
         status=SOLVER_STATUS_OK,
         wall_time_s=perf_counter() - started_at,
-        is_three_colorable=solve_result.is_colorable,
+        is_colorable=solve_result.is_colorable,
         n_vertices=geometry.n_vertices,
         m_edges=geometry.m_edges,
         details=_result_details(
@@ -225,7 +225,7 @@ def _error_result(
         backend=None,
         status=SOLVER_STATUS_ERROR,
         wall_time_s=None,
-        is_three_colorable=None,
+        is_colorable=None,
         n_vertices=graph.number_of_nodes(),
         m_edges=graph.number_of_edges(),
         details=details,

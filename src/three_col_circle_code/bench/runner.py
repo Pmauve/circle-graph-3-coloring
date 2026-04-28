@@ -474,7 +474,7 @@ def _build_result_record(
         "solver_params": dict(task.solver_config.params),
         "status": solve_result.status,
         "wall_time_s": solve_result.wall_time_s,
-        "is_three_colorable": solve_result.is_three_colorable,
+        "is_colorable": solve_result.is_colorable,
         "validation_ok": validation_ok,
         "validation_errors": validation_errors,
         "details": solve_result.details,
@@ -504,7 +504,7 @@ def _build_invalid_result_record(
         "solver_params": dict(task.solver_config.params),
         "status": BENCH_STATUS_INVALID,
         "wall_time_s": None,
-        "is_three_colorable": None,
+        "is_colorable": None,
         "validation_ok": False,
         "validation_errors": [
             {

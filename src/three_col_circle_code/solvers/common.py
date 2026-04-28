@@ -43,7 +43,7 @@ class SolverResult:
     backend: Optional[str]
     status: str
     wall_time_s: Optional[float]
-    is_three_colorable: Optional[bool]
+    is_colorable: Optional[bool]
     n_vertices: int
     m_edges: int
     details: dict[str, Any] = field(default_factory=dict)

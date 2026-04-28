@@ -53,14 +53,14 @@ class SosaCorrectnessVsSatTests(unittest.TestCase):
             msg=f"SOSA did not solve a canonical instance of size {graph.number_of_nodes()}",
         )
         self.assertEqual(
-            sosa_result.is_three_colorable,
+            sosa_result.is_colorable,
             sat_result.is_sat,
             msg=(
                 "SOSA and SAT disagree for endpoint pairs "
                 f"{_endpoint_pairs_from_graph(graph)} with backend {self.oracle_backend}"
             ),
         )
-        if sosa_result.is_three_colorable:
+        if sosa_result.is_colorable:
             self.assertIn("coloring_by_node", sosa_result.details)
             self.assertTrue(is_valid_coloring_by_node(graph, sosa_result.details["coloring_by_node"]))
         else:

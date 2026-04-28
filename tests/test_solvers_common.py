@@ -34,7 +34,7 @@ class SolverCommonTests(unittest.TestCase):
             backend="legacy-pysmt-msat",
             status=SOLVER_STATUS_OK,
             wall_time_s=0.1,
-            is_three_colorable=True,
+            is_colorable=True,
             n_vertices=3,
             m_edges=2,
             details={"cutoff": 5},
@@ -43,7 +43,7 @@ class SolverCommonTests(unittest.TestCase):
 
         self.assertEqual(result.status, SOLVER_STATUS_OK)
         self.assertEqual(result.backend, "legacy-pysmt-msat")
-        self.assertTrue(result.is_three_colorable)
+        self.assertTrue(result.is_colorable)
         self.assertEqual(result.details, {"cutoff": 5})
         self.assertNotEqual(SOLVER_STATUS_OK, SOLVER_STATUS_ERROR)
 

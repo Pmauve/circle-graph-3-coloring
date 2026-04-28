@@ -33,7 +33,7 @@ class SosaSolverTests(unittest.TestCase):
 
         self.assertEqual(result.solver, SOSA_SOLVER)
         self.assertEqual(result.status, SOLVER_STATUS_OK)
-        self.assertTrue(result.is_three_colorable)
+        self.assertTrue(result.is_colorable)
         self.assertEqual(result.details["implementation_status"], "paper-faithful-v1")
         self.assertEqual(
             result.details["config"],
@@ -54,7 +54,7 @@ class SosaSolverTests(unittest.TestCase):
         result = solve_sosa(graph, params={"base_case_n": 8})
 
         self.assertEqual(result.status, SOLVER_STATUS_OK)
-        self.assertFalse(result.is_three_colorable)
+        self.assertFalse(result.is_colorable)
         self.assertEqual(result.details["base_case_calls"], 1)
         self.assertNotIn("coloring_by_node", result.details)
 
@@ -69,7 +69,7 @@ class SosaSolverTests(unittest.TestCase):
 
         self.assertEqual(result.solver, SOSA_SOLVER)
         self.assertEqual(result.status, SOLVER_STATUS_OK)
-        self.assertTrue(result.is_three_colorable)
+        self.assertTrue(result.is_colorable)
         self.assertEqual(
             result.details["config"],
             {
@@ -90,7 +90,7 @@ class SosaSolverTests(unittest.TestCase):
         )
 
         self.assertEqual(result.status, SOLVER_STATUS_OK)
-        self.assertFalse(result.is_three_colorable)
+        self.assertFalse(result.is_colorable)
         self.assertEqual(result.details["base_case_calls"], 1)
         self.assertNotIn("coloring_by_node", result.details)
 
@@ -101,7 +101,7 @@ class SosaSolverTests(unittest.TestCase):
 
         self.assertEqual(result.solver, SOSA_SOLVER)
         self.assertEqual(result.status, SOLVER_STATUS_ERROR)
-        self.assertIsNone(result.is_three_colorable)
+        self.assertIsNone(result.is_colorable)
         self.assertIsNone(result.wall_time_s)
         self.assertEqual(result.details["implementation_status"], "paper-faithful-v1")
         self.assertIn("invalid SOSA parameters", result.error)
@@ -113,7 +113,7 @@ class SosaSolverTests(unittest.TestCase):
 
         self.assertEqual(result.solver, SOSA_SOLVER)
         self.assertEqual(result.status, SOLVER_STATUS_OK)
-        self.assertTrue(result.is_three_colorable)
+        self.assertTrue(result.is_colorable)
         self.assertEqual(
             result.details["config"],
             {
@@ -137,7 +137,7 @@ class SosaSolverTests(unittest.TestCase):
 
         self.assertEqual(result.solver, SOSA_SOLVER)
         self.assertEqual(result.status, SOLVER_STATUS_OK)
-        self.assertTrue(result.is_three_colorable)
+        self.assertTrue(result.is_colorable)
         self.assertEqual(
             result.details["config"],
             {
@@ -173,7 +173,7 @@ class SosaSolverTests(unittest.TestCase):
 
         self.assertEqual(result.solver, SOSA_SOLVER)
         self.assertEqual(result.status, SOLVER_STATUS_OK)
-        self.assertFalse(result.is_three_colorable)
+        self.assertFalse(result.is_colorable)
         self.assertEqual(
             result.details["config"],
             {
@@ -204,7 +204,7 @@ class SosaSolverTests(unittest.TestCase):
 
         self.assertEqual(result.solver, SOSA_SOLVER)
         self.assertEqual(result.status, SOLVER_STATUS_OK)
-        self.assertFalse(result.is_three_colorable)
+        self.assertFalse(result.is_colorable)
         self.assertEqual(
             result.details["config"],
             {
@@ -237,8 +237,8 @@ class SosaSolverTests(unittest.TestCase):
                 self.assertEqual(backtracking_result.status, SOLVER_STATUS_OK)
                 self.assertEqual(sat_result.status, SOLVER_STATUS_OK)
                 self.assertEqual(
-                    backtracking_result.is_three_colorable,
-                    sat_result.is_three_colorable,
+                    backtracking_result.is_colorable,
+                    sat_result.is_colorable,
                 )
 
 if __name__ == "__main__":
