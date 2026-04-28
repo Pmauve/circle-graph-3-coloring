@@ -1,5 +1,6 @@
 import argparse
 from datetime import UTC, datetime
+import os
 from pathlib import Path
 from time import perf_counter
 from typing import Iterable, Optional
@@ -10,8 +11,9 @@ from three_col_circle_code.generation.families import (
     generate_seeded_family,
     seeded_families,
 )
-from three_col_circle_code.instances.io import save_instance
+from three_col_circle_code.instances.io import load_instance, save_instance
 from three_col_circle_code.instances.model import InstanceFormatError, InstanceMetadata, InstanceRecord, bucket_for_n
+from three_col_circle_code.instances.validate import validate_instance
 
 
 SUPPORTED_FAMILIES = seeded_families()
@@ -76,16 +78,43 @@ def generate_many(
     ]
 
 
-def write_instance(record: InstanceRecord, output_dir: Path) -> Path:
+def write_instance(record: InstanceRecord, output_dir: Path, *, atomic: bool = False) -> Path:
     """Save a generated instance under its deterministic instance id."""
-    path = (
+    path = instance_output_path(record, output_dir)
+    return write_instance_to_path(record, path, atomic=atomic)
+
+
+def instance_output_path(record: InstanceRecord, output_dir: Path) -> Path:
+    """Return the deterministic canonical path for a generated instance."""
+    return (
         Path(output_dir)
         / record.metadata.family
         / record.metadata.bucket
         / f"{record.metadata.instance_id}.json"
     )
-    save_instance(record, path)
-    return path
+
+
+def write_instance_to_path(record: InstanceRecord, path: Path, *, atomic: bool = False) -> Path:
+    """Save a generated instance to an explicit path."""
+    instance_path = Path(path)
+    if not atomic:
+        save_instance(record, instance_path)
+        return instance_path
+
+    instance_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = instance_path.with_name(f".{instance_path.name}.tmp.{os.getpid()}")
+    try:
+        save_instance(record, tmp_path)
+        loaded = load_instance(tmp_path)
+        validation = validate_instance(loaded.graph, metadata=loaded.metadata.to_dict())
+        if not validation.ok:
+            errors = [{"code": issue.code, "message": issue.message} for issue in validation.errors]
+            raise ValueError(f"generated instance did not validate: {errors}")
+        tmp_path.replace(instance_path)
+    finally:
+        if tmp_path.exists():
+            tmp_path.unlink()
+    return instance_path
 
 
 def main(argv: Optional[Iterable[str]] = None) -> int:

@@ -9,7 +9,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from three_col_circle_code.generation.random_instances import (
     generate_instance,
     generate_many,
+    instance_output_path,
     write_instance,
+    write_instance_to_path,
 )
 from three_col_circle_code.instances.io import load_instance
 from three_col_circle_code.instances.validate import validate_instance, validate_instance_file
@@ -148,7 +150,7 @@ class RandomInstanceGenerationTests(unittest.TestCase):
 
         self.assertEqual(
             path,
-            output_dir / record.metadata.family / record.metadata.bucket / f"{record.metadata.instance_id}.json",
+            instance_output_path(record, output_dir),
         )
         self.assertIn("metadata", payload)
         self.assertIn("graph", payload)
@@ -157,6 +159,17 @@ class RandomInstanceGenerationTests(unittest.TestCase):
         self.assertGreaterEqual(loaded.metadata.generation_time_seconds, 0.0)
         self.assertEqual(loaded.metadata.max_attempts_per_node, 10_000)
         self.assertTrue(report.ok)
+
+    def test_write_instance_to_path_supports_atomic_write(self) -> None:
+        record = generate_instance(family="rc", n=6, seed=5)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "custom" / "instance.json"
+            returned = write_instance_to_path(record, path, atomic=True)
+            loaded = load_instance(path)
+
+        self.assertEqual(returned, path)
+        self.assertEqual(loaded.metadata.instance_id, record.metadata.instance_id)
 
     def test_generate_instance_records_custom_attempt_limit_in_metadata(self) -> None:
         record = generate_instance(family="rc_fast", n=8, seed=17, max_attempts_per_node=321)
