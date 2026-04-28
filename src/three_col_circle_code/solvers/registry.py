@@ -9,12 +9,17 @@ from three_col_circle_code.solvers.sat import (
     available_sat_solver_backends,
     solve_sat_solver,
 )
-from three_col_circle_code.solvers.sosa.solver import SOSA_SOLVER, solve_sosa
+from three_col_circle_code.solvers.sosa.solver import (
+    SOSA_3_COL_EXACT_SOLVER,
+    SOSA_K_COL_HEURISTIC_SOLVER,
+    solve_sosa_3_col_exact,
+    solve_sosa_k_col_heuristic,
+)
 
 
 def available_solver_names() -> tuple[str, ...]:
     """Return the registered solver families."""
-    return (SAT_BASELINE_SOLVER, SOSA_SOLVER)
+    return (SAT_BASELINE_SOLVER, SOSA_3_COL_EXACT_SOLVER, SOSA_K_COL_HEURISTIC_SOLVER)
 
 
 def resolve_solver_configs(
@@ -53,10 +58,14 @@ def run_solver(
             backend=config.backend or available_sat_solver_backends()[0],
             params=config.params,
         )
-    if config.solver == SOSA_SOLVER:
+    if config.solver == SOSA_3_COL_EXACT_SOLVER:
         if config.backend is not None:
             raise ValueError("SOSA solver does not support backends")
-        return solve_sosa(graph, params=config.params)
+        return solve_sosa_3_col_exact(graph, params=config.params)
+    if config.solver == SOSA_K_COL_HEURISTIC_SOLVER:
+        if config.backend is not None:
+            raise ValueError("SOSA solver does not support backends")
+        return solve_sosa_k_col_heuristic(graph, params=config.params)
     raise ValueError(
         f"unsupported solver {config.solver!r}; expected one of {available_solver_names()}"
     )
@@ -74,7 +83,7 @@ def _parse_solver_spec(spec: str) -> tuple[str, Optional[str]]:
 
 def _validate_solver_config(*, solver: str, backend: Optional[str]) -> None:
     """Validate a solver/backend pair against the current registry."""
-    if solver == SOSA_SOLVER:
+    if solver in (SOSA_3_COL_EXACT_SOLVER, SOSA_K_COL_HEURISTIC_SOLVER):
         if backend is not None:
             raise ValueError("SOSA solver does not support backends")
         return

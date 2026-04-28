@@ -13,7 +13,7 @@ from three_col_circle_code.sat.baseline import (
     solve_3color_baseline,
 )
 from three_col_circle_code.solvers.common import SOLVER_STATUS_OK
-from three_col_circle_code.solvers.sosa import solve_sosa
+from three_col_circle_code.solvers.sosa import solve_sosa_3_col_exact
 from sosa_test_utils import (
     enumerate_endpoint_pairings,
     graph_from_endpoints,
@@ -45,7 +45,7 @@ class SosaCorrectnessVsSatTests(unittest.TestCase):
 
     def _assert_sosa_matches_sat(self, graph: nx.Graph, *, base_case_n: int) -> None:
         sat_result = solve_3color_baseline(graph, backend=self.oracle_backend)
-        sosa_result = solve_sosa(graph, params={"base_case_n": base_case_n})
+        sosa_result = solve_sosa_3_col_exact(graph, params={"base_case_n": base_case_n})
 
         self.assertEqual(
             sosa_result.status,

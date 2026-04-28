@@ -36,26 +36,71 @@ from three_col_circle_code.solvers.sosa.types import (
 )
 
 
-SOSA_SOLVER = "sosa"
+SOSA_3_COL_EXACT_SOLVER = "sosa-3-col-exact"
+SOSA_K_COL_HEURISTIC_SOLVER = "sosa-k-col-heuristic"
 IMPLEMENTATION_STATUS = "paper-faithful-v1"
 
 
-def solve_sosa(
+def solve_sosa_3_col_exact(
     graph: nx.Graph,
     *,
     params: Optional[Mapping[str, Any]] = None,
 ) -> SolverResult:
-    """Run the paper-faithful SOSA solver on a canonical circle-graph instance.
+    """Run the theorem-backed exact 3-color SOSA solver.
 
     Precondition:
     - `graph` must already be a valid canonical chord-annotated
       circle graph.
     """
+    return _solve_sosa(
+        graph,
+        solver=SOSA_3_COL_EXACT_SOLVER,
+        params=params,
+        validate_config=_validate_sosa_3_col_exact_config,
+    )
+
+
+def solve_sosa_k_col_heuristic(
+    graph: nx.Graph,
+    *,
+    params: Optional[Mapping[str, Any]] = None,
+) -> SolverResult:
+    """Run experimental SOSA branching with a k-color base-case check."""
     try:
         config = SosaConfig.from_mapping(params)
+        _validate_sosa_k_col_heuristic_config(config)
     except Exception as exc:
         return _error_result(
             graph=graph,
+            solver=SOSA_K_COL_HEURISTIC_SOLVER,
+            config_dict=None,
+            stats=SosaStats(),
+            error=f"invalid SOSA parameters: {exc}",
+        )
+    return _error_result(
+        graph=graph,
+        solver=SOSA_K_COL_HEURISTIC_SOLVER,
+        config_dict=config.to_dict(),
+        stats=SosaStats(),
+        error="SOSA k-color heuristic base-case support is not implemented yet",
+    )
+
+
+def _solve_sosa(
+    graph: nx.Graph,
+    *,
+    solver: str,
+    params: Optional[Mapping[str, Any]],
+    validate_config: Any,
+) -> SolverResult:
+    """Run one validated SOSA variant on a canonical circle-graph instance."""
+    try:
+        config = SosaConfig.from_mapping(params)
+        validate_config(config)
+    except Exception as exc:
+        return _error_result(
+            graph=graph,
+            solver=solver,
             config_dict=None,
             stats=SosaStats(),
             error=f"invalid SOSA parameters: {exc}",
@@ -73,7 +118,7 @@ def solve_sosa(
         depth=0,
     )
     return SolverResult(
-        solver=SOSA_SOLVER,
+        solver=solver,
         backend=None,
         status=SOLVER_STATUS_OK,
         wall_time_s=perf_counter() - started_at,
@@ -214,6 +259,7 @@ def _merge_vertex_colorings(*colorings: Mapping[int, int]) -> VertexColoring:
 def _error_result(
     *,
     graph: nx.Graph,
+    solver: str,
     config_dict: Optional[dict[str, Any]],
     stats: SosaStats,
     error: str,
@@ -221,7 +267,7 @@ def _error_result(
     """Build a standardized SOSA error result."""
     details = _result_details(config_dict=config_dict, stats=stats, geometry=None, witness=None)
     return SolverResult(
-        solver=SOSA_SOLVER,
+        solver=solver,
         backend=None,
         status=SOLVER_STATUS_ERROR,
         wall_time_s=None,
@@ -231,6 +277,18 @@ def _error_result(
         details=details,
         error=error,
     )
+
+
+def _validate_sosa_3_col_exact_config(config: SosaConfig) -> None:
+    if config.num_colors != 3:
+        raise ValueError("SOSA exact 3-color solver requires 'num_colors' to be 3")
+
+
+def _validate_sosa_k_col_heuristic_config(config: SosaConfig) -> None:
+    if config.num_colors < 4:
+        raise ValueError("SOSA k-color heuristic solver requires 'num_colors' to be at least 4")
+    if config.produce_witness:
+        raise ValueError("SOSA k-color heuristic solver does not support witness output")
 
 
 def _result_details(

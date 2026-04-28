@@ -7,7 +7,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from three_col_circle_code.solvers.common import SOLVER_STATUS_ERROR, SOLVER_STATUS_OK
-from three_col_circle_code.solvers.sosa import SOSA_SOLVER, solve_sosa
+from three_col_circle_code.solvers.sosa import (
+    SOSA_3_COL_EXACT_SOLVER,
+    SOSA_K_COL_HEURISTIC_SOLVER,
+    solve_sosa_3_col_exact,
+    solve_sosa_k_col_heuristic,
+)
 from three_col_circle_code.solvers.sosa.colors import (
     Color,
     color_to_mask,
@@ -29,9 +34,9 @@ class SosaSolverTests(unittest.TestCase):
     def test_sosa_solves_small_three_colorable_canonical_graph(self) -> None:
         graph = graph_from_endpoints(((0, 3), (1, 4), (2, 5)))
 
-        result = solve_sosa(graph, params={"base_case_n": 8})
+        result = solve_sosa_3_col_exact(graph, params={"base_case_n": 8})
 
-        self.assertEqual(result.solver, SOSA_SOLVER)
+        self.assertEqual(result.solver, SOSA_3_COL_EXACT_SOLVER)
         self.assertEqual(result.status, SOLVER_STATUS_OK)
         self.assertTrue(result.is_colorable)
         self.assertEqual(result.details["implementation_status"], "paper-faithful-v1")
@@ -53,7 +58,7 @@ class SosaSolverTests(unittest.TestCase):
     def test_sosa_detects_small_non_three_colorable_canonical_graph(self) -> None:
         graph = graph_from_endpoints(((0, 4), (1, 5), (2, 6), (3, 7)))
 
-        result = solve_sosa(graph, params={"base_case_n": 8})
+        result = solve_sosa_3_col_exact(graph, params={"base_case_n": 8})
 
         self.assertEqual(result.status, SOLVER_STATUS_OK)
         self.assertFalse(result.is_colorable)
@@ -64,12 +69,12 @@ class SosaSolverTests(unittest.TestCase):
     def test_sosa_sat_mode_solves_small_three_colorable_graph_without_witness(self) -> None:
         graph = graph_from_endpoints(((0, 3), (1, 4), (2, 5)))
 
-        result = solve_sosa(
+        result = solve_sosa_3_col_exact(
             graph,
             params={"base_case_n": 8, "base_case_algorithm": "sat"},
         )
 
-        self.assertEqual(result.solver, SOSA_SOLVER)
+        self.assertEqual(result.solver, SOSA_3_COL_EXACT_SOLVER)
         self.assertEqual(result.status, SOLVER_STATUS_OK)
         self.assertTrue(result.is_colorable)
         self.assertEqual(
@@ -88,7 +93,7 @@ class SosaSolverTests(unittest.TestCase):
     def test_sosa_sat_mode_detects_small_non_three_colorable_graph_without_witness(self) -> None:
         graph = graph_from_endpoints(((0, 4), (1, 5), (2, 6), (3, 7)))
 
-        result = solve_sosa(
+        result = solve_sosa_3_col_exact(
             graph,
             params={"base_case_n": 8, "base_case_algorithm": "sat"},
         )
@@ -101,21 +106,76 @@ class SosaSolverTests(unittest.TestCase):
     def test_sosa_rejects_invalid_parameters(self) -> None:
         graph = graph_from_endpoints(((0, 1),))
 
-        result = solve_sosa(graph, params={"base_case_n": -1})
+        result = solve_sosa_3_col_exact(graph, params={"base_case_n": -1})
 
-        self.assertEqual(result.solver, SOSA_SOLVER)
+        self.assertEqual(result.solver, SOSA_3_COL_EXACT_SOLVER)
         self.assertEqual(result.status, SOLVER_STATUS_ERROR)
         self.assertIsNone(result.is_colorable)
         self.assertIsNone(result.wall_time_s)
         self.assertEqual(result.details["implementation_status"], "paper-faithful-v1")
         self.assertIn("invalid SOSA parameters", result.error)
 
+    def test_exact_sosa_rejects_non_three_color_config(self) -> None:
+        graph = graph_from_endpoints(((0, 1),))
+
+        result = solve_sosa_3_col_exact(graph, params={"num_colors": 4})
+
+        self.assertEqual(result.solver, SOSA_3_COL_EXACT_SOLVER)
+        self.assertEqual(result.status, SOLVER_STATUS_ERROR)
+        self.assertIsNone(result.is_colorable)
+        self.assertIn("requires 'num_colors' to be 3", result.error)
+
+    def test_k_color_heuristic_rejects_default_three_color_config(self) -> None:
+        graph = graph_from_endpoints(((0, 1),))
+
+        result = solve_sosa_k_col_heuristic(graph)
+
+        self.assertEqual(result.solver, SOSA_K_COL_HEURISTIC_SOLVER)
+        self.assertEqual(result.status, SOLVER_STATUS_ERROR)
+        self.assertIsNone(result.is_colorable)
+        self.assertIn("requires 'num_colors' to be at least 4", result.error)
+
+    def test_k_color_heuristic_rejects_witness_output(self) -> None:
+        graph = graph_from_endpoints(((0, 1),))
+
+        result = solve_sosa_k_col_heuristic(
+            graph,
+            params={"num_colors": 4, "produce_witness": True},
+        )
+
+        self.assertEqual(result.solver, SOSA_K_COL_HEURISTIC_SOLVER)
+        self.assertEqual(result.status, SOLVER_STATUS_ERROR)
+        self.assertIsNone(result.is_colorable)
+        self.assertIn("does not support witness output", result.error)
+
+    def test_k_color_heuristic_reports_not_implemented_for_valid_config(self) -> None:
+        graph = graph_from_endpoints(((0, 1),))
+
+        result = solve_sosa_k_col_heuristic(
+            graph,
+            params={"num_colors": 4, "produce_witness": False},
+        )
+
+        self.assertEqual(result.solver, SOSA_K_COL_HEURISTIC_SOLVER)
+        self.assertEqual(result.status, SOLVER_STATUS_ERROR)
+        self.assertIsNone(result.is_colorable)
+        self.assertEqual(
+            result.details["config"],
+            {
+                "base_case_n": 8,
+                "base_case_algorithm": "backtracking",
+                "num_colors": 4,
+                "produce_witness": False,
+            },
+        )
+        self.assertIn("not implemented yet", result.error)
+
     def test_sosa_solves_large_three_colorable_instance_recursively(self) -> None:
         graph = graph_from_endpoints(tuple((2 * i, 2 * i + 1) for i in range(9)))
 
-        result = solve_sosa(graph, params={"base_case_n": 4})
+        result = solve_sosa_3_col_exact(graph, params={"base_case_n": 4})
 
-        self.assertEqual(result.solver, SOSA_SOLVER)
+        self.assertEqual(result.solver, SOSA_3_COL_EXACT_SOLVER)
         self.assertEqual(result.status, SOLVER_STATUS_OK)
         self.assertTrue(result.is_colorable)
         self.assertEqual(
@@ -136,12 +196,12 @@ class SosaSolverTests(unittest.TestCase):
     def test_sosa_sat_mode_solves_large_three_colorable_instance_recursively_without_witness(self) -> None:
         graph = graph_from_endpoints(tuple((2 * i, 2 * i + 1) for i in range(9)))
 
-        result = solve_sosa(
+        result = solve_sosa_3_col_exact(
             graph,
             params={"base_case_n": 4, "base_case_algorithm": "sat"},
         )
 
-        self.assertEqual(result.solver, SOSA_SOLVER)
+        self.assertEqual(result.solver, SOSA_3_COL_EXACT_SOLVER)
         self.assertEqual(result.status, SOLVER_STATUS_OK)
         self.assertTrue(result.is_colorable)
         self.assertEqual(
@@ -174,12 +234,12 @@ class SosaSolverTests(unittest.TestCase):
             )
         )
 
-        result = solve_sosa(
+        result = solve_sosa_3_col_exact(
             graph,
             params={"base_case_n": 4, "base_case_algorithm": "sat"},
         )
 
-        self.assertEqual(result.solver, SOSA_SOLVER)
+        self.assertEqual(result.solver, SOSA_3_COL_EXACT_SOLVER)
         self.assertEqual(result.status, SOLVER_STATUS_OK)
         self.assertFalse(result.is_colorable)
         self.assertEqual(
@@ -210,9 +270,9 @@ class SosaSolverTests(unittest.TestCase):
             )
         )
 
-        result = solve_sosa(graph, params={"base_case_n": 4})
+        result = solve_sosa_3_col_exact(graph, params={"base_case_n": 4})
 
-        self.assertEqual(result.solver, SOSA_SOLVER)
+        self.assertEqual(result.solver, SOSA_3_COL_EXACT_SOLVER)
         self.assertEqual(result.status, SOLVER_STATUS_OK)
         self.assertFalse(result.is_colorable)
         self.assertEqual(
@@ -237,11 +297,11 @@ class SosaSolverTests(unittest.TestCase):
 
         for graph in graphs:
             with self.subTest(n_vertices=graph.number_of_nodes(), edges=tuple(sorted(graph.edges()))):
-                backtracking_result = solve_sosa(
+                backtracking_result = solve_sosa_3_col_exact(
                     graph,
                     params={"base_case_n": 8, "base_case_algorithm": "backtracking"},
                 )
-                sat_result = solve_sosa(
+                sat_result = solve_sosa_3_col_exact(
                     graph,
                     params={"base_case_n": 8, "base_case_algorithm": "sat"},
                 )
