@@ -20,14 +20,14 @@ RUN_SPEC_FILENAME = "spec.json"
 
 
 @dataclass(frozen=True)
-class BenchmarkTask:
+class BenchmarkTrial:
     instance_request: InstanceRequest
     instance_path: Path
     solver_config: SolverConfig
 
     @property
     def key(self) -> tuple[str, str, str]:
-        return benchmark_task_key(self)
+        return benchmark_trial_key(self)
 
 
 @dataclass(frozen=True)
@@ -156,12 +156,12 @@ def expected_instance_path(
     )
 
 
-def iter_benchmark_tasks(
+def iter_benchmark_trials(
     run_spec: RunSpec,
     instance_paths: Mapping[str, Path],
-) -> tuple[BenchmarkTask, ...]:
-    tasks = [
-        BenchmarkTask(
+) -> tuple[BenchmarkTrial, ...]:
+    trials = [
+        BenchmarkTrial(
             instance_request=request,
             instance_path=Path(instance_paths[request.instance_id]),
             solver_config=solver_config,
@@ -171,23 +171,23 @@ def iter_benchmark_tasks(
     ]
     return tuple(
         sorted(
-            tasks,
-            key=lambda task: (
-                task.instance_request.family,
-                task.instance_request.n,
-                task.instance_request.seed,
-                task.solver_config.target,
-                canonical_params_json(task.solver_config.params),
+            trials,
+            key=lambda trial: (
+                trial.instance_request.family,
+                trial.instance_request.n,
+                trial.instance_request.seed,
+                trial.solver_config.target,
+                canonical_params_json(trial.solver_config.params),
             ),
         )
     )
 
 
-def benchmark_task_key(task: BenchmarkTask) -> tuple[str, str, str]:
+def benchmark_trial_key(trial: BenchmarkTrial) -> tuple[str, str, str]:
     return (
-        task.instance_request.instance_id,
-        task.solver_config.target,
-        canonical_params_json(task.solver_config.params),
+        trial.instance_request.instance_id,
+        trial.solver_config.target,
+        canonical_params_json(trial.solver_config.params),
     )
 
 
@@ -214,6 +214,7 @@ def build_run_manifest(
         ],
         "solvers": [solver_manifest_entry(config) for config in run_spec.solver_configs],
         "n_instances": len(run_spec.instance_requests),
+        "n_trials": len(run_spec.instance_requests) * len(run_spec.solver_configs),
         "n_tasks": len(run_spec.instance_requests) * len(run_spec.solver_configs),
         "environment": environment or {},
     }

@@ -6,9 +6,9 @@ from typing import Any, Iterable, Optional, TextIO
 
 from three_col_circle_code.bench.env import collect_environment_metadata
 from three_col_circle_code.bench.planning import (
-    BenchmarkTask,
+    BenchmarkTrial,
     build_run_manifest,
-    iter_benchmark_tasks,
+    iter_benchmark_trials,
     load_spec_for_run,
     materialize_run_instances,
     prepare_run_directory,
@@ -60,11 +60,11 @@ def run_benchmark(
         run_spec,
         progress_callback=lambda message: _emit_progress(progress_stream, message),
     )
-    tasks = iter_benchmark_tasks(run_spec, materialized.paths)
+    trials = iter_benchmark_trials(run_spec, materialized.paths)
     _emit_progress(
         progress_stream,
         (
-            f"Planned tasks: {len(tasks)} across {len(run_spec.instance_requests)} instances "
+            f"Planned trials: {len(trials)} across {len(run_spec.instance_requests)} instances "
             f"and {len(run_spec.solver_configs)} solver configs"
         ),
     )
@@ -88,44 +88,44 @@ def run_benchmark(
         ),
     )
 
-    completed_task_keys = _load_completed_task_keys(run_dir)
-    if completed_task_keys:
+    completed_trial_keys = _load_completed_trial_keys(run_dir)
+    if completed_trial_keys:
         _emit_progress(
             progress_stream,
-            f"Resuming existing run: skipping {len(completed_task_keys)} completed tasks",
+            f"Resuming existing run: skipping {len(completed_trial_keys)} completed trials",
         )
 
     cached_records: dict[Path, InstanceRecord] = {}
     cached_validations: dict[Path, tuple[bool, list[dict[str, Any]]]] = {}
-    for index, task in enumerate(tasks, start=1):
-        if task.key in completed_task_keys:
+    for index, trial in enumerate(trials, start=1):
+        if trial.key in completed_trial_keys:
             continue
-        _emit_progress(progress_stream, f"[{index}/{len(tasks)}] {_format_task(task)}")
-        loaded_record = cached_records.get(task.instance_path)
+        _emit_progress(progress_stream, f"[{index}/{len(trials)}] {_format_trial(trial)}")
+        loaded_record = cached_records.get(trial.instance_path)
         try:
             if loaded_record is None:
-                loaded_record = load_instance(task.instance_path)
-                cached_records[task.instance_path] = loaded_record
+                loaded_record = load_instance(trial.instance_path)
+                cached_records[trial.instance_path] = loaded_record
         except (InstanceFormatError, json.JSONDecodeError, OSError) as exc:
             result_row = _build_invalid_result_record(
                 run_id=run_id_value,
-                task=task,
+                trial=trial,
                 error=exc,
             )
             append_result(run_dir, result_row)
         else:
-            validation_info = cached_validations.get(task.instance_path)
+            validation_info = cached_validations.get(trial.instance_path)
             if validation_info is None:
                 validation = validate_instance(loaded_record.graph, metadata=loaded_record.metadata.to_dict())
                 validation_info = (
                     validation.ok,
                     _serialize_validation_errors(validation.errors),
                 )
-                cached_validations[task.instance_path] = validation_info
-            result_row = _execute_benchmark_task(
+                cached_validations[trial.instance_path] = validation_info
+            result_row = _execute_benchmark_trial(
                 run_dir=run_dir,
                 run_id=run_id_value,
-                task=task,
+                trial=trial,
                 record=loaded_record,
                 validation_ok=validation_info[0],
                 validation_errors=validation_info[1],
@@ -181,7 +181,7 @@ def _load_existing_created_at(run_dir: Path) -> Optional[str]:
     return str(created_at)
 
 
-def _load_completed_task_keys(run_dir: Path) -> set[tuple[str, str, str]]:
+def _load_completed_trial_keys(run_dir: Path) -> set[tuple[str, str, str]]:
     results_path = Path(run_dir) / RESULTS_FILENAME
     if not results_path.exists():
         return set()
@@ -217,21 +217,21 @@ def _load_status_counts(run_dir: Path) -> dict[str, int]:
     return counts
 
 
-def _execute_benchmark_task(
+def _execute_benchmark_trial(
     *,
     run_dir: Path,
     run_id: str,
-    task: BenchmarkTask,
+    trial: BenchmarkTrial,
     record: Optional[InstanceRecord] = None,
     validation_ok: Optional[bool] = None,
     validation_errors: Optional[list[dict[str, Any]]] = None,
 ) -> dict[str, Any]:
     try:
-        loaded_record = record or load_instance(task.instance_path)
+        loaded_record = record or load_instance(trial.instance_path)
     except (InstanceFormatError, json.JSONDecodeError, OSError) as exc:
         result_row = _build_invalid_result_record(
             run_id=run_id,
-            task=task,
+            trial=trial,
             error=exc,
         )
         append_result(run_dir, result_row)
@@ -241,10 +241,10 @@ def _execute_benchmark_task(
         validation = validate_instance(loaded_record.graph, metadata=loaded_record.metadata.to_dict())
         validation_ok = validation.ok
         validation_errors = _serialize_validation_errors(validation.errors)
-    solve_result = run_solver(loaded_record, task.solver_config)
+    solve_result = run_solver(loaded_record, trial.solver_config)
     result_row = _build_result_record(
         run_id=run_id,
-        task=task,
+        trial=trial,
         record=loaded_record,
         validation_ok=validation_ok,
         validation_errors=validation_errors,
@@ -257,7 +257,7 @@ def _execute_benchmark_task(
 def _build_result_record(
     *,
     run_id: str,
-    task: BenchmarkTask,
+    trial: BenchmarkTrial,
     record: InstanceRecord,
     validation_ok: bool,
     validation_errors: list[dict[str, Any]],
@@ -266,18 +266,18 @@ def _build_result_record(
     return {
         "run_id": run_id,
         "instance_id": record.metadata.instance_id,
-        "instance_path": str(task.instance_path),
+        "instance_path": str(trial.instance_path),
         "family": record.metadata.family,
         "bucket": record.metadata.bucket,
         "n": record.metadata.n,
         "m": record.metadata.m,
         "seed": record.metadata.seed,
         "source": record.metadata.source,
-        "solver_target": task.solver_config.target,
+        "solver_target": trial.solver_config.target,
         "solver": solve_result.solver,
         "backend": solve_result.backend,
-        "solver_params": dict(task.solver_config.params),
-        "solver_label": task.solver_config.label,
+        "solver_params": dict(trial.solver_config.params),
+        "solver_label": trial.solver_config.label,
         "status": solve_result.status,
         "wall_time_s": solve_result.wall_time_s,
         "is_colorable": solve_result.is_colorable,
@@ -291,24 +291,24 @@ def _build_result_record(
 def _build_invalid_result_record(
     *,
     run_id: str,
-    task: BenchmarkTask,
+    trial: BenchmarkTrial,
     error: Exception,
 ) -> dict[str, Any]:
     return {
         "run_id": run_id,
-        "instance_id": task.instance_path.stem,
-        "instance_path": str(task.instance_path),
-        "family": task.instance_request.family,
+        "instance_id": trial.instance_path.stem,
+        "instance_path": str(trial.instance_path),
+        "family": trial.instance_request.family,
         "bucket": None,
-        "n": task.instance_request.n,
+        "n": trial.instance_request.n,
         "m": None,
-        "seed": task.instance_request.seed,
+        "seed": trial.instance_request.seed,
         "source": None,
-        "solver_target": task.solver_config.target,
-        "solver": task.solver_config.solver,
-        "backend": task.solver_config.backend,
-        "solver_params": dict(task.solver_config.params),
-        "solver_label": task.solver_config.label,
+        "solver_target": trial.solver_config.target,
+        "solver": trial.solver_config.solver,
+        "backend": trial.solver_config.backend,
+        "solver_params": dict(trial.solver_config.params),
+        "solver_label": trial.solver_config.label,
         "status": BENCH_STATUS_INVALID,
         "wall_time_s": None,
         "is_colorable": None,
@@ -334,8 +334,12 @@ def _emit_progress(progress_stream: TextIO | None, message: str) -> None:
     print(message, file=progress_stream, flush=True)
 
 
-def _format_task(task: BenchmarkTask) -> str:
-    return f"{task.instance_request.instance_id} | {task.solver_config.target} | params={task.solver_config.params}"
+def _format_trial(trial: BenchmarkTrial) -> str:
+    return (
+        f"{trial.instance_request.instance_id} | "
+        f"{trial.solver_config.target} | "
+        f"params={trial.solver_config.params}"
+    )
 
 
 def _format_result_summary(result_row: dict[str, Any]) -> str:

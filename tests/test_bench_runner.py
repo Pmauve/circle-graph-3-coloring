@@ -18,7 +18,7 @@ from three_col_circle_code.bench.report_data import (
     SUMMARY_OVERALL_FILENAME,
 )
 from three_col_circle_code.bench.results import MANIFEST_FILENAME, RESULTS_FILENAME
-from three_col_circle_code.bench.runner import BenchmarkTask, _execute_benchmark_task, main, run_benchmark
+from three_col_circle_code.bench.runner import BenchmarkTrial, _execute_benchmark_trial, main, run_benchmark
 from three_col_circle_code.bench.specs import InstanceRequest
 from three_col_circle_code.instances.io import load_instance, save_instance
 from three_col_circle_code.instances.model import InstanceMetadata, InstanceRecord
@@ -139,7 +139,7 @@ class BenchRunnerTests(unittest.TestCase):
         self.assertIn("Resolving 1 requested instances...", rendered)
         self.assertIn("Generating missing instances (1 total)...", rendered)
         self.assertIn("Generated 1/1 missing instances", rendered)
-        self.assertIn("Planned tasks: 1 across 1 instances and 1 solver configs", rendered)
+        self.assertIn("Planned trials: 1 across 1 instances and 1 solver configs", rendered)
         self.assertIn("[1/1] rc-n0002-seed1 | sat-baseline:pysat-cadical", rendered)
         self.assertIn("-> ok in 0.2500s", rendered)
         self.assertIn("Completed run 'progress-run': ok=1, error=0, invalid=0", rendered)
@@ -187,7 +187,7 @@ class BenchRunnerTests(unittest.TestCase):
         self.assertNotIn("Generated 2/11 missing instances", rendered)
         self.assertNotIn("Generated 9/11 missing instances", rendered)
 
-    def test_execute_benchmark_task_records_invalid_instance(self) -> None:
+    def test_execute_benchmark_trial_records_invalid_instance(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_root = Path(tmpdir)
             run_dir = tmp_root / "run"
@@ -195,10 +195,10 @@ class BenchRunnerTests(unittest.TestCase):
             invalid_path = tmp_root / "broken.json"
             invalid_path.write_text("{not json", encoding="utf-8")
 
-            _execute_benchmark_task(
+            _execute_benchmark_trial(
                 run_dir=run_dir,
                 run_id="run-1",
-                task=BenchmarkTask(
+                trial=BenchmarkTrial(
                     instance_request=InstanceRequest(
                         instance_id="rc-n0002-seed1",
                         family="rc",

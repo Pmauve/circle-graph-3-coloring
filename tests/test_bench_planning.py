@@ -6,14 +6,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from three_col_circle_code.bench.planning import (
     expected_instance_path,
-    iter_benchmark_tasks,
+    iter_benchmark_trials,
     prepare_run_directory,
 )
 from three_col_circle_code.bench.specs import normalize_run_spec
 
 
 class BenchPlanningTests(unittest.TestCase):
-    def test_iter_benchmark_tasks_is_deterministically_ordered(self) -> None:
+    def test_iter_benchmark_trials_is_deterministically_ordered(self) -> None:
         run_spec = normalize_run_spec(
             {
                 "instance_pool_root": "eval/instances",
@@ -32,18 +32,18 @@ class BenchPlanningTests(unittest.TestCase):
             for request in run_spec.instance_requests
         }
 
-        tasks = iter_benchmark_tasks(run_spec, instance_paths)
+        trials = iter_benchmark_trials(run_spec, instance_paths)
 
         self.assertEqual(
             [
                 (
-                    task.instance_request.family,
-                    task.instance_request.n,
-                    task.instance_request.seed,
-                    task.solver_config.target,
-                    task.solver_config.params,
+                    trial.instance_request.family,
+                    trial.instance_request.n,
+                    trial.instance_request.seed,
+                    trial.solver_config.target,
+                    trial.solver_config.params,
                 )
-                for task in tasks
+                for trial in trials
             ],
             [
                 ("rc", 2, 1, "sat-baseline:pysat-cadical", {"cutoff": 5}),
