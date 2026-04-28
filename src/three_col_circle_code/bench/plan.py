@@ -33,6 +33,7 @@ def create_benchmark_plan(
     run_id: Optional[str] = None,
     force: bool = False,
 ) -> Path:
+    """Materialize a benchmark spec into instance and trial plan files."""
     spec_source, run_spec = load_spec_for_run(spec_path)
     validate_run_environment(run_spec)
     resolved_run_id = normalize_run_label(run_id or Path(spec_path).stem)
@@ -58,6 +59,7 @@ def create_benchmark_plan(
 
 
 def main(argv: Optional[Iterable[str]] = None) -> int:
+    """Materialize a benchmark plan from the command line."""
     parser = argparse.ArgumentParser(description="Materialize a benchmark spec into reusable plan files.")
     parser.add_argument("--spec", type=Path, required=True)
     parser.add_argument("--run-id", default=None)
@@ -82,6 +84,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
 
 
 def _build_instance_plan_rows(run_spec: RunSpec) -> tuple[InstancePlanRow, ...]:
+    """Build one instance plan row per requested benchmark instance."""
     rows: list[InstancePlanRow] = []
     for index, request in enumerate(run_spec.instance_requests, start=1):
         existing_path, _resolution = resolve_existing_instance_path(
@@ -109,6 +112,7 @@ def _build_trial_plan_rows(
     run_spec: RunSpec,
     instance_rows: tuple[InstancePlanRow, ...],
 ) -> tuple[TrialPlanRow, ...]:
+    """Build one trial plan row per instance and solver configuration."""
     rows: list[TrialPlanRow] = []
     for instance in instance_rows:
         for solver_config in run_spec.solver_configs:
@@ -138,6 +142,7 @@ def _build_plan_manifest(
     n_instances: int,
     n_trials: int,
 ) -> dict[str, Any]:
+    """Build lightweight metadata for a benchmark plan directory."""
     return {
         "run_id": run_id,
         "created_at": datetime.now(UTC).isoformat(),
@@ -148,6 +153,7 @@ def _build_plan_manifest(
 
 
 def _write_or_validate_spec_copy(spec_copy_path: Path, *, spec_source: str, force: bool) -> None:
+    """Write the spec copy or reject replacing it with a different spec."""
     if spec_copy_path.exists():
         existing_source = spec_copy_path.read_text(encoding="utf-8")
         if existing_source != spec_source and not force:

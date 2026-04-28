@@ -14,6 +14,11 @@ from three_col_circle_code.bench.planning import (
     prepare_run_directory,
     validate_run_environment,
 )
+from three_col_circle_code.bench.records import (
+    build_benchmark_result_record,
+    build_invalid_result_record,
+    serialize_validation_errors,
+)
 from three_col_circle_code.bench.report import build_benchmark_report
 from three_col_circle_code.bench.report_data import write_summary_csvs
 from three_col_circle_code.bench.results import (
@@ -30,8 +35,6 @@ from three_col_circle_code.instances.io import load_instance
 from three_col_circle_code.instances.model import InstanceFormatError, InstanceRecord
 from three_col_circle_code.instances.validate import validate_instance
 from three_col_circle_code.solvers.registry import run_solver
-
-BENCH_STATUS_INVALID = "invalid"
 
 
 def run_benchmark(
@@ -119,7 +122,7 @@ def run_benchmark(
                 validation = validate_instance(loaded_record.graph, metadata=loaded_record.metadata.to_dict())
                 validation_info = (
                     validation.ok,
-                    _serialize_validation_errors(validation.errors),
+                    serialize_validation_errors(validation.errors),
                 )
                 cached_validations[trial.instance_path] = validation_info
             result_row = _execute_benchmark_trial(
@@ -240,7 +243,7 @@ def _execute_benchmark_trial(
     if validation_ok is None or validation_errors is None:
         validation = validate_instance(loaded_record.graph, metadata=loaded_record.metadata.to_dict())
         validation_ok = validation.ok
-        validation_errors = _serialize_validation_errors(validation.errors)
+        validation_errors = serialize_validation_errors(validation.errors)
     solve_result = run_solver(loaded_record, trial.solver_config)
     result_row = _build_result_record(
         run_id=run_id,
@@ -263,29 +266,17 @@ def _build_result_record(
     validation_errors: list[dict[str, Any]],
     solve_result: Any,
 ) -> dict[str, Any]:
-    return {
-        "run_id": run_id,
-        "instance_id": record.metadata.instance_id,
-        "instance_path": str(trial.instance_path),
-        "family": record.metadata.family,
-        "bucket": record.metadata.bucket,
-        "n": record.metadata.n,
-        "m": record.metadata.m,
-        "seed": record.metadata.seed,
-        "source": record.metadata.source,
-        "solver_target": trial.solver_config.target,
-        "solver": solve_result.solver,
-        "backend": solve_result.backend,
-        "solver_params": dict(trial.solver_config.params),
-        "solver_label": trial.solver_config.label,
-        "status": solve_result.status,
-        "wall_time_s": solve_result.wall_time_s,
-        "is_colorable": solve_result.is_colorable,
-        "validation_ok": validation_ok,
-        "validation_errors": validation_errors,
-        "details": solve_result.details,
-        "error": solve_result.error,
-    }
+    return build_benchmark_result_record(
+        run_id=run_id,
+        instance_path=trial.instance_path,
+        record=record,
+        solver_target=trial.solver_config.target,
+        solver_params=dict(trial.solver_config.params),
+        solver_label=trial.solver_config.label,
+        validation_ok=validation_ok,
+        validation_errors=validation_errors,
+        solve_result=solve_result,
+    )
 
 
 def _build_invalid_result_record(
@@ -294,38 +285,20 @@ def _build_invalid_result_record(
     trial: BenchmarkTrial,
     error: Exception,
 ) -> dict[str, Any]:
-    return {
-        "run_id": run_id,
-        "instance_id": trial.instance_path.stem,
-        "instance_path": str(trial.instance_path),
-        "family": trial.instance_request.family,
-        "bucket": None,
-        "n": trial.instance_request.n,
-        "m": None,
-        "seed": trial.instance_request.seed,
-        "source": None,
-        "solver_target": trial.solver_config.target,
-        "solver": trial.solver_config.solver,
-        "backend": trial.solver_config.backend,
-        "solver_params": dict(trial.solver_config.params),
-        "solver_label": trial.solver_config.label,
-        "status": BENCH_STATUS_INVALID,
-        "wall_time_s": None,
-        "is_colorable": None,
-        "validation_ok": False,
-        "validation_errors": [
-            {
-                "code": "instance.load_error",
-                "message": str(error),
-            }
-        ],
-        "details": {"load_error_type": type(error).__name__},
-        "error": str(error),
-    }
-
-
-def _serialize_validation_errors(errors: Iterable[Any]) -> list[dict[str, Any]]:
-    return [{"code": issue.code, "message": issue.message} for issue in errors]
+    return build_invalid_result_record(
+        run_id=run_id,
+        instance_id=trial.instance_path.stem,
+        instance_path=trial.instance_path,
+        family=trial.instance_request.family,
+        n=trial.instance_request.n,
+        seed=trial.instance_request.seed,
+        solver_target=trial.solver_config.target,
+        solver=trial.solver_config.solver,
+        backend=trial.solver_config.backend,
+        solver_params=dict(trial.solver_config.params),
+        solver_label=trial.solver_config.label,
+        error=error,
+    )
 
 
 def _emit_progress(progress_stream: TextIO | None, message: str) -> None:

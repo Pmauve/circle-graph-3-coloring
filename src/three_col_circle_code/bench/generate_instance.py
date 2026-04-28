@@ -23,6 +23,7 @@ def run_instance_generation(
     work_root: Optional[Path] = None,
     force: bool = False,
 ) -> Path:
+    """Run one planned instance generation row and write its result file."""
     instance_row = _select_instance_row(plan_dir=plan_dir, index=index)
     resolved_work_root = _resolve_work_root(plan_dir=plan_dir, work_root=work_root)
     result_path = instance_result_path(resolved_work_root, index)
@@ -78,6 +79,7 @@ def run_instance_generation(
 
 
 def main(argv: Optional[Iterable[str]] = None) -> int:
+    """Run one benchmark instance generation plan row from the command line."""
     parser = argparse.ArgumentParser(description="Run one benchmark instance generation plan row.")
     parser.add_argument("--plan-dir", type=Path, required=True)
     parser.add_argument("--index", type=int, required=True)
@@ -100,6 +102,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
 
 
 def _select_instance_row(*, plan_dir: Path, index: int) -> Any:
+    """Return the instance plan row with the requested 1-based index."""
     rows = load_instance_plan(plan_dir)
     for row in rows:
         if row.index == index:
@@ -108,6 +111,7 @@ def _select_instance_row(*, plan_dir: Path, index: int) -> Any:
 
 
 def _resolve_work_root(*, plan_dir: Path, work_root: Optional[Path]) -> Path:
+    """Resolve the benchmark work root from an override or the plan manifest."""
     if work_root is not None:
         return Path(work_root)
     manifest = load_plan_manifest(plan_dir)
@@ -118,6 +122,7 @@ def _resolve_work_root(*, plan_dir: Path, work_root: Optional[Path]) -> Path:
 
 
 def _load_valid_existing_instance(instance_path: Path) -> Optional[InstanceRecord]:
+    """Load an existing instance only if it parses and validates."""
     if not Path(instance_path).exists():
         return None
     try:
@@ -131,6 +136,7 @@ def _load_valid_existing_instance(instance_path: Path) -> Optional[InstanceRecor
 
 
 def _validate_record(record: InstanceRecord) -> tuple[bool, list[dict[str, str]]]:
+    """Validate an instance record and serialize validation errors."""
     validation = validate_instance(record.graph, metadata=record.metadata.to_dict())
     return (
         validation.ok,
@@ -150,6 +156,7 @@ def _build_result(
     started_at: str,
     error: Optional[str],
 ) -> dict[str, Any]:
+    """Build the isolated result record for one instance generation row."""
     return {
         "index": index,
         "kind": "instance",
@@ -166,6 +173,7 @@ def _build_result(
 
 
 def _write_result(path: Path, result: dict[str, Any]) -> None:
+    """Write one isolated instance generation result JSON file."""
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as outfile:
         json.dump(result, outfile, indent=2, sort_keys=True)
@@ -173,6 +181,7 @@ def _write_result(path: Path, result: dict[str, Any]) -> None:
 
 
 def _now() -> str:
+    """Return the current UTC timestamp in ISO format."""
     return datetime.now(UTC).isoformat()
 
 

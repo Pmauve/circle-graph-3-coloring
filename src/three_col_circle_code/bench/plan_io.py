@@ -21,6 +21,7 @@ class InstancePlanRow:
 
     @classmethod
     def from_mapping(cls, row: Mapping[str, Any]) -> "InstancePlanRow":
+        """Build an instance plan row from a JSON object."""
         _require_fields(row, ("index", "instance_id", "family", "n", "seed", "instance_path"))
         return cls(
             index=int(row["index"]),
@@ -32,6 +33,7 @@ class InstancePlanRow:
         )
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize this instance plan row to a JSON-compatible dictionary."""
         return {
             "index": self.index,
             "instance_id": self.instance_id,
@@ -58,6 +60,7 @@ class TrialPlanRow:
 
     @classmethod
     def from_mapping(cls, row: Mapping[str, Any]) -> "TrialPlanRow":
+        """Build a trial plan row from a JSON object."""
         _require_fields(
             row,
             (
@@ -93,6 +96,7 @@ class TrialPlanRow:
         )
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize this trial plan row to a JSON-compatible dictionary."""
         return {
             "index": self.index,
             "instance_id": self.instance_id,
@@ -109,6 +113,7 @@ class TrialPlanRow:
 
 
 def write_jsonl(path: Path, rows: Iterable[Mapping[str, Any]]) -> Path:
+    """Write dictionaries as newline-delimited JSON."""
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as outfile:
         for row in rows:
@@ -118,11 +123,13 @@ def write_jsonl(path: Path, rows: Iterable[Mapping[str, Any]]) -> Path:
 
 
 def read_jsonl(path: Path) -> list[dict[str, Any]]:
+    """Read newline-delimited JSON dictionaries."""
     with path.open(encoding="utf-8") as infile:
         return [json.loads(line) for line in infile if line.strip()]
 
 
 def write_plan_manifest(plan_dir: Path, manifest: Mapping[str, Any]) -> Path:
+    """Write lightweight metadata for a benchmark plan directory."""
     plan_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = plan_dir / PLAN_MANIFEST_FILENAME
     with manifest_path.open("w", encoding="utf-8") as outfile:
@@ -132,6 +139,7 @@ def write_plan_manifest(plan_dir: Path, manifest: Mapping[str, Any]) -> Path:
 
 
 def load_plan_manifest(plan_dir: Path) -> dict[str, Any]:
+    """Load lightweight metadata from a benchmark plan directory."""
     manifest_path = Path(plan_dir) / PLAN_MANIFEST_FILENAME
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     if not isinstance(manifest, Mapping):
@@ -140,12 +148,14 @@ def load_plan_manifest(plan_dir: Path) -> dict[str, Any]:
 
 
 def write_instance_plan(plan_dir: Path, rows: Iterable[InstancePlanRow]) -> Path:
+    """Validate and write the instance plan JSONL file."""
     materialized = tuple(rows)
     validate_instance_plan(materialized)
     return write_jsonl(Path(plan_dir) / INSTANCES_FILENAME, (row.to_dict() for row in materialized))
 
 
 def load_instance_plan(plan_dir: Path) -> tuple[InstancePlanRow, ...]:
+    """Load and validate the instance plan JSONL file."""
     rows = tuple(InstancePlanRow.from_mapping(row) for row in read_jsonl(Path(plan_dir) / INSTANCES_FILENAME))
     validate_instance_plan(rows)
     return rows
@@ -157,6 +167,7 @@ def write_trial_plan(
     *,
     instances: Iterable[InstancePlanRow],
 ) -> Path:
+    """Validate and write the trial plan JSONL file."""
     materialized = tuple(rows)
     validate_trial_plan(materialized, instances=tuple(instances))
     return write_jsonl(Path(plan_dir) / TRIALS_FILENAME, (row.to_dict() for row in materialized))
@@ -167,20 +178,24 @@ def load_trial_plan(
     *,
     instances: Iterable[InstancePlanRow],
 ) -> tuple[TrialPlanRow, ...]:
+    """Load and validate the trial plan JSONL file."""
     rows = tuple(TrialPlanRow.from_mapping(row) for row in read_jsonl(Path(plan_dir) / TRIALS_FILENAME))
     validate_trial_plan(rows, instances=tuple(instances))
     return rows
 
 
 def instance_result_path(work_root: Path, index: int) -> Path:
+    """Return the isolated result path for one instance generation row."""
     return _indexed_result_path(Path(work_root) / "instances", index)
 
 
 def trial_result_path(work_root: Path, index: int) -> Path:
+    """Return the isolated result path for one benchmark trial row."""
     return _indexed_result_path(Path(work_root) / "trials", index)
 
 
 def validate_instance_plan(rows: Sequence[InstancePlanRow]) -> None:
+    """Validate instance plan row ordering and uniqueness."""
     _validate_contiguous_indices(row.index for row in rows)
     seen_instance_ids: set[str] = set()
     for row in rows:
@@ -196,6 +211,7 @@ def validate_trial_plan(
     *,
     instances: Sequence[InstancePlanRow],
 ) -> None:
+    """Validate trial plan row ordering and references to instance rows."""
     _validate_contiguous_indices(row.index for row in rows)
     instance_by_id = {row.instance_id: row for row in instances}
     seen_trial_keys: set[tuple[str, str, str]] = set()
