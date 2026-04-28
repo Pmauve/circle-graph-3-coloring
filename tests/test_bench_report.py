@@ -146,6 +146,13 @@ class BenchReportHtmlTests(unittest.TestCase):
         self.assertEqual(figure.layout.updatemenus[0].buttons[0].label, "All families")
         self.assertEqual(figure.layout.updatemenus[1].buttons[0].label, "Linear")
         self.assertEqual(figure.layout.updatemenus[1].buttons[1].label, "Log")
+        self.assertIsNone(figure.layout.title.text)
+        self.assertEqual(figure.layout.updatemenus[0].y, 1.16)
+        self.assertEqual(figure.layout.updatemenus[1].y, 1.16)
+        self.assertEqual(figure.layout.legend.orientation, "h")
+        self.assertEqual(figure.layout.legend.y, -0.22)
+        self.assertEqual(figure.layout.margin.t, 96)
+        self.assertEqual(figure.layout.margin.b, 112)
         self.assertEqual(
             tuple(annotation.text for annotation in figure.layout.annotations),
             ("Family", "Y scale"),

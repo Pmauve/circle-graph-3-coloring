@@ -83,7 +83,7 @@ def runtime_vs_size_figure(data: BenchmarkReportData) -> go.Figure:
                 "direction": "down",
                 "x": 1.0,
                 "xanchor": "right",
-                "y": 1.22,
+                "y": 1.16,
                 "yanchor": "top",
                 "buttons": _family_filter_buttons(trace_rows_by_variant, families, family_symbols),
             },
@@ -91,9 +91,9 @@ def runtime_vs_size_figure(data: BenchmarkReportData) -> go.Figure:
                 "type": "buttons",
                 "direction": "right",
                 "showactive": True,
-                "x": 0.06,
+                "x": 0.08,
                 "xanchor": "left",
-                "y": 1.22,
+                "y": 1.16,
                 "yanchor": "top",
                 "buttons": _axis_scale_buttons(axis_name="yaxis"),
                 "active": 1,
@@ -102,8 +102,8 @@ def runtime_vs_size_figure(data: BenchmarkReportData) -> go.Figure:
     )
     figure.add_annotation(
         text="Family",
-        x=0.84,
-        y=1.23,
+        x=0.82,
+        y=1.17,
         xref="paper",
         yref="paper",
         showarrow=False,
@@ -112,19 +112,25 @@ def runtime_vs_size_figure(data: BenchmarkReportData) -> go.Figure:
     figure.add_annotation(
         text="Y scale",
         x=0.0,
-        y=1.23,
+        y=1.17,
         xref="paper",
         yref="paper",
         showarrow=False,
         font={"color": "#5d6470", "size": 12},
     )
     figure.update_layout(
-        title="Runtime vs Size",
         xaxis_title="n",
         yaxis_title="wall_time_s",
-        legend_title="Solver Variant",
+        legend={
+            "orientation": "h",
+            "x": 0.0,
+            "xanchor": "left",
+            "y": -0.22,
+            "yanchor": "top",
+            "title": {"text": "Solver Variant"},
+        },
         template="plotly_white",
-        margin={"l": 56, "r": 24, "t": 82, "b": 48},
+        margin={"l": 56, "r": 24, "t": 96, "b": 112},
     )
     figure.update_yaxes(type="log")
     return figure
