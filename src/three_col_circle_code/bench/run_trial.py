@@ -6,6 +6,7 @@ from statistics import mean, median
 import sys
 from typing import Any, Iterable, Optional
 
+from three_col_circle_code.bench.env import collect_environment_metadata
 from three_col_circle_code.bench.plan_io import (
     instance_result_path,
     load_instance_plan,
@@ -79,6 +80,7 @@ def run_trial(
         measurements=measurements,
         measurement_details=measurement_details,
         started_at=started_at,
+        environment=collect_environment_metadata(),
     )
     _write_result(result_path, result)
     return result_path
@@ -200,6 +202,7 @@ def _build_invalid_result_record(*, trial: Any, started_at: str, error: Exceptio
             "median_wall_time_s": None,
             "warmup_measurements": [],
             "measurements": [],
+            "environment": collect_environment_metadata(),
         },
     )
 
@@ -239,6 +242,7 @@ def _build_repeated_result_record(
     measurements: list[dict[str, Any]],
     measurement_details: dict[str, Any],
     started_at: str,
+    environment: dict[str, Any],
 ) -> dict[str, Any]:
     """Build the isolated trial result row for repeated measurements."""
     ok_measurements = [item for item in measurements if item["status"] == "ok"]
@@ -288,6 +292,7 @@ def _build_repeated_result_record(
         "measurements": measurements,
         "started_at": started_at,
         "finished_at": _now(),
+        "environment": environment,
     }
 
 

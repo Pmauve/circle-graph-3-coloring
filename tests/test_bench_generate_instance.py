@@ -30,7 +30,10 @@ class BenchGenerateInstanceTests(unittest.TestCase):
             with patch(
                 "three_col_circle_code.bench.generate_instance.generate_instance",
                 return_value=_build_record(instance_id="rc-n0002-seed1", family="rc", seed=1),
-            ) as generate:
+            ) as generate, patch(
+                "three_col_circle_code.bench.generate_instance.collect_environment_metadata",
+                return_value={"hostname": "worker-1"},
+            ):
                 result_path = run_instance_generation(plan_dir=plan_dir, index=1)
 
             result = json.loads(result_path.read_text(encoding="utf-8"))
@@ -40,6 +43,7 @@ class BenchGenerateInstanceTests(unittest.TestCase):
         self.assertEqual(result["status"], "ok")
         self.assertTrue(result["generated"])
         self.assertTrue(result["validation_ok"])
+        self.assertEqual(result["environment"], {"hostname": "worker-1"})
         self.assertEqual(loaded.metadata.instance_id, "rc-n0002-seed1")
         generate.assert_called_once_with(family="rc", n=2, seed=1)
 

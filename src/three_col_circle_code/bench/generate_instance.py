@@ -5,6 +5,7 @@ from pathlib import Path
 import sys
 from typing import Any, Iterable, Optional
 
+from three_col_circle_code.bench.env import collect_environment_metadata
 from three_col_circle_code.bench.plan_io import (
     instance_result_path,
     load_instance_plan,
@@ -61,6 +62,7 @@ def run_instance_generation(
             validation_errors=validation_errors,
             started_at=started_at,
             error=None,
+            environment=collect_environment_metadata(),
         )
     except Exception as exc:
         result = _build_result(
@@ -73,6 +75,7 @@ def run_instance_generation(
             validation_errors=[],
             started_at=started_at,
             error=str(exc),
+            environment=collect_environment_metadata(),
         )
     _write_result(result_path, result)
     return result_path
@@ -155,6 +158,7 @@ def _build_result(
     validation_errors: list[dict[str, str]],
     started_at: str,
     error: Optional[str],
+    environment: dict[str, Any],
 ) -> dict[str, Any]:
     """Build the isolated result record for one instance generation row."""
     return {
@@ -168,6 +172,7 @@ def _build_result(
         "validation_errors": validation_errors,
         "started_at": started_at,
         "finished_at": _now(),
+        "environment": environment,
         "error": error,
     }
 

@@ -34,7 +34,10 @@ class BenchRunTrialTests(unittest.TestCase):
             with patch(
                 "three_col_circle_code.bench.run_trial.run_solver",
                 return_value=_fake_solver_result(),
-            ) as run_solver:
+            ) as run_solver, patch(
+                "three_col_circle_code.bench.run_trial.collect_environment_metadata",
+                return_value={"hostname": "worker-2"},
+            ):
                 result_path = run_trial(plan_dir=plan_dir, index=1)
 
             result = json.loads(result_path.read_text(encoding="utf-8"))
@@ -54,6 +57,7 @@ class BenchRunTrialTests(unittest.TestCase):
         self.assertEqual(result["median_wall_time_s"], 0.25)
         self.assertNotIn("wall_time_s", result)
         self.assertEqual(len(result["measurements"]), 1)
+        self.assertEqual(result["environment"], {"hostname": "worker-2"})
         run_solver.assert_called_once()
 
     def test_run_trial_records_warmups_and_repeated_measurements(self) -> None:
