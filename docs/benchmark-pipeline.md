@@ -6,6 +6,7 @@ Smoke spec:
 
 ```bash
 eval/sample_specs/pipeline-smoke.json
+eval/sample_specs/pipeline-parallel-smoke.json
 ```
 
 ## Local
@@ -32,7 +33,7 @@ benchmark_plan \
 The plan manifest contains `n_instances` and `n_trials`:
 
 ```bash
-python -c 'import json; print(json.load(open("eval/benchmark_plans/pipeline-smoke/manifest.json")))'
+benchmark_status --plan-dir eval/benchmark_plans/pipeline-smoke
 ```
 
 Submit an array over `1..n_instances`:
@@ -61,6 +62,7 @@ benchmark_merge \
 ```
 
 Set `TASK_INDEX` from the scheduler array variable, for example `$SLURM_ARRAY_TASK_ID` or `$SGE_TASK_ID`.
+Generic shell templates live in `scripts/benchmark_cluster/`.
 
 ## Outputs
 
