@@ -88,16 +88,47 @@ def _validate_endpoints(graph: nx.Graph, report: ValidationReport) -> None:
 
 
 def _validate_edges(graph: nx.Graph, report: ValidationReport) -> None:
-    expected_edges = {
-        _canonical_edge(a, b)
-        for a, attrs_a in graph.nodes(data=True)
-        for b, attrs_b in graph.nodes(data=True)
-        if a < b and _cross(attrs_a, attrs_b)
-    }
-    actual_edges = {_canonical_edge(u, v) for u, v in graph.edges()}
-    if expected_edges != actual_edges:
-        missing = sorted(expected_edges - actual_edges)
-        extra = sorted(actual_edges - expected_edges)
+    node_data = tuple(graph.nodes(data=True))
+    node_ids = tuple(node_id for node_id, _attrs in node_data)
+    node_order = {node_id: index for index, node_id in enumerate(node_ids)}
+    endpoints = tuple(
+        (
+            attrs.get("l") if isinstance(attrs.get("l"), int) else None,
+            attrs.get("r") if isinstance(attrs.get("r"), int) else None,
+        )
+        for _node_id, attrs in node_data
+    )
+    adjacency_sets = [set() for _node_id in node_ids]
+    extra: list[tuple[Any, Any]] = []
+    for u, v in graph.edges():
+        u_index = node_order.get(u)
+        v_index = node_order.get(v)
+        if u_index is None or v_index is None:
+            extra.append(_canonical_edge(u, v))
+            continue
+        adjacency_sets[u_index].add(v_index)
+        adjacency_sets[v_index].add(u_index)
+
+    missing: list[tuple[Any, Any]] = []
+    for left_index, left_node in enumerate(node_ids):
+        left_l, left_r = endpoints[left_index]
+        if left_l is None or left_r is None:
+            continue
+        left_neighbors = adjacency_sets[left_index]
+        for right_index in range(left_index + 1, len(node_ids)):
+            right_l, right_r = endpoints[right_index]
+            if right_l is None or right_r is None:
+                continue
+            has_edge = right_index in left_neighbors
+            crosses = (left_l < right_l < left_r < right_r) or (
+                right_l < left_l < right_r < left_r
+            )
+            if crosses and not has_edge:
+                missing.append(_canonical_edge(left_node, node_ids[right_index]))
+            elif has_edge and not crosses:
+                extra.append(_canonical_edge(left_node, node_ids[right_index]))
+
+    if missing or extra:
         report.add_error(
             "graph.edge_mismatch",
             f"edge set does not match chord crossings; missing={missing}, extra={extra}",
