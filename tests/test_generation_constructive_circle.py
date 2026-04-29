@@ -57,6 +57,27 @@ class ConstructiveCircleGenerationTests(unittest.TestCase):
             self.assertTrue(all("level" not in attrs for _, attrs in graph.nodes(data=True)))
             self.assertTrue(all("color" in attrs for _, attrs in graph.nodes(data=True)))
 
+    def test_constructive_generation_supports_larger_palette(self) -> None:
+        for family, config in CONSTRUCTIVE_CONFIGS.items():
+            graph = generate_random_circle_graph_yes_constructive(
+                8,
+                rng=random.Random(29),
+                config=config,
+                max_attempts_per_node=10_000,
+                num_colors=4,
+            )
+
+            self.assertTrue(_verify_k_coloring(graph, 4), msg=f"{family} coloring invalid")
+
+    def test_constructive_generation_rejects_invalid_num_colors(self) -> None:
+        with self.assertRaisesRegex(ValueError, "num_colors"):
+            generate_random_circle_graph_yes_constructive(
+                8,
+                rng=random.Random(29),
+                config=CONSTRUCTIVE_CONFIGS["rccy"],
+                num_colors=0,
+            )
+
     def test_first_frontier_only_stops_before_later_feasible_regions(self) -> None:
         endpoint_order = [0, 1, 2, 0, 1, 2]
         colors = {0: 1, 1: 2, 2: 3}
@@ -134,6 +155,16 @@ def _colored_graph_signature(graph) -> tuple:
     )
     edge_signature = tuple(sorted(tuple(sorted(edge)) for edge in graph.edges()))
     return node_signature, edge_signature
+
+
+def _verify_k_coloring(graph, num_colors: int) -> bool:
+    for _node_id, attrs in graph.nodes(data=True):
+        if attrs["color"] not in range(1, num_colors + 1):
+            return False
+    for left, right in graph.edges():
+        if graph.nodes[left]["color"] == graph.nodes[right]["color"]:
+            return False
+    return True
 
 
 class _TrackingWeightedRandom:

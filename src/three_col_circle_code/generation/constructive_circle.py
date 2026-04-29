@@ -6,6 +6,7 @@ from three_col_circle_code.generation.circle_state import (
     IncrementalCircleState,
     build_graph_from_state,
 )
+from three_col_circle_code.generation.color_utils import available_colors, validate_num_colors
 
 
 EndSelection = Literal["uniform", "max_active", "weighted_active", "farthest"]
@@ -31,24 +32,6 @@ class ConstructiveCandidate:
         return self.second_gap
 
 
-_AVAILABLE_COLORS_BY_MASK: dict[int, tuple[int, ...]] = {
-    0: (),
-    1: (1,),
-    2: (2,),
-    3: (1, 2),
-    4: (3,),
-    5: (1, 3),
-    6: (2, 3),
-    7: (1, 2, 3),
-}
-
-_COLOR_BIT = {
-    1: 1,
-    2: 2,
-    3: 4,
-}
-
-
 CONSTRUCTIVE_CONFIGS: dict[str, ConstructiveConfig] = {
     "rccy": ConstructiveConfig(start_lookahead=16, end_selection="max_active", full_sweep=False),
     "rccy_tuned": ConstructiveConfig(start_lookahead=16, end_selection="max_active", full_sweep=False),
@@ -66,18 +49,27 @@ CONSTRUCTIVE_CONFIGS: dict[str, ConstructiveConfig] = {
 }
 
 
-def generate_random_circle_graph_yes_constructive(size, *, rng=None, config, max_attempts_per_node=None):
-    """Generate a connected 3-colorable circle graph using constructive chord placement."""
+def generate_random_circle_graph_yes_constructive(
+    size,
+    *,
+    rng=None,
+    config,
+    max_attempts_per_node=None,
+    num_colors=3,
+):
+    """Generate a connected k-colorable circle graph using constructive chord placement."""
     _validate_generation_request(size, max_attempts_per_node)
+    validate_num_colors(num_colors)
 
     rng = rng or random
     state = IncrementalCircleState(colors={})
+    palette = tuple(range(1, num_colors + 1))
 
     for node_id in range(size):
         if node_id == 0:
             state.endpoint_order = [node_id, node_id]
             state.adjacency[node_id] = set()
-            state.colors[node_id] = rng.choice((1, 2, 3))
+            state.colors[node_id] = rng.choice(palette)
             continue
 
         attempts = 0
@@ -92,6 +84,7 @@ def generate_random_circle_graph_yes_constructive(size, *, rng=None, config, max
                 state.colors,
                 config,
                 rng,
+                num_colors=num_colors,
             )
             candidates = _collect_constructive_second_gap_candidates(
                 state.endpoint_order,
@@ -99,6 +92,7 @@ def generate_random_circle_graph_yes_constructive(size, *, rng=None, config, max
                 start_gap,
                 direction,
                 config.full_sweep,
+                num_colors=num_colors,
             )
             if candidates:
                 chosen = _find_constructive_second_gap(candidates, config.end_selection, rng)
@@ -117,7 +111,7 @@ def _validate_generation_request(size, max_attempts_per_node):
         raise ValueError("max_attempts_per_node must be at least 1")
 
 
-def _choose_constructive_start(endpoint_order, colors, config, rng, *, node_id=None):
+def _choose_constructive_start(endpoint_order, colors, config, rng, *, node_id=None, num_colors=3):
     if not endpoint_order:
         return 0, 1
     if config.start_lookahead <= 1:
@@ -132,6 +126,7 @@ def _choose_constructive_start(endpoint_order, colors, config, rng, *, node_id=N
             colors,
             pair[0],
             pair[1],
+            num_colors=num_colors,
         )
         if best_score is None or score > best_score:
             best_score = score
@@ -141,24 +136,19 @@ def _choose_constructive_start(endpoint_order, colors, config, rng, *, node_id=N
     return rng.choice(best_pairs)
 
 
-def _constructive_frontier_stats(endpoint_order, colors, start_gap, direction, *, node_id=None):
+def _constructive_frontier_stats(endpoint_order, colors, start_gap, direction, *, node_id=None, num_colors=3):
     frontier_length = 0
     max_active = 0
-    started = False
-    for step, gap in enumerate(_ordered_second_gaps(len(endpoint_order), start_gap, direction), start=1):
-        active_count = _active_count_for_gap(
-            endpoint_order,
-            colors,
-            start_gap=start_gap,
-            second_gap=gap,
-        )
-        if active_count is None:
-            if started:
-                break
-            continue
-        started = True
+    for candidate in _iter_gap_candidates(
+        endpoint_order,
+        colors,
+        start_gap=start_gap,
+        direction=direction,
+        full_sweep=False,
+        num_colors=num_colors,
+    ):
         frontier_length += 1
-        max_active = max(max_active, active_count)
+        max_active = max(max_active, candidate.active_count)
     return frontier_length, max_active
 
 
@@ -170,24 +160,18 @@ def _collect_constructive_second_gap_candidates(
     full_sweep,
     *,
     node_id=None,
+    num_colors=3,
 ):
-    candidates: list[ConstructiveCandidate] = []
-    started = False
-    for step, gap in enumerate(_ordered_second_gaps(len(endpoint_order), start_gap, direction), start=1):
-        candidate = _candidate_for_gap(
+    return list(
+        _iter_gap_candidates(
             endpoint_order,
             colors,
             start_gap=start_gap,
-            second_gap=gap,
-            step=step,
+            direction=direction,
+            full_sweep=full_sweep,
+            num_colors=num_colors,
         )
-        if candidate is None:
-            if started and not full_sweep:
-                break
-            continue
-        started = True
-        candidates.append(candidate)
-    return candidates
+    )
 
 
 def _find_constructive_second_gap(candidates, end_selection, rng):
@@ -229,59 +213,82 @@ def _ordered_second_gaps(endpoint_order_len, start_gap, direction):
         yield current
 
 
-def _candidate_for_gap(endpoint_order, colors, *, start_gap, second_gap, step):
-    low_gap, high_gap = sorted((start_gap, second_gap))
-    neighbors = _candidate_neighbors_between(endpoint_order, low_gap, high_gap)
-    if not neighbors:
-        return None
-    available_colors = _available_colors(colors, neighbors)
-    if not available_colors:
-        return None
-    return ConstructiveCandidate(
-        second_gap=second_gap,
-        available_colors=available_colors,
-        active_count=len(neighbors),
-        step=step,
-        neighbors=frozenset(neighbors),
-    )
+def _iter_gap_candidates(
+    endpoint_order,
+    colors,
+    *,
+    start_gap,
+    direction,
+    full_sweep,
+    num_colors,
+):
+    # This single incremental scanner keeps k-color candidate logic in one place.
+    # It mainly pays off for full-sweep weighted generation; non-full-sweep configs
+    # accept a small absolute slowdown to avoid maintaining a second scan path.
+    active_neighbors: set[int] = set()
+    current_low = start_gap
+    current_high = start_gap
+    started = False
+    for step, gap in enumerate(_ordered_second_gaps(len(endpoint_order), start_gap, direction), start=1):
+        low_gap, high_gap = sorted((start_gap, gap))
+        _move_active_interval(
+            endpoint_order,
+            active_neighbors,
+            current_low,
+            current_high,
+            low_gap,
+            high_gap,
+        )
+        current_low = low_gap
+        current_high = high_gap
+
+        candidate_colors = ()
+        if active_neighbors:
+            candidate_colors = available_colors(colors, active_neighbors, num_colors)
+        if not candidate_colors:
+            if started and not full_sweep:
+                break
+            continue
+
+        started = True
+        yield ConstructiveCandidate(
+            second_gap=gap,
+            available_colors=candidate_colors,
+            active_count=len(active_neighbors),
+            step=step,
+            neighbors=frozenset(active_neighbors),
+        )
 
 
-def _active_count_for_gap(endpoint_order, colors, *, start_gap, second_gap):
-    low_gap, high_gap = sorted((start_gap, second_gap))
-    neighbors = _candidate_neighbors_between(endpoint_order, low_gap, high_gap)
-    if not neighbors or not _available_colors(colors, neighbors):
-        return None
-    return len(neighbors)
+def _move_active_interval(endpoint_order, active_neighbors, old_low, old_high, new_low, new_high):
+    if new_low > old_low:
+        _toggle_endpoint_range(endpoint_order, active_neighbors, old_low, new_low)
+    elif new_low < old_low:
+        _toggle_endpoint_range(endpoint_order, active_neighbors, new_low, old_low)
+
+    if new_high > old_high:
+        _toggle_endpoint_range(endpoint_order, active_neighbors, old_high, new_high)
+    elif new_high < old_high:
+        _toggle_endpoint_range(endpoint_order, active_neighbors, new_high, old_high)
+
+
+def _toggle_endpoint_range(endpoint_order, active_neighbors, start, stop):
+    for index in range(start, stop):
+        node_id = endpoint_order[index]
+        if node_id in active_neighbors:
+            active_neighbors.remove(node_id)
+        else:
+            active_neighbors.add(node_id)
 
 
 def _insert_node_at_gaps(endpoint_order, node_id, first_gap, second_gap):
     low_gap, high_gap = sorted((first_gap, second_gap))
-    candidate_order = list(endpoint_order)
-    candidate_order.insert(low_gap, node_id)
-    candidate_order.insert(high_gap + 1, node_id)
-    return candidate_order
-
-
-def _candidate_neighbors_between(endpoint_order, left_gap, right_gap):
-    neighbors: set[int] = set()
-    for index in range(left_gap, right_gap):
-        value = endpoint_order[index]
-        if value in neighbors:
-            neighbors.remove(value)
-        else:
-            neighbors.add(value)
-    return neighbors
-
-
-def _available_colors(colors, neighbors):
-    mask = 7
-    for neighbor in neighbors:
-        mask &= ~_COLOR_BIT[colors[neighbor]]
-    return _AVAILABLE_COLORS_BY_MASK[mask]
+    endpoint_order.insert(low_gap, node_id)
+    endpoint_order.insert(high_gap + 1, node_id)
 
 
 def _commit_candidate(state, node_id, start_gap, candidate, color):
-    state.endpoint_order = _insert_node_at_gaps(
+    _insert_node_at_gaps(
         state.endpoint_order,
         node_id,
         start_gap,

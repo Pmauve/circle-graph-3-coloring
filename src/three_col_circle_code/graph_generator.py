@@ -189,12 +189,13 @@ def get_random_circle_graph_yes_inst(
 
 
 def get_random_circle_graph_yes_fast(
-    size, timestamp=0.0, save=True, _filename='', rng=None, max_attempts_per_node=None
+    size, timestamp=0.0, save=True, _filename='', rng=None, max_attempts_per_node=None, num_colors=3
 ):
     graph = generate_random_circle_graph_yes_fast_backend(
         size,
         rng=rng,
         max_attempts_per_node=max_attempts_per_node,
+        num_colors=num_colors,
     )
     if save is True:
         filename = str(id(graph)) + '_' + str(int(timestamp)) if _filename == '' else _filename
@@ -203,7 +204,7 @@ def get_random_circle_graph_yes_fast(
 
 
 def get_random_circle_graph_yes_inst_constructive(
-    size, timestamp=0.0, save=True, _filename='', rng=None, max_attempts_per_node=None
+    size, timestamp=0.0, save=True, _filename='', rng=None, max_attempts_per_node=None, num_colors=3
 ):
     return _get_random_circle_graph_yes_inst_constructive_for_family(
         size,
@@ -213,11 +214,12 @@ def get_random_circle_graph_yes_inst_constructive(
         _filename=_filename,
         rng=rng,
         max_attempts_per_node=max_attempts_per_node,
+        num_colors=num_colors,
     )
 
 
 def get_random_circle_graph_yes_inst_constructive_baseline(
-    size, timestamp=0.0, save=True, _filename='', rng=None, max_attempts_per_node=None
+    size, timestamp=0.0, save=True, _filename='', rng=None, max_attempts_per_node=None, num_colors=3
 ):
     return _get_random_circle_graph_yes_inst_constructive_for_family(
         size,
@@ -227,11 +229,12 @@ def get_random_circle_graph_yes_inst_constructive_baseline(
         _filename=_filename,
         rng=rng,
         max_attempts_per_node=max_attempts_per_node,
+        num_colors=num_colors,
     )
 
 
 def get_random_circle_graph_yes_inst_constructive_tuned(
-    size, timestamp=0.0, save=True, _filename='', rng=None, max_attempts_per_node=None
+    size, timestamp=0.0, save=True, _filename='', rng=None, max_attempts_per_node=None, num_colors=3
 ):
     return _get_random_circle_graph_yes_inst_constructive_for_family(
         size,
@@ -241,11 +244,12 @@ def get_random_circle_graph_yes_inst_constructive_tuned(
         _filename=_filename,
         rng=rng,
         max_attempts_per_node=max_attempts_per_node,
+        num_colors=num_colors,
     )
 
 
 def get_random_circle_graph_yes_inst_constructive_full_sweep_weighted_active(
-    size, timestamp=0.0, save=True, _filename='', rng=None, max_attempts_per_node=None
+    size, timestamp=0.0, save=True, _filename='', rng=None, max_attempts_per_node=None, num_colors=3
 ):
     return _get_random_circle_graph_yes_inst_constructive_for_family(
         size,
@@ -255,11 +259,12 @@ def get_random_circle_graph_yes_inst_constructive_full_sweep_weighted_active(
         _filename=_filename,
         rng=rng,
         max_attempts_per_node=max_attempts_per_node,
+        num_colors=num_colors,
     )
 
 
 def get_random_circle_graph_yes_inst_constructive_full_sweep_max_active(
-    size, timestamp=0.0, save=True, _filename='', rng=None, max_attempts_per_node=None
+    size, timestamp=0.0, save=True, _filename='', rng=None, max_attempts_per_node=None, num_colors=3
 ):
     return _get_random_circle_graph_yes_inst_constructive_for_family(
         size,
@@ -269,17 +274,19 @@ def get_random_circle_graph_yes_inst_constructive_full_sweep_max_active(
         _filename=_filename,
         rng=rng,
         max_attempts_per_node=max_attempts_per_node,
+        num_colors=num_colors,
     )
 
 
 def _get_random_circle_graph_yes_inst_constructive_for_family(
-    size, *, family, timestamp=0.0, save=True, _filename='', rng=None, max_attempts_per_node=None
+    size, *, family, timestamp=0.0, save=True, _filename='', rng=None, max_attempts_per_node=None, num_colors=3
 ):
     graph = generate_random_circle_graph_yes_constructive_backend(
         size,
         rng=rng,
         config=CONSTRUCTIVE_CONFIGS[family],
         max_attempts_per_node=max_attempts_per_node,
+        num_colors=num_colors,
     )
     if save is True:
         filename = str(id(graph)) + '_' + str(int(timestamp)) if _filename == '' else _filename
