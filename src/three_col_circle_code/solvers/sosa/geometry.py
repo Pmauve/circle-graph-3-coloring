@@ -53,9 +53,7 @@ class SosaGeometry:
             right_endpoints=tuple(right_endpoints),
             endpoint_owner=tuple(endpoint_owner),
             adjacency_masks=tuple(adjacency_masks),
-            neighbor_indices=tuple(
-                tuple(sorted(indices)) for indices in neighbor_indices
-            ),
+            neighbor_indices=tuple(tuple(indices) for indices in neighbor_indices),
         )
 
     @property
