@@ -1,0 +1,22 @@
+{
+  "instances": [
+    {
+      "family": "rcy_fast",
+      "num_colors": 4,
+      "n_values": [8, 12],
+      "seeds": [1]
+    }
+  ],
+  "solvers": [
+    {
+      "target": "sosa-k-col-heuristic",
+      "label": "SOSA k=5",
+      "params": {
+        "base_case_n": 8,
+        "base_case_algorithm": "backtracking",
+        "num_colors": 5,
+        "produce_witness": false
+      }
+    }
+  ]
+}

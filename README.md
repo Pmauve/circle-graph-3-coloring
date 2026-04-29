@@ -84,12 +84,21 @@ benchmark_run --spec path/to/spec.json
 ```
 
 A minimal tracked example spec lives at `eval/sample_specs/sosa-smoke.json`.
-It is paired with a tiny curated starter pool in `eval/instances/`, so you can run it without generating instances first.
+The benchmark runner reuses matching files from `eval/instances/` and generates missing instances.
 Because the run directory is derived from the spec filename stem, running that file writes to `eval/runs/sosa-smoke/`.
 
 ```bash
 benchmark_run --spec eval/sample_specs/sosa-smoke.json
 ```
+
+Generated benchmark instances use canonical metadata with a `num_colors` field.
+The default is `3`, and generated instance IDs always include the palette size, for example `rc-k03-n0008-seed1`.
+Only guaranteed-yes families `rcy_fast` and `rccy*` support `num_colors` values other than `3`.
+Those generators use colors from `1..k`, but they do not force every color to appear.
+
+Instance `num_colors` and solver params are independent.
+For example, a benchmark can generate a `k04` instance and run a solver with `num_colors=5`.
+See `eval/sample_specs/sosa-k-smoke.json` for a small example.
 
 SOSA benchmark targets:
 
