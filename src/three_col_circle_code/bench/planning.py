@@ -216,6 +216,8 @@ def build_run_manifest(
         "n_instances": len(run_spec.instance_requests),
         "n_trials": len(run_spec.instance_requests) * len(run_spec.solver_configs),
         "n_tasks": len(run_spec.instance_requests) * len(run_spec.solver_configs),
+        "repetitions": run_spec.repetitions,
+        "warmup_repetitions": run_spec.warmup_repetitions,
         "environment": environment or {},
     }
 

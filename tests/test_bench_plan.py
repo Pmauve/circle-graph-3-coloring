@@ -62,10 +62,23 @@ class BenchPlanTests(unittest.TestCase):
         self.assertEqual(manifest["n_instances"], 2)
         self.assertEqual(manifest["n_trials"], 4)
         self.assertEqual(manifest["work_root"], str(tmp_root / "work" / "smoke"))
-        self.assertEqual(set(manifest), {"created_at", "n_instances", "n_trials", "run_id", "work_root"})
+        self.assertEqual(
+            set(manifest),
+            {
+                "created_at",
+                "n_instances",
+                "n_trials",
+                "repetitions",
+                "run_id",
+                "warmup_repetitions",
+                "work_root",
+            },
+        )
         self.assertEqual([row.index for row in instances], [1, 2])
         self.assertEqual([row.index for row in trials], [1, 2, 3, 4])
         self.assertEqual({row.solver_label for row in trials}, {"CaDiCaL", "SOSA exact"})
+        self.assertEqual({row.repetitions for row in trials}, {1})
+        self.assertEqual({row.warmup_repetitions for row in trials}, {0})
 
     def test_create_benchmark_plan_uses_existing_flat_instance_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -93,6 +106,34 @@ class BenchPlanTests(unittest.TestCase):
 
         self.assertEqual(instances[0].instance_path, flat_path)
         self.assertEqual(trials[0].instance_path, flat_path)
+
+    def test_create_benchmark_plan_carries_repetition_settings(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            spec_path = _write_spec(
+                tmp_root / "repeated.json",
+                {
+                    "repetitions": 5,
+                    "warmup_repetitions": 2,
+                    "instances": [{"family": "rc", "n_values": [2], "seeds": [1]}],
+                    "solvers": [{"target": "sosa-3-col-exact"}],
+                },
+            )
+
+            plan_dir = create_benchmark_plan(
+                spec_path=spec_path,
+                plan_root=tmp_root / "plans",
+                work_root=tmp_root / "work",
+            )
+            manifest = json.loads((plan_dir / PLAN_MANIFEST_FILENAME).read_text(encoding="utf-8"))
+            instances = load_instance_plan(plan_dir)
+            trials = load_trial_plan(plan_dir, instances=instances)
+
+        self.assertEqual(manifest["repetitions"], 5)
+        self.assertEqual(manifest["warmup_repetitions"], 2)
+        self.assertEqual(len(trials), 1)
+        self.assertEqual(trials[0].repetitions, 5)
+        self.assertEqual(trials[0].warmup_repetitions, 2)
 
     def test_create_benchmark_plan_uses_expected_nested_path_for_missing_instance(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

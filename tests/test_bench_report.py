@@ -82,9 +82,10 @@ class BenchReportDataTests(unittest.TestCase):
         self.assertEqual(rc_sat["n_ok"], "2")
         self.assertEqual(rc_sat["n_error"], "0")
         self.assertEqual(rc_sat["n_invalid"], "0")
+        self.assertEqual(rc_sat["repetitions"], "2")
+        self.assertEqual(rc_sat["ok_repetitions"], "2")
         self.assertEqual(rc_sat["mean_wall_time_s"], "2.0")
         self.assertEqual(rc_sat["median_wall_time_s"], "2.0")
-        self.assertEqual(rc_sat["max_wall_time_s"], "3.0")
 
         rc_sosa_small = next(
             row

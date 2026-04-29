@@ -46,7 +46,46 @@ class BenchRunTrialTests(unittest.TestCase):
         self.assertEqual(result["solver_params"], {"base_case_n": 8})
         self.assertTrue(result["is_colorable"])
         self.assertTrue(result["validation_ok"])
+        self.assertEqual(result["repetitions"], 1)
+        self.assertEqual(result["warmup_repetitions"], 0)
+        self.assertEqual(result["ok_repetitions"], 1)
+        self.assertEqual(result["mean_wall_time_s"], 0.25)
+        self.assertEqual(result["median_wall_time_s"], 0.25)
+        self.assertNotIn("wall_time_s", result)
+        self.assertEqual(len(result["measurements"]), 1)
         run_solver.assert_called_once()
+
+    def test_run_trial_records_warmups_and_repeated_measurements(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            plan_dir, _work_root, instance_path = _write_plan(
+                tmp_root,
+                repetitions=3,
+                warmup_repetitions=1,
+            )
+            save_instance(_build_record(instance_id="rc-n0002-seed1", family="rc", seed=1), instance_path)
+
+            with patch(
+                "three_col_circle_code.bench.run_trial.run_solver",
+                side_effect=[
+                    _fake_solver_result(wall_time_s=9.0),
+                    _fake_solver_result(wall_time_s=0.3),
+                    _fake_solver_result(wall_time_s=0.1),
+                    _fake_solver_result(wall_time_s=0.2),
+                ],
+            ) as run_solver:
+                result_path = run_trial(plan_dir=plan_dir, index=1)
+
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(result["warmup_repetitions"], 1)
+        self.assertEqual(result["repetitions"], 3)
+        self.assertEqual(result["ok_repetitions"], 3)
+        self.assertEqual(result["mean_wall_time_s"], 0.2)
+        self.assertEqual(result["median_wall_time_s"], 0.2)
+        self.assertEqual([row["wall_time_s"] for row in result["warmup_measurements"]], [9.0])
+        self.assertEqual([row["wall_time_s"] for row in result["measurements"]], [0.3, 0.1, 0.2])
+        self.assertEqual(run_solver.call_count, 4)
 
     def test_run_trial_records_invalid_missing_instance(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -118,7 +157,12 @@ class BenchRunTrialTests(unittest.TestCase):
         self.assertEqual(exit_code, 0)
 
 
-def _write_plan(tmp_root: Path) -> tuple[Path, Path, Path]:
+def _write_plan(
+    tmp_root: Path,
+    *,
+    repetitions: int = 1,
+    warmup_repetitions: int = 0,
+) -> tuple[Path, Path, Path]:
     plan_dir = tmp_root / "plans" / "smoke"
     work_root = tmp_root / "work" / "smoke"
     instance_path = tmp_root / "instances" / "rc" / "s" / "rc-n0002-seed1.json"
@@ -145,6 +189,8 @@ def _write_plan(tmp_root: Path) -> tuple[Path, Path, Path]:
             solver_target="sosa-3-col-exact",
             solver_params={"base_case_n": 8},
             solver_label="SOSA exact",
+            repetitions=repetitions,
+            warmup_repetitions=warmup_repetitions,
         ),
     )
     write_instance_plan(plan_dir, instances)
@@ -157,6 +203,8 @@ def _write_plan(tmp_root: Path) -> tuple[Path, Path, Path]:
             "work_root": work_root,
             "n_instances": 1,
             "n_trials": 1,
+            "repetitions": repetitions,
+            "warmup_repetitions": warmup_repetitions,
         },
     )
     return plan_dir, work_root, instance_path
@@ -184,12 +232,12 @@ def _build_record(*, instance_id: str, family: str, seed: int, n: int = 2) -> In
     )
 
 
-def _fake_solver_result() -> SolverResult:
+def _fake_solver_result(*, wall_time_s: float = 0.25) -> SolverResult:
     return SolverResult(
         solver="sosa-3-col-exact",
         backend=None,
         status=SOLVER_STATUS_OK,
-        wall_time_s=0.25,
+        wall_time_s=wall_time_s,
         is_colorable=True,
         n_vertices=2,
         m_edges=1,

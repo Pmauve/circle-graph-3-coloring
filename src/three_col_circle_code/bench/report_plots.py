@@ -41,7 +41,7 @@ def runtime_vs_size_figure(data: BenchmarkReportData) -> go.Figure:
     grouped: dict[str, list[ReportRow]] = defaultdict(list)
     variant_labels: dict[str, str] = {}
     for row in data.rows:
-        if row.wall_time_s is None or row.n is None:
+        if row.mean_wall_time_s is None or row.n is None:
             continue
         variant_key = solver_variant_key(row.solver_target, row.solver_params)
         grouped[variant_key].append(row)
@@ -57,7 +57,7 @@ def runtime_vs_size_figure(data: BenchmarkReportData) -> go.Figure:
         solver_rows = tuple(
             sorted(
                 grouped[variant_key],
-                key=lambda row: (row.n, row.instance_id, row.wall_time_s),
+                key=lambda row: (row.n, row.instance_id, row.mean_wall_time_s),
             )
         )
         trace_rows_by_variant.append(solver_rows)
@@ -66,7 +66,7 @@ def runtime_vs_size_figure(data: BenchmarkReportData) -> go.Figure:
         figure.add_trace(
             go.Scatter(
                 x=[row.n for row in solver_rows],
-                y=[row.wall_time_s for row in solver_rows],
+                y=[row.mean_wall_time_s for row in solver_rows],
                 mode="markers",
                 name=variant_label,
                 marker={
@@ -124,7 +124,7 @@ def runtime_vs_size_figure(data: BenchmarkReportData) -> go.Figure:
     )
     figure.update_layout(
         xaxis_title="n",
-        yaxis_title="wall_time_s",
+        yaxis_title="mean_wall_time_s",
         legend={
             "orientation": "h",
             "x": 0.0,
@@ -171,7 +171,7 @@ def _runtime_scatter_hovertemplate() -> str:
         "family=%{customdata[4]}<br>"
         "n=%{customdata[5]}<br>"
         "m=%{customdata[6]}<br>"
-        "wall_time_s=%{y:.6f}<br>"
+        "mean_wall_time_s=%{y:.6f}<br>"
         "is_colorable=%{customdata[7]}<br>"
         "status=%{customdata[8]}<extra></extra>"
     )
@@ -223,7 +223,7 @@ def _family_filter_button(
         "args": [
             {
                 "x": [[row.n for row in rows] for rows in filtered_rows],
-                "y": [[row.wall_time_s for row in rows] for rows in filtered_rows],
+                "y": [[row.mean_wall_time_s for row in rows] for rows in filtered_rows],
                 "customdata": [[_row_hover_data(row) for row in rows] for rows in filtered_rows],
                 "marker.symbol": [
                     [family_symbols[row.family or "unknown"] for row in rows]

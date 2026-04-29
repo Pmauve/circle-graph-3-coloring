@@ -57,6 +57,8 @@ class TrialPlanRow:
     solver_target: str
     solver_params: dict[str, Any] = field(default_factory=dict)
     solver_label: Optional[str] = None
+    repetitions: int = 1
+    warmup_repetitions: int = 0
 
     @classmethod
     def from_mapping(cls, row: Mapping[str, Any]) -> "TrialPlanRow":
@@ -93,6 +95,8 @@ class TrialPlanRow:
             solver_target=str(row["solver_target"]),
             solver_params=dict(solver_params),
             solver_label=None if solver_label is None else str(solver_label),
+            repetitions=int(row.get("repetitions", 1)),
+            warmup_repetitions=int(row.get("warmup_repetitions", 0)),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -109,6 +113,8 @@ class TrialPlanRow:
             "solver_target": self.solver_target,
             "solver_params": dict(self.solver_params),
             "solver_label": self.solver_label,
+            "repetitions": self.repetitions,
+            "warmup_repetitions": self.warmup_repetitions,
         }
 
 
@@ -221,6 +227,10 @@ def validate_trial_plan(
             raise ValueError(f"trial plan references unknown instance id {row.instance_id!r}")
         if row.instance_path != instance.instance_path:
             raise ValueError(f"trial plan row {row.index} uses an instance_path that differs from instances.jsonl")
+        if row.repetitions < 1:
+            raise ValueError("trial plan row repetitions must be positive")
+        if row.warmup_repetitions < 0:
+            raise ValueError("trial plan row warmup_repetitions must be non-negative")
         trial_key = (row.instance_id, row.solver_target, json.dumps(row.solver_params, sort_keys=True))
         if trial_key in seen_trial_keys:
             raise ValueError(f"trial plan contains duplicate trial for {row.instance_id!r} and {row.solver_target!r}")

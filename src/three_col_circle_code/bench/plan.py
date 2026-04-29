@@ -129,6 +129,8 @@ def _build_trial_plan_rows(
                     solver_target=solver_config.target,
                     solver_params=dict(solver_config.params),
                     solver_label=solver_config.label,
+                    repetitions=run_spec.repetitions,
+                    warmup_repetitions=run_spec.warmup_repetitions,
                 )
             )
     return tuple(rows)
@@ -149,6 +151,8 @@ def _build_plan_manifest(
         "work_root": str(work_root),
         "n_instances": n_instances,
         "n_trials": n_trials,
+        "repetitions": run_spec.repetitions,
+        "warmup_repetitions": run_spec.warmup_repetitions,
     }
 
 

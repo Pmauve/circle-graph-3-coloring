@@ -143,6 +143,8 @@ def _validate_trial_result(*, row: dict[str, Any], trial: Any) -> None:
         "solver": trial.solver,
         "backend": trial.backend,
         "solver_label": trial.solver_label,
+        "repetitions": trial.repetitions,
+        "warmup_repetitions": trial.warmup_repetitions,
     }
     for field, expected in checks.items():
         if row.get(field) != expected:

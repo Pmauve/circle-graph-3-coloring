@@ -22,6 +22,8 @@ class RunSpec:
     instance_pool_root: Path
     instance_requests: tuple[InstanceRequest, ...]
     solver_configs: tuple[SolverConfig, ...]
+    repetitions: int = 1
+    warmup_repetitions: int = 0
 
 
 def load_run_spec(spec_path: Path) -> tuple[str, RunSpec]:
@@ -56,6 +58,11 @@ def normalize_run_spec(payload: Any) -> RunSpec:
         instance_pool_root=Path(payload.get("instance_pool_root", DEFAULT_INSTANCE_ROOT)),
         instance_requests=_expand_instance_requests(normalized_instance_blocks),
         solver_configs=_resolve_solver_configs([_normalize_solver_block(block) for block in solvers]),
+        repetitions=_positive_int(payload.get("repetitions", 1), field_name="repetitions"),
+        warmup_repetitions=_nonnegative_int(
+            payload.get("warmup_repetitions", 0),
+            field_name="warmup_repetitions",
+        ),
     )
 
 
@@ -198,3 +205,17 @@ def instance_id_for_request(*, family: str, n: int, seed: int) -> str:
 
 def canonical_params_json(params: Mapping[str, Any]) -> str:
     return json.dumps(dict(params), sort_keys=True, separators=(",", ":"))
+
+
+def _positive_int(value: Any, *, field_name: str) -> int:
+    normalized = int(value)
+    if normalized < 1:
+        raise ValueError(f"benchmark run spec field '{field_name}' must be a positive integer")
+    return normalized
+
+
+def _nonnegative_int(value: Any, *, field_name: str) -> int:
+    normalized = int(value)
+    if normalized < 0:
+        raise ValueError(f"benchmark run spec field '{field_name}' must be non-negative")
+    return normalized

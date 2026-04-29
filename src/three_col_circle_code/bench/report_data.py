@@ -42,7 +42,11 @@ class ReportRow:
     solver_params: dict[str, Any]
     solver_label: Optional[str]
     status: str
-    wall_time_s: Optional[float]
+    repetitions: int
+    ok_repetitions: int
+    mean_wall_time_s: Optional[float]
+    median_wall_time_s: Optional[float]
+    measurement_wall_times: tuple[float, ...]
     is_colorable: Optional[bool]
     validation_ok: bool
     error: Optional[str]
@@ -82,8 +86,10 @@ class SolverSummaryRow:
     n_ok: int
     n_error: int
     n_invalid: int
+    repetitions: int
+    ok_repetitions: int
+    mean_wall_time_s: Optional[float]
     median_wall_time_s: Optional[float]
-    max_wall_time_s: Optional[float]
 
 
 @dataclass(frozen=True)
@@ -217,7 +223,11 @@ def _normalize_report_row(row: Mapping[str, Any]) -> ReportRow:
         solver_params=dict(row.get("solver_params", {})),
         solver_label=_optional_str(row.get("solver_label")),
         status=str(row.get("status", "unknown")),
-        wall_time_s=_optional_float(row.get("wall_time_s")),
+        repetitions=int(row.get("repetitions", 1)),
+        ok_repetitions=int(row.get("ok_repetitions", 1 if row.get("status") == "ok" else 0)),
+        mean_wall_time_s=_optional_float(row.get("mean_wall_time_s", row.get("wall_time_s"))),
+        median_wall_time_s=_optional_float(row.get("median_wall_time_s", row.get("wall_time_s"))),
+        measurement_wall_times=_measurement_wall_times(row),
         is_colorable=_optional_bool(row.get("is_colorable")),
         validation_ok=bool(row.get("validation_ok", False)),
         error=_optional_str(row.get("error")),
@@ -347,7 +357,11 @@ def _build_solver_summary_rows(
     for solver_target in solver_targets:
         target_rows = grouped.get(solver_target, [])
         statuses = Counter(row.status for row in target_rows)
-        wall_times = [row.wall_time_s for row in target_rows if row.wall_time_s is not None]
+        wall_times = [
+            wall_time
+            for row in target_rows
+            for wall_time in row.measurement_wall_times
+        ]
         summary_rows.append(
             SolverSummaryRow(
                 solver_target=solver_target,
@@ -355,8 +369,10 @@ def _build_solver_summary_rows(
                 n_ok=statuses.get("ok", 0),
                 n_error=statuses.get("error", 0),
                 n_invalid=statuses.get("invalid", 0),
+                repetitions=sum(row.repetitions for row in target_rows),
+                ok_repetitions=sum(row.ok_repetitions for row in target_rows),
+                mean_wall_time_s=None if not wall_times else mean(wall_times),
                 median_wall_time_s=None if not wall_times else median(wall_times),
-                max_wall_time_s=None if not wall_times else max(wall_times),
             )
         )
     return tuple(summary_rows)
@@ -404,9 +420,10 @@ def _write_summary_csv(
         "n_ok",
         "n_error",
         "n_invalid",
+        "repetitions",
+        "ok_repetitions",
         "mean_wall_time_s",
         "median_wall_time_s",
-        "max_wall_time_s",
     ]
     with Path(path).open("w", encoding="utf-8", newline="") as outfile:
         writer = csv.DictWriter(outfile, fieldnames=fieldnames)
@@ -422,16 +439,21 @@ def _build_summary_row(
 ) -> dict[str, Any]:
     row = {field: value for field, value in zip(group_fields, group_key)}
     statuses = Counter(item.status for item in rows)
-    wall_times = [item.wall_time_s for item in rows if item.wall_time_s is not None]
+    wall_times = [
+        wall_time
+        for item in rows
+        for wall_time in item.measurement_wall_times
+    ]
     row.update(
         {
             "n_instances": len(rows),
             "n_ok": statuses.get("ok", 0),
             "n_error": statuses.get("error", 0),
             "n_invalid": statuses.get("invalid", 0),
+            "repetitions": sum(item.repetitions for item in rows),
+            "ok_repetitions": sum(item.ok_repetitions for item in rows),
             "mean_wall_time_s": None if not wall_times else mean(wall_times),
             "median_wall_time_s": None if not wall_times else median(wall_times),
-            "max_wall_time_s": None if not wall_times else max(wall_times),
         }
     )
     return row
@@ -481,3 +503,23 @@ def _optional_bool(value: Any) -> Optional[bool]:
     if value is None:
         return None
     return bool(value)
+
+
+def _measurement_wall_times(row: Mapping[str, Any]) -> tuple[float, ...]:
+    measurements = row.get("measurements")
+    if isinstance(measurements, list):
+        return tuple(
+            float(item["wall_time_s"])
+            for item in measurements
+            if isinstance(item, Mapping)
+            and item.get("status") == "ok"
+            and item.get("wall_time_s") is not None
+        )
+    mean_wall_time_s = row.get("mean_wall_time_s")
+    if mean_wall_time_s is not None:
+        repetitions = int(row.get("ok_repetitions", row.get("repetitions", 1)))
+        return tuple(float(mean_wall_time_s) for _ in range(repetitions))
+    legacy_wall_time_s = row.get("wall_time_s")
+    if legacy_wall_time_s is not None:
+        return (float(legacy_wall_time_s),)
+    return ()

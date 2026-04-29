@@ -149,8 +149,10 @@ _TEMPLATE = """
               <th>ok</th>
               <th>error</th>
               <th>invalid</th>
+              <th>Measured</th>
+              <th>ok Measurements</th>
+              <th>Mean Runtime</th>
               <th>Median Runtime</th>
-              <th>Max Runtime</th>
             </tr>
           </thead>
           <tbody>
@@ -160,8 +162,10 @@ _TEMPLATE = """
               <td>{{ row.n_ok }}</td>
               <td>{{ row.n_error }}</td>
               <td>{{ row.n_invalid }}</td>
+              <td>{{ row.repetitions }}</td>
+              <td>{{ row.ok_repetitions }}</td>
+              <td>{{ "%.6f"|format(row.mean_wall_time_s) if row.mean_wall_time_s is not none else "n/a" }}</td>
               <td>{{ "%.6f"|format(row.median_wall_time_s) if row.median_wall_time_s is not none else "n/a" }}</td>
-              <td>{{ "%.6f"|format(row.max_wall_time_s) if row.max_wall_time_s is not none else "n/a" }}</td>
             </tr>
             {% endfor %}
           </tbody>
