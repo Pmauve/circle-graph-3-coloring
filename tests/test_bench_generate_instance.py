@@ -18,6 +18,7 @@ from three_col_circle_code.bench.plan_io import (
 )
 from three_col_circle_code.instances.io import load_instance, save_instance
 from three_col_circle_code.instances.model import InstanceMetadata, InstanceRecord
+from three_col_circle_code.instances.validate import validate_instance
 
 
 class BenchGenerateInstanceTests(unittest.TestCase):
@@ -54,13 +55,17 @@ class BenchGenerateInstanceTests(unittest.TestCase):
             save_instance(_build_record(instance_id="rc-n0002-seed1", family="rc", seed=1), instance_path)
             plan_dir, _work_root = _write_plan(tmp_root, instance_path=instance_path)
 
-            with patch("three_col_circle_code.bench.generate_instance.generate_instance") as generate:
+            with patch("three_col_circle_code.bench.generate_instance.generate_instance") as generate, patch(
+                "three_col_circle_code.bench.generate_instance.validate_instance",
+                wraps=validate_instance,
+            ) as validate:
                 result_path = run_instance_generation(plan_dir=plan_dir, index=1)
 
             result = json.loads(result_path.read_text(encoding="utf-8"))
 
         self.assertEqual(result["status"], "skipped")
         self.assertFalse(result["generated"])
+        validate.assert_called_once()
         generate.assert_not_called()
 
     def test_run_instance_generation_force_regenerates_existing_instance(self) -> None:

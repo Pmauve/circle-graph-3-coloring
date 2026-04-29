@@ -92,6 +92,27 @@ class BenchRunTrialTests(unittest.TestCase):
         self.assertEqual([row["wall_time_s"] for row in result["measurements"]], [0.3, 0.1, 0.2])
         self.assertEqual(run_solver.call_count, 4)
 
+    def test_run_trial_marks_inconsistent_repeated_answers_as_error(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            plan_dir, _work_root, instance_path = _write_plan(tmp_root, repetitions=2)
+            save_instance(_build_record(instance_id="rc-n0002-seed1", family="rc", seed=1), instance_path)
+
+            with patch(
+                "three_col_circle_code.bench.run_trial.run_solver",
+                side_effect=[
+                    _fake_solver_result(is_colorable=True),
+                    _fake_solver_result(is_colorable=False),
+                ],
+            ):
+                result_path = run_trial(plan_dir=plan_dir, index=1)
+
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(result["status"], "error")
+        self.assertIsNone(result["is_colorable"])
+        self.assertIn("inconsistent", result["error"])
+
     def test_run_trial_records_invalid_missing_instance(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_root = Path(tmpdir)
@@ -289,13 +310,13 @@ def _build_record(*, instance_id: str, family: str, seed: int, n: int = 2) -> In
     )
 
 
-def _fake_solver_result(*, wall_time_s: float = 0.25) -> SolverResult:
+def _fake_solver_result(*, wall_time_s: float = 0.25, is_colorable: bool = True) -> SolverResult:
     return SolverResult(
         solver="sosa-3-col-exact",
         backend=None,
         status=SOLVER_STATUS_OK,
         wall_time_s=wall_time_s,
-        is_colorable=True,
+        is_colorable=is_colorable,
         n_vertices=2,
         m_edges=1,
         details={"stats": {}},

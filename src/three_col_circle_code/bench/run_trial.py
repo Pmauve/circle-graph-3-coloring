@@ -1,5 +1,6 @@
 import argparse
 import json
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from statistics import mean, median
@@ -23,6 +24,16 @@ from three_col_circle_code.solvers.common import SolverConfig
 from three_col_circle_code.solvers.registry import run_solver
 
 
+@dataclass(frozen=True)
+class TrialContext:
+    """Resolved plan data needed to run one trial."""
+
+    trial: Any
+    instances: tuple[Any, ...]
+    work_root: Path
+    run_id: str
+
+
 def run_trial(
     *,
     plan_dir: Path,
@@ -31,16 +42,16 @@ def run_trial(
     force: bool = False,
 ) -> Path:
     """Run one planned solver trial and write its isolated result file."""
-    trial_row = _select_trial_row(plan_dir=plan_dir, index=index)
-    resolved_work_root = _resolve_work_root(plan_dir=plan_dir, work_root=work_root)
-    result_path = trial_result_path(resolved_work_root, index)
+    context = _load_trial_context(plan_dir=plan_dir, index=index, work_root=work_root)
+    trial_row = context.trial
+    result_path = trial_result_path(context.work_root, index)
     if result_path.exists() and not force:
         return result_path
 
     started_at = _now()
     validation_ok, validation_errors = _load_cached_instance_validation(
-        plan_dir=plan_dir,
-        work_root=resolved_work_root,
+        instances=context.instances,
+        work_root=context.work_root,
         trial=trial_row,
     )
     try:
@@ -71,7 +82,7 @@ def run_trial(
         repetitions=trial_row.repetitions,
     )
     result = _build_repeated_result_record(
-        run_id=_run_id_for_plan(plan_dir),
+        run_id=context.run_id,
         trial=trial_row,
         record=record,
         validation_ok=validation_ok,
@@ -109,41 +120,29 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     return 0
 
 
-def _select_trial_row(*, plan_dir: Path, index: int) -> Any:
-    """Return the trial plan row with the requested 1-based index."""
+def _load_trial_context(*, plan_dir: Path, index: int, work_root: Optional[Path]) -> TrialContext:
+    """Load the plan files once and select the requested trial."""
     instances = load_instance_plan(plan_dir)
     rows = load_trial_plan(plan_dir, instances=instances)
+    manifest = load_plan_manifest(plan_dir)
     for row in rows:
         if row.index == index:
-            return row
+            return TrialContext(
+                trial=row,
+                instances=instances,
+                work_root=Path(work_root) if work_root is not None else Path(str(manifest["work_root"])),
+                run_id=str(manifest.get("run_id", Path(plan_dir).name)),
+            )
     raise ValueError(f"trial plan does not contain index {index}")
-
-
-def _resolve_work_root(*, plan_dir: Path, work_root: Optional[Path]) -> Path:
-    """Resolve the benchmark work root from an override or the plan manifest."""
-    if work_root is not None:
-        return Path(work_root)
-    manifest = load_plan_manifest(plan_dir)
-    try:
-        return Path(str(manifest["work_root"]))
-    except KeyError as exc:
-        raise ValueError("plan manifest is missing required field 'work_root'") from exc
-
-
-def _run_id_for_plan(plan_dir: Path) -> str:
-    """Return the run id stored in the plan manifest, falling back to the directory name."""
-    manifest = load_plan_manifest(plan_dir)
-    return str(manifest.get("run_id", Path(plan_dir).name))
 
 
 def _load_cached_instance_validation(
     *,
-    plan_dir: Path,
+    instances: tuple[Any, ...],
     work_root: Path,
     trial: Any,
 ) -> tuple[bool, list[dict[str, Any]]]:
     """Load validation data written by the matching instance generation task."""
-    instances = load_instance_plan(plan_dir)
     instance_row = next((row for row in instances if row.instance_id == trial.instance_id), None)
     if instance_row is None:
         raise ValueError(f"trial {trial.index} references unknown instance id {trial.instance_id!r}")
@@ -256,9 +255,12 @@ def _build_repeated_result_record(
         for item in ok_measurements
         if item.get("is_colorable") is not None
     }
-    status = "ok" if len(ok_measurements) == len(measurements) else "error"
+    has_inconsistent_answers = len(answer_values) > 1
+    status = "ok" if len(ok_measurements) == len(measurements) and not has_inconsistent_answers else "error"
     error = None
-    if status != "ok":
+    if has_inconsistent_answers:
+        error = "repetitions returned inconsistent is_colorable values"
+    elif status != "ok":
         errors = [str(item.get("error")) for item in measurements if item.get("error")]
         error = "; ".join(errors) if errors else "one or more repetitions failed"
     return {

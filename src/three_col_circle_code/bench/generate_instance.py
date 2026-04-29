@@ -36,8 +36,8 @@ def run_instance_generation(
     started_at = _now()
     generated = False
     try:
-        existing_record = _load_valid_existing_instance(instance_row.instance_path)
-        if existing_record is None or force:
+        existing_info = None if force else _load_valid_existing_instance(instance_row.instance_path)
+        if existing_info is None:
             record = generate_instance(
                 family=instance_row.family,
                 n=instance_row.n,
@@ -46,9 +46,10 @@ def run_instance_generation(
             write_instance_to_path(record, instance_row.instance_path, atomic=True)
             generated = True
             loaded_record = load_instance(instance_row.instance_path)
+            validation_ok, validation_errors = _validate_record(loaded_record)
         else:
-            loaded_record = existing_record
-        validation_ok, validation_errors = _validate_record(loaded_record)
+            loaded_record, validation_errors = existing_info
+            validation_ok = True
         status = "ok" if generated else "skipped"
         if not validation_ok:
             status = "invalid"
@@ -124,8 +125,8 @@ def _resolve_work_root(*, plan_dir: Path, work_root: Optional[Path]) -> Path:
         raise ValueError("plan manifest is missing required field 'work_root'") from exc
 
 
-def _load_valid_existing_instance(instance_path: Path) -> Optional[InstanceRecord]:
-    """Load an existing instance only if it parses and validates."""
+def _load_valid_existing_instance(instance_path: Path) -> Optional[tuple[InstanceRecord, list[dict[str, str]]]]:
+    """Load and validate an existing instance once."""
     if not Path(instance_path).exists():
         return None
     try:
@@ -135,7 +136,7 @@ def _load_valid_existing_instance(instance_path: Path) -> Optional[InstanceRecor
     validation_ok, _validation_errors = _validate_record(record)
     if not validation_ok:
         return None
-    return record
+    return record, _validation_errors
 
 
 def _validate_record(record: InstanceRecord) -> tuple[bool, list[dict[str, str]]]:
