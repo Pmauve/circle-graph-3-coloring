@@ -92,6 +92,7 @@ def build_run_manifest(
                 "family": request.family,
                 "n": request.n,
                 "seed": request.seed,
+                "num_colors": request.num_colors,
             }
             for request in run_spec.instance_requests
         ],

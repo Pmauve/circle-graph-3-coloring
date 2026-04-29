@@ -102,6 +102,7 @@ def _build_instance_plan_rows(run_spec: RunSpec) -> tuple[InstancePlanRow, ...]:
                 family=request.family,
                 n=request.n,
                 seed=request.seed,
+                num_colors=request.num_colors,
                 instance_path=instance_path,
             )
         )
@@ -124,6 +125,7 @@ def _build_trial_plan_rows(
                     family=instance.family,
                     n=instance.n,
                     seed=instance.seed,
+                    num_colors=instance.num_colors,
                     solver=solver_config.solver,
                     backend=solver_config.backend,
                     solver_target=solver_config.target,

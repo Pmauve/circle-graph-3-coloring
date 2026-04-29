@@ -34,6 +34,7 @@ class ReportRow:
     bucket: Optional[str]
     n: Optional[int]
     m: Optional[int]
+    num_colors: Optional[int]
     seed: Optional[int]
     source: Optional[str]
     solver_target: str
@@ -215,6 +216,7 @@ def _normalize_report_row(row: Mapping[str, Any]) -> ReportRow:
         bucket=_optional_str(row.get("bucket")),
         n=_optional_int(row.get("n")),
         m=_optional_int(row.get("m")),
+        num_colors=_optional_int(row.get("num_colors")),
         seed=_optional_int(row.get("seed")),
         source=_optional_str(row.get("source")),
         solver_target=str(row["solver_target"]),

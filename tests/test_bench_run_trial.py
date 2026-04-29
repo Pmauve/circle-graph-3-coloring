@@ -48,6 +48,7 @@ class BenchRunTrialTests(unittest.TestCase):
         self.assertEqual(result["solver_target"], "sosa-3-col-exact")
         self.assertEqual(result["solver_label"], "SOSA exact")
         self.assertEqual(result["solver_params"], {"base_case_n": 8})
+        self.assertEqual(result["num_colors"], 3)
         self.assertTrue(result["is_colorable"])
         self.assertTrue(result["validation_ok"])
         self.assertEqual(result["repetitions"], 1)
@@ -288,7 +289,14 @@ def _write_instance_result(work_root: Path, instance_path: Path) -> None:
     )
 
 
-def _build_record(*, instance_id: str, family: str, seed: int, n: int = 2) -> InstanceRecord:
+def _build_record(
+    *,
+    instance_id: str,
+    family: str,
+    seed: int,
+    n: int = 2,
+    num_colors: int = 3,
+) -> InstanceRecord:
     graph = nx.Graph()
     for node in range(n):
         graph.add_node(node, label=node, l=node, r=node + n)
@@ -302,6 +310,7 @@ def _build_record(*, instance_id: str, family: str, seed: int, n: int = 2) -> In
             generator="test_fixture",
             n=graph.number_of_nodes(),
             m=graph.number_of_edges(),
+            num_colors=num_colors,
             bucket="s",
             source="generated",
             created_at="2026-04-29T00:00:00+00:00",

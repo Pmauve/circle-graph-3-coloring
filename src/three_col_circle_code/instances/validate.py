@@ -151,6 +151,11 @@ def _validate_metadata(
             "metadata.m_mismatch",
             f"metadata m={metadata_obj.m} does not match graph edge count {graph.number_of_edges()}",
         )
+    if metadata_obj.num_colors < 1:
+        report.add_error(
+            "metadata.num_colors_invalid",
+            f"metadata num_colors={metadata_obj.num_colors} must be at least 1",
+        )
     expected_bucket = bucket_for_n(graph.number_of_nodes())
     if metadata_obj.bucket != expected_bucket:
         report.add_error(

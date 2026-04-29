@@ -59,7 +59,7 @@ class BenchReportDataTests(unittest.TestCase):
         self.assertEqual(data.headline_metrics.best_median_runtime_solver_target, "sosa-3-col-exact [base_case_n=64]")
         self.assertEqual(len(data.disagreement_rows), 1)
         disagreement = data.disagreement_rows[0]
-        self.assertEqual(disagreement.instance_id, "rcy_fast-n0003-seed2")
+        self.assertEqual(disagreement.instance_id, "rcy_fast-k03-n0003-seed2")
         self.assertEqual({label for label, _ in disagreement.statuses}, set(data.metadata.solver_targets))
 
     def test_write_summary_csvs_matches_expected_structure(self) -> None:
@@ -128,7 +128,7 @@ class BenchReportDataTests(unittest.TestCase):
             run_dir.mkdir()
             row = {
                 "run_id": "labeled-run",
-                "instance_id": "rc-n0002-seed1",
+                "instance_id": "rc-k03-n0002-seed1",
                 "instance_path": "instance.json",
                 "family": "rc",
                 "bucket": "s",
@@ -282,8 +282,8 @@ def _write_sample_run(run_dir: Path, *, with_manifest: bool) -> Path:
     rows = [
         {
             "run_id": "sample-run",
-            "instance_id": "rc-n0002-seed1",
-            "instance_path": str(run_dir / ".." / "instances" / "rc-n0002-seed1.json"),
+            "instance_id": "rc-k03-n0002-seed1",
+            "instance_path": str(run_dir / ".." / "instances" / "rc-k03-n0002-seed1.json"),
             "family": "rc",
             "bucket": "s",
             "n": 2,
@@ -304,8 +304,8 @@ def _write_sample_run(run_dir: Path, *, with_manifest: bool) -> Path:
         },
         {
             "run_id": "sample-run",
-            "instance_id": "rc-n0002-seed1",
-            "instance_path": str(run_dir / ".." / "instances" / "rc-n0002-seed1.json"),
+            "instance_id": "rc-k03-n0002-seed1",
+            "instance_path": str(run_dir / ".." / "instances" / "rc-k03-n0002-seed1.json"),
             "family": "rc",
             "bucket": "s",
             "n": 2,
@@ -326,8 +326,8 @@ def _write_sample_run(run_dir: Path, *, with_manifest: bool) -> Path:
         },
         {
             "run_id": "sample-run",
-            "instance_id": "rc-n0002-seed1",
-            "instance_path": str(run_dir / ".." / "instances" / "rc-n0002-seed1.json"),
+            "instance_id": "rc-k03-n0002-seed1",
+            "instance_path": str(run_dir / ".." / "instances" / "rc-k03-n0002-seed1.json"),
             "family": "rc",
             "bucket": "s",
             "n": 2,
@@ -348,8 +348,8 @@ def _write_sample_run(run_dir: Path, *, with_manifest: bool) -> Path:
         },
         {
             "run_id": "sample-run",
-            "instance_id": "rcy_fast-n0003-seed2",
-            "instance_path": str(run_dir / ".." / "instances" / "rcy_fast-n0003-seed2.json"),
+            "instance_id": "rcy_fast-k03-n0003-seed2",
+            "instance_path": str(run_dir / ".." / "instances" / "rcy_fast-k03-n0003-seed2.json"),
             "family": "rcy_fast",
             "bucket": "s",
             "n": 3,
@@ -370,8 +370,8 @@ def _write_sample_run(run_dir: Path, *, with_manifest: bool) -> Path:
         },
         {
             "run_id": "sample-run",
-            "instance_id": "rcy_fast-n0003-seed2",
-            "instance_path": str(run_dir / ".." / "instances" / "rcy_fast-n0003-seed2.json"),
+            "instance_id": "rcy_fast-k03-n0003-seed2",
+            "instance_path": str(run_dir / ".." / "instances" / "rcy_fast-k03-n0003-seed2.json"),
             "family": "rcy_fast",
             "bucket": "s",
             "n": 3,
@@ -392,8 +392,8 @@ def _write_sample_run(run_dir: Path, *, with_manifest: bool) -> Path:
         },
         {
             "run_id": "sample-run",
-            "instance_id": "rcy_fast-n0003-seed2",
-            "instance_path": str(run_dir / ".." / "instances" / "rcy_fast-n0003-seed2.json"),
+            "instance_id": "rcy_fast-k03-n0003-seed2",
+            "instance_path": str(run_dir / ".." / "instances" / "rcy_fast-k03-n0003-seed2.json"),
             "family": "rcy_fast",
             "bucket": "s",
             "n": 3,
@@ -500,7 +500,7 @@ def _write_duplicate_row_run(run_dir: Path) -> Path:
     rows = [
         {
             "run_id": "duplicate-run",
-            "instance_id": "rc-n0002-seed1",
+            "instance_id": "rc-k03-n0002-seed1",
             "family": "rc",
             "bucket": "s",
             "n": 2,
@@ -519,7 +519,7 @@ def _write_duplicate_row_run(run_dir: Path) -> Path:
         },
         {
             "run_id": "duplicate-run",
-            "instance_id": "rc-n0002-seed1",
+            "instance_id": "rc-k03-n0002-seed1",
             "family": "rc",
             "bucket": "s",
             "n": 2,
@@ -538,7 +538,7 @@ def _write_duplicate_row_run(run_dir: Path) -> Path:
         },
         {
             "run_id": "duplicate-run",
-            "instance_id": "rc-n0002-seed1",
+            "instance_id": "rc-k03-n0002-seed1",
             "family": "rc",
             "bucket": "s",
             "n": 2,
@@ -557,7 +557,7 @@ def _write_duplicate_row_run(run_dir: Path) -> Path:
         },
         {
             "run_id": "duplicate-run",
-            "instance_id": "rc-n0002-seed1",
+            "instance_id": "rc-k03-n0002-seed1",
             "family": "rc",
             "bucket": "s",
             "n": 2,
@@ -600,7 +600,7 @@ def _write_untimed_solver_run(run_dir: Path) -> Path:
     rows = [
         {
             "run_id": "untimed-run",
-            "instance_id": "rc-n0002-seed1",
+            "instance_id": "rc-k03-n0002-seed1",
             "family": "rc",
             "bucket": "s",
             "n": 2,
@@ -619,7 +619,7 @@ def _write_untimed_solver_run(run_dir: Path) -> Path:
         },
         {
             "run_id": "untimed-run",
-            "instance_id": "rc-n0002-seed1",
+            "instance_id": "rc-k03-n0002-seed1",
             "family": "rc",
             "bucket": "s",
             "n": 2,
@@ -638,7 +638,7 @@ def _write_untimed_solver_run(run_dir: Path) -> Path:
         },
         {
             "run_id": "untimed-run",
-            "instance_id": "rc-n0002-seed1",
+            "instance_id": "rc-k03-n0002-seed1",
             "family": "rc",
             "bucket": "s",
             "n": 2,

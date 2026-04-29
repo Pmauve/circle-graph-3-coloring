@@ -18,6 +18,7 @@ class InstancePlanRow:
     n: int
     seed: int
     instance_path: Path
+    num_colors: int = 3
 
     @classmethod
     def from_mapping(cls, row: Mapping[str, Any]) -> "InstancePlanRow":
@@ -29,6 +30,7 @@ class InstancePlanRow:
             family=str(row["family"]),
             n=int(row["n"]),
             seed=int(row["seed"]),
+            num_colors=int(row.get("num_colors", 3)),
             instance_path=Path(str(row["instance_path"])),
         )
 
@@ -40,6 +42,7 @@ class InstancePlanRow:
             "family": self.family,
             "n": self.n,
             "seed": self.seed,
+            "num_colors": self.num_colors,
             "instance_path": str(self.instance_path),
         }
 
@@ -59,6 +62,7 @@ class TrialPlanRow:
     solver_label: Optional[str] = None
     repetitions: int = 1
     warmup_repetitions: int = 0
+    num_colors: int = 3
 
     @classmethod
     def from_mapping(cls, row: Mapping[str, Any]) -> "TrialPlanRow":
@@ -90,6 +94,7 @@ class TrialPlanRow:
             family=str(row["family"]),
             n=int(row["n"]),
             seed=int(row["seed"]),
+            num_colors=int(row.get("num_colors", 3)),
             solver=str(row["solver"]),
             backend=None if row["backend"] is None else str(row["backend"]),
             solver_target=str(row["solver_target"]),
@@ -108,6 +113,7 @@ class TrialPlanRow:
             "family": self.family,
             "n": self.n,
             "seed": self.seed,
+            "num_colors": self.num_colors,
             "solver": self.solver,
             "backend": self.backend,
             "solver_target": self.solver_target,
@@ -227,6 +233,8 @@ def validate_trial_plan(
             raise ValueError(f"trial plan references unknown instance id {row.instance_id!r}")
         if row.instance_path != instance.instance_path:
             raise ValueError(f"trial plan row {row.index} uses an instance_path that differs from instances.jsonl")
+        if row.num_colors != instance.num_colors:
+            raise ValueError(f"trial plan row {row.index} uses num_colors that differs from instances.jsonl")
         if row.repetitions < 1:
             raise ValueError("trial plan row repetitions must be positive")
         if row.warmup_repetitions < 0:

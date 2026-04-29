@@ -47,7 +47,7 @@ class BenchRunnerTests(unittest.TestCase):
 
             with patch(
                 "three_col_circle_code.bench.generate_instance.generate_instance",
-                return_value=_build_record(instance_id="rc-n0002-seed1", family="rc", seed=1),
+                return_value=_build_record(instance_id="rc-k03-n0002-seed1", family="rc", seed=1),
             ), patch(
                 "three_col_circle_code.bench.run_trial.run_solver",
                 return_value=_fake_solver_result(backend="legacy-pysmt-msat", wall_time_s=0.25),
@@ -81,7 +81,7 @@ class BenchRunnerTests(unittest.TestCase):
         self.assertEqual(manifest["n_instances"], 1)
         self.assertEqual(manifest["n_tasks"], 1)
         self.assertEqual(len(result_lines), 1)
-        self.assertEqual(result["instance_id"], "rc-n0002-seed1")
+        self.assertEqual(result["instance_id"], "rc-k03-n0002-seed1")
         self.assertEqual(result["solver_target"], "sat-baseline:legacy-pysmt-msat")
         self.assertEqual(result["solver_params"], {"cutoff": 5})
         self.assertEqual(result["solver_label"], "MathSAT legacy")
@@ -107,8 +107,8 @@ class BenchRunnerTests(unittest.TestCase):
             tmp_root = Path(tmpdir)
             instance_pool_root = tmp_root / "instances"
             _write_instance(
-                instance_pool_root / "rc" / "s" / "rc-n0002-seed1.json",
-                instance_id="rc-n0002-seed1",
+                instance_pool_root / "rc" / "s" / "rc-k03-n0002-seed1.json",
+                instance_id="rc-k03-n0002-seed1",
                 family="rc",
                 seed=1,
             )
@@ -158,7 +158,7 @@ class BenchRunnerTests(unittest.TestCase):
 
             with patch(
                 "three_col_circle_code.bench.generate_instance.generate_instance",
-                return_value=_build_record(instance_id="rc-n0002-seed1", family="rc", seed=1),
+                return_value=_build_record(instance_id="rc-k03-n0002-seed1", family="rc", seed=1),
             ) as generate_instance_mock, patch(
                 "three_col_circle_code.bench.run_trial.run_solver",
                 return_value=_fake_solver_result(backend="pysat-cadical", wall_time_s=0.1),
@@ -300,7 +300,7 @@ class BenchRunnerTests(unittest.TestCase):
 
             with patch(
                 "three_col_circle_code.bench.generate_instance.generate_instance",
-                return_value=_build_record(instance_id="rc-n0002-seed1", family="rc", seed=1),
+                return_value=_build_record(instance_id="rc-k03-n0002-seed1", family="rc", seed=1),
             ), patch(
                 "three_col_circle_code.bench.run_trial.run_solver",
                 return_value=_fake_solver_result(backend="pysat-cadical", wall_time_s=0.1),

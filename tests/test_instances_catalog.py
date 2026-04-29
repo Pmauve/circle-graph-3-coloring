@@ -56,7 +56,7 @@ class InstanceCatalogTests(unittest.TestCase):
             self.assertEqual(filter_instances(all_paths, n_min=3), [rcy_small])
             self.assertEqual(filter_instances(all_paths, seed=12), [rc_legacy_source])
             self.assertEqual(
-                filter_instances(all_paths, instance_ids=["rc-n0002-seed10"]),
+                filter_instances(all_paths, instance_ids=["rc-k03-n0002-seed10"]),
                 [rc_small],
             )
 
@@ -86,7 +86,7 @@ def _write_canonical_instance(path: Path, *, family: str, n: int, seed: int, sou
     graph = _path_graph_for_n(n)
     record = InstanceRecord(
         metadata=InstanceMetadata(
-            instance_id=f"{family}-n{n:04d}-seed{seed}",
+            instance_id=f"{family}-k03-n{n:04d}-seed{seed}",
             family=family,
             seed=seed,
             generator="test_fixture",

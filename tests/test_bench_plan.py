@@ -84,7 +84,7 @@ class BenchPlanTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_root = Path(tmpdir)
             instance_pool = tmp_root / "instances"
-            flat_path = instance_pool / "rc-n0002-seed1.json"
+            flat_path = instance_pool / "rc-k03-n0002-seed1.json"
             flat_path.parent.mkdir(parents=True)
             flat_path.write_text("{}", encoding="utf-8")
             spec_path = _write_spec(
@@ -135,6 +135,32 @@ class BenchPlanTests(unittest.TestCase):
         self.assertEqual(trials[0].repetitions, 5)
         self.assertEqual(trials[0].warmup_repetitions, 2)
 
+    def test_create_benchmark_plan_carries_instance_num_colors(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            spec_path = _write_spec(
+                tmp_root / "k-color.json",
+                {
+                    "instance_pool_root": str(tmp_root / "instances"),
+                    "instances": [{"family": "rcy_fast", "num_colors": 4, "n_values": [2], "seeds": [1]}],
+                    "solvers": [{"target": "sosa-k-col-heuristic", "params": {"num_colors": 4}}],
+                },
+            )
+
+            plan_dir = create_benchmark_plan(
+                spec_path=spec_path,
+                plan_root=tmp_root / "plans",
+                work_root=tmp_root / "work",
+            )
+            instances = load_instance_plan(plan_dir)
+            trials = load_trial_plan(plan_dir, instances=instances)
+
+        expected_path = tmp_root / "instances" / "rcy_fast" / "s" / "rcy_fast-k04-n0002-seed1.json"
+        self.assertEqual(instances[0].instance_id, "rcy_fast-k04-n0002-seed1")
+        self.assertEqual(instances[0].num_colors, 4)
+        self.assertEqual(instances[0].instance_path, expected_path)
+        self.assertEqual(trials[0].num_colors, 4)
+
     def test_create_benchmark_plan_uses_expected_nested_path_for_missing_instance(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_root = Path(tmpdir)
@@ -156,7 +182,7 @@ class BenchPlanTests(unittest.TestCase):
             instances = load_instance_plan(plan_dir)
             trials = load_trial_plan(plan_dir, instances=instances)
 
-        expected = instance_pool / "rc" / "s" / "rc-n0002-seed1.json"
+        expected = instance_pool / "rc" / "s" / "rc-k03-n0002-seed1.json"
         self.assertEqual(instances[0].instance_path, expected)
         self.assertEqual(trials[0].instance_path, expected)
 

@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+from three_col_circle_code.generation.color_utils import validate_num_colors
 from three_col_circle_code.generation.families import seeded_families
 from three_col_circle_code.instances.catalog import DEFAULT_INSTANCE_ROOT
 from three_col_circle_code.solvers.common import SolverConfig
@@ -15,6 +16,7 @@ class InstanceRequest:
     family: str
     n: int
     seed: int
+    num_colors: int
 
 
 @dataclass(frozen=True)
@@ -95,6 +97,7 @@ def _normalize_instance_block(block: Any) -> dict[str, Any]:
     normalized_block: dict[str, Any] = {
         "family": family,
         "seeds": sorted(normalized_seeds),
+        "num_colors": _normalize_num_colors(block.get("num_colors", 3)),
     }
     if has_n_values:
         n_values = block["n_values"]
@@ -149,7 +152,12 @@ def _expand_instance_requests(instance_blocks: Sequence[Mapping[str, Any]]) -> t
         n_values = list(block["n_values"]) if "n_values" in block else _expand_n_range(block["n"])
         for n_value in n_values:
             for seed_value in block["seeds"]:
-                instance_id = instance_id_for_request(family=block["family"], n=n_value, seed=seed_value)
+                instance_id = instance_id_for_request(
+                    family=block["family"],
+                    n=n_value,
+                    seed=seed_value,
+                    num_colors=block["num_colors"],
+                )
                 if instance_id in seen_instance_ids:
                     raise ValueError(f"benchmark run spec contains duplicate instance request {instance_id!r}")
                 seen_instance_ids.add(instance_id)
@@ -159,9 +167,10 @@ def _expand_instance_requests(instance_blocks: Sequence[Mapping[str, Any]]) -> t
                         family=block["family"],
                         n=n_value,
                         seed=seed_value,
+                        num_colors=block["num_colors"],
                     )
                 )
-    return tuple(sorted(requests, key=lambda item: (item.family, item.n, item.seed)))
+    return tuple(sorted(requests, key=lambda item: (item.family, item.num_colors, item.n, item.seed)))
 
 
 def _expand_n_range(n_range: Mapping[str, Any]) -> list[int]:
@@ -199,8 +208,14 @@ def _resolve_solver_configs(solver_blocks: Sequence[Mapping[str, Any]]) -> tuple
     return tuple(sorted(configs, key=lambda config: config.target))
 
 
-def instance_id_for_request(*, family: str, n: int, seed: int) -> str:
-    return f"{family}-n{n:04d}-seed{seed}"
+def instance_id_for_request(*, family: str, n: int, seed: int, num_colors: int) -> str:
+    return f"{family}-k{num_colors:02d}-n{n:04d}-seed{seed}"
+
+
+def _normalize_num_colors(value: Any) -> int:
+    num_colors = int(value)
+    validate_num_colors(num_colors)
+    return num_colors
 
 
 def canonical_params_json(params: Mapping[str, Any]) -> str:

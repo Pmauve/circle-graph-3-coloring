@@ -58,6 +58,7 @@ class InstanceValidateTests(unittest.TestCase):
             "generator": "unit",
             "n": 999,
             "m": 999,
+            "num_colors": 0,
             "bucket": "xl",
             "source": "generated",
             "created_at": "2026-04-13T00:00:00Z",
@@ -70,6 +71,7 @@ class InstanceValidateTests(unittest.TestCase):
         codes = {issue.code for issue in report.errors}
         self.assertIn("metadata.n_mismatch", codes)
         self.assertIn("metadata.m_mismatch", codes)
+        self.assertIn("metadata.num_colors_invalid", codes)
         self.assertIn("metadata.bucket_mismatch", codes)
 
     def test_validate_instance_file_accepts_legacy_node_link_input(self) -> None:

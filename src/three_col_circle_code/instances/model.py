@@ -29,6 +29,7 @@ class InstanceMetadata:
     bucket: str
     source: str
     created_at: str
+    num_colors: int = 3
     generation_time_seconds: Optional[float] = None
     max_attempts_per_node: Optional[int] = None
 
@@ -61,6 +62,7 @@ class InstanceMetadata:
             generator=str(data["generator"]),
             n=int(data["n"]),
             m=int(data["m"]),
+            num_colors=int(data.get("num_colors", 3)),
             bucket=str(data["bucket"]),
             source=str(data["source"]),
             created_at=str(data["created_at"]),
@@ -125,6 +127,7 @@ def build_legacy_metadata(
         generator="legacy_node_link",
         n=n,
         m=m,
+        num_colors=3,
         bucket=bucket_for_n(n),
         source="legacy",
         created_at=created_at or datetime.now(UTC).isoformat(),

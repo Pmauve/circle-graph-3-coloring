@@ -42,6 +42,7 @@ def run_instance_generation(
                 family=instance_row.family,
                 n=instance_row.n,
                 seed=instance_row.seed,
+                num_colors=instance_row.num_colors,
             )
             write_instance_to_path(record, instance_row.instance_path, atomic=True)
             generated = True

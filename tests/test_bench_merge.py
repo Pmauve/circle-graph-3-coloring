@@ -203,6 +203,7 @@ def _write_trial_result(work_root: Path, index: int, *, solver_params: dict, sol
         "bucket": "s",
         "n": 2,
         "m": 1,
+        "num_colors": 3,
         "seed": 1,
         "source": "generated",
         "solver_target": "sosa-3-col-exact",

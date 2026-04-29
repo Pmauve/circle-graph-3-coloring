@@ -25,12 +25,12 @@ class BenchGenerateInstanceTests(unittest.TestCase):
     def test_run_instance_generation_generates_missing_instance(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_root = Path(tmpdir)
-            instance_path = tmp_root / "instances" / "rc" / "s" / "rc-n0002-seed1.json"
+            instance_path = tmp_root / "instances" / "rc" / "s" / "rc-k03-n0002-seed1.json"
             plan_dir, work_root = _write_plan(tmp_root, instance_path=instance_path)
 
             with patch(
                 "three_col_circle_code.bench.generate_instance.generate_instance",
-                return_value=_build_record(instance_id="rc-n0002-seed1", family="rc", seed=1),
+                return_value=_build_record(instance_id="rc-k03-n0002-seed1", family="rc", seed=1),
             ) as generate, patch(
                 "three_col_circle_code.bench.generate_instance.collect_environment_metadata",
                 return_value={"hostname": "worker-1"},
@@ -45,14 +45,39 @@ class BenchGenerateInstanceTests(unittest.TestCase):
         self.assertTrue(result["generated"])
         self.assertTrue(result["validation_ok"])
         self.assertEqual(result["environment"], {"hostname": "worker-1"})
-        self.assertEqual(loaded.metadata.instance_id, "rc-n0002-seed1")
-        generate.assert_called_once_with(family="rc", n=2, seed=1)
+        self.assertEqual(loaded.metadata.instance_id, "rc-k03-n0002-seed1")
+        generate.assert_called_once_with(family="rc", n=2, seed=1, num_colors=3)
+
+    def test_run_instance_generation_passes_planned_num_colors(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            instance_path = tmp_root / "instances" / "rcy_fast" / "s" / "rcy_fast-k04-n0002-seed1.json"
+            plan_dir, _work_root = _write_plan(
+                tmp_root,
+                instance_path=instance_path,
+                instance_id="rcy_fast-k04-n0002-seed1",
+                family="rcy_fast",
+                num_colors=4,
+            )
+
+            with patch(
+                "three_col_circle_code.bench.generate_instance.generate_instance",
+                return_value=_build_record(
+                    instance_id="rcy_fast-k04-n0002-seed1",
+                    family="rcy_fast",
+                    seed=1,
+                    num_colors=4,
+                ),
+            ) as generate:
+                run_instance_generation(plan_dir=plan_dir, index=1)
+
+        generate.assert_called_once_with(family="rcy_fast", n=2, seed=1, num_colors=4)
 
     def test_run_instance_generation_skips_existing_valid_instance(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_root = Path(tmpdir)
-            instance_path = tmp_root / "instances" / "rc" / "s" / "rc-n0002-seed1.json"
-            save_instance(_build_record(instance_id="rc-n0002-seed1", family="rc", seed=1), instance_path)
+            instance_path = tmp_root / "instances" / "rc" / "s" / "rc-k03-n0002-seed1.json"
+            save_instance(_build_record(instance_id="rc-k03-n0002-seed1", family="rc", seed=1), instance_path)
             plan_dir, _work_root = _write_plan(tmp_root, instance_path=instance_path)
 
             with patch("three_col_circle_code.bench.generate_instance.generate_instance") as generate, patch(
@@ -71,13 +96,13 @@ class BenchGenerateInstanceTests(unittest.TestCase):
     def test_run_instance_generation_force_regenerates_existing_instance(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_root = Path(tmpdir)
-            instance_path = tmp_root / "instances" / "rc" / "s" / "rc-n0002-seed1.json"
-            save_instance(_build_record(instance_id="rc-n0002-seed1", family="rc", seed=1), instance_path)
+            instance_path = tmp_root / "instances" / "rc" / "s" / "rc-k03-n0002-seed1.json"
+            save_instance(_build_record(instance_id="rc-k03-n0002-seed1", family="rc", seed=1), instance_path)
             plan_dir, _work_root = _write_plan(tmp_root, instance_path=instance_path)
 
             with patch(
                 "three_col_circle_code.bench.generate_instance.generate_instance",
-                return_value=_build_record(instance_id="rc-n0002-seed1", family="rc", seed=1),
+                return_value=_build_record(instance_id="rc-k03-n0002-seed1", family="rc", seed=1),
             ) as generate:
                 result_path = run_instance_generation(plan_dir=plan_dir, index=1, force=True)
 
@@ -90,14 +115,14 @@ class BenchGenerateInstanceTests(unittest.TestCase):
     def test_run_instance_generation_regenerates_invalid_existing_instance(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_root = Path(tmpdir)
-            instance_path = tmp_root / "instances" / "rc" / "s" / "rc-n0002-seed1.json"
+            instance_path = tmp_root / "instances" / "rc" / "s" / "rc-k03-n0002-seed1.json"
             instance_path.parent.mkdir(parents=True)
             instance_path.write_text("{not json", encoding="utf-8")
             plan_dir, _work_root = _write_plan(tmp_root, instance_path=instance_path)
 
             with patch(
                 "three_col_circle_code.bench.generate_instance.generate_instance",
-                return_value=_build_record(instance_id="rc-n0002-seed1", family="rc", seed=1),
+                return_value=_build_record(instance_id="rc-k03-n0002-seed1", family="rc", seed=1),
             ):
                 result_path = run_instance_generation(plan_dir=plan_dir, index=1)
 
@@ -106,12 +131,12 @@ class BenchGenerateInstanceTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "ok")
         self.assertTrue(result["generated"])
-        self.assertEqual(loaded.metadata.instance_id, "rc-n0002-seed1")
+        self.assertEqual(loaded.metadata.instance_id, "rc-k03-n0002-seed1")
 
     def test_run_instance_generation_skips_completed_result(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_root = Path(tmpdir)
-            instance_path = tmp_root / "instances" / "rc" / "s" / "rc-n0002-seed1.json"
+            instance_path = tmp_root / "instances" / "rc" / "s" / "rc-k03-n0002-seed1.json"
             plan_dir, work_root = _write_plan(tmp_root, instance_path=instance_path)
             result_path = instance_result_path(work_root, 1)
             result_path.parent.mkdir(parents=True)
@@ -128,7 +153,7 @@ class BenchGenerateInstanceTests(unittest.TestCase):
             tmp_root = Path(tmpdir)
             plan_dir, _work_root = _write_plan(
                 tmp_root,
-                instance_path=tmp_root / "instances" / "rc" / "s" / "rc-n0002-seed1.json",
+                instance_path=tmp_root / "instances" / "rc" / "s" / "rc-k03-n0002-seed1.json",
             )
 
             with self.assertRaisesRegex(ValueError, "does not contain index"):
@@ -137,12 +162,12 @@ class BenchGenerateInstanceTests(unittest.TestCase):
     def test_cli_prints_result_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_root = Path(tmpdir)
-            instance_path = tmp_root / "instances" / "rc" / "s" / "rc-n0002-seed1.json"
+            instance_path = tmp_root / "instances" / "rc" / "s" / "rc-k03-n0002-seed1.json"
             plan_dir, _work_root = _write_plan(tmp_root, instance_path=instance_path)
 
             with patch(
                 "three_col_circle_code.bench.generate_instance.generate_instance",
-                return_value=_build_record(instance_id="rc-n0002-seed1", family="rc", seed=1),
+                return_value=_build_record(instance_id="rc-k03-n0002-seed1", family="rc", seed=1),
             ):
                 exit_code = main(["--plan-dir", str(plan_dir), "--index", "1"])
                 instance_exists = instance_path.exists()
@@ -151,7 +176,14 @@ class BenchGenerateInstanceTests(unittest.TestCase):
         self.assertTrue(instance_exists)
 
 
-def _write_plan(tmp_root: Path, *, instance_path: Path) -> tuple[Path, Path]:
+def _write_plan(
+    tmp_root: Path,
+    *,
+    instance_path: Path,
+    instance_id: str = "rc-k03-n0002-seed1",
+    family: str = "rc",
+    num_colors: int = 3,
+) -> tuple[Path, Path]:
     plan_dir = tmp_root / "plans" / "smoke"
     work_root = tmp_root / "work" / "smoke"
     write_instance_plan(
@@ -159,10 +191,11 @@ def _write_plan(tmp_root: Path, *, instance_path: Path) -> tuple[Path, Path]:
         (
             InstancePlanRow(
                 index=1,
-                instance_id="rc-n0002-seed1",
-                family="rc",
+                instance_id=instance_id,
+                family=family,
                 n=2,
                 seed=1,
+                num_colors=num_colors,
                 instance_path=instance_path,
             ),
         ),
@@ -180,7 +213,14 @@ def _write_plan(tmp_root: Path, *, instance_path: Path) -> tuple[Path, Path]:
     return plan_dir, work_root
 
 
-def _build_record(*, instance_id: str, family: str, seed: int, n: int = 2) -> InstanceRecord:
+def _build_record(
+    *,
+    instance_id: str,
+    family: str,
+    seed: int,
+    n: int = 2,
+    num_colors: int = 3,
+) -> InstanceRecord:
     graph = nx.Graph()
     for node in range(n):
         graph.add_node(node, label=node, l=node, r=node + n)
@@ -194,6 +234,7 @@ def _build_record(*, instance_id: str, family: str, seed: int, n: int = 2) -> In
             generator="test_fixture",
             n=graph.number_of_nodes(),
             m=graph.number_of_edges(),
+            num_colors=num_colors,
             bucket="s",
             source="generated",
             created_at="2026-04-29T00:00:00+00:00",

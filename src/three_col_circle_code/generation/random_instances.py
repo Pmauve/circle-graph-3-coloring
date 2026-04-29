@@ -11,6 +11,7 @@ from three_col_circle_code.generation.families import (
     generate_seeded_family,
     seeded_families,
 )
+from three_col_circle_code.generation.color_utils import validate_num_colors
 from three_col_circle_code.instances.io import load_instance, save_instance
 from three_col_circle_code.instances.model import InstanceFormatError, InstanceMetadata, InstanceRecord, bucket_for_n
 from three_col_circle_code.instances.validate import validate_instance
@@ -26,25 +27,33 @@ def generate_instance(
     seed: int,
     source: str = "generated",
     max_attempts_per_node: int = 10_000,
+    num_colors: int = 3,
 ) -> InstanceRecord:
     """Generate one seeded canonical circle-graph instance."""
-    _validate_generation_request(family=family, n=n, max_attempts_per_node=max_attempts_per_node)
+    _validate_generation_request(
+        family=family,
+        n=n,
+        max_attempts_per_node=max_attempts_per_node,
+        num_colors=num_colors,
+    )
     start_time = perf_counter()
     graph, generator_name = generate_seeded_family(
         family=family,
         n=n,
         seed=seed,
         max_attempts_per_node=max_attempts_per_node,
+        num_colors=num_colors,
     )
     generation_time_seconds = perf_counter() - start_time
     graph = _to_canonical_graph(graph)
     metadata = InstanceMetadata(
-        instance_id=_instance_id(family=family, n=n, seed=seed),
+        instance_id=_instance_id(family=family, n=n, seed=seed, num_colors=num_colors),
         family=family,
         seed=seed,
         generator=generator_name,
         n=graph.number_of_nodes(),
         m=graph.number_of_edges(),
+        num_colors=num_colors,
         bucket=bucket_for_n(n),
         source=source,
         created_at=datetime.now(UTC).isoformat(),
@@ -62,6 +71,7 @@ def generate_many(
     count: int,
     source: str = "generated",
     max_attempts_per_node: int = 10_000,
+    num_colors: int = 3,
 ) -> list[InstanceRecord]:
     """Generate multiple seeded instances using deterministic derived seeds."""
     if count < 1:
@@ -73,6 +83,7 @@ def generate_many(
             seed=root_seed + index,
             source=source,
             max_attempts_per_node=max_attempts_per_node,
+            num_colors=num_colors,
         )
         for index in range(count)
     ]
@@ -127,6 +138,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     parser.add_argument("--output-dir", type=Path, default=Path("eval") / "instances")
     parser.add_argument("--source", default="generated")
     parser.add_argument("--max-attempts-per-node", type=int, default=10_000)
+    parser.add_argument("--num-colors", type=int, default=3)
     args = parser.parse_args(list(argv) if argv is not None else None)
 
     records = generate_many(
@@ -136,6 +148,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         count=args.count,
         source=args.source,
         max_attempts_per_node=args.max_attempts_per_node,
+        num_colors=args.num_colors,
     )
     for record in records:
         path = write_instance(record, args.output_dir)
@@ -156,17 +169,18 @@ def _to_canonical_graph(graph: nx.Graph) -> nx.Graph:
     return canonical
 
 
-def _instance_id(*, family: str, n: int, seed: int) -> str:
-    return f"{family}-n{n:04d}-seed{seed}"
+def _instance_id(*, family: str, n: int, seed: int, num_colors: int) -> str:
+    return f"{family}-k{num_colors:02d}-n{n:04d}-seed{seed}"
 
 
-def _validate_generation_request(*, family: str, n: int, max_attempts_per_node: int) -> None:
+def _validate_generation_request(*, family: str, n: int, max_attempts_per_node: int, num_colors: int) -> None:
     if family not in SUPPORTED_FAMILIES:
         raise ValueError(f"unsupported family {family!r}; expected one of {sorted(SUPPORTED_FAMILIES)}")
     if n < 1:
         raise ValueError("n must be at least 1")
     if max_attempts_per_node < 1:
         raise ValueError("max_attempts_per_node must be at least 1")
+    validate_num_colors(num_colors)
 
 
 if __name__ == "__main__":

@@ -139,6 +139,7 @@ def _validate_trial_result(*, row: dict[str, Any], trial: Any) -> None:
         "index": trial.index,
         "instance_id": trial.instance_id,
         "instance_path": str(trial.instance_path),
+        "num_colors": trial.num_colors,
         "solver_target": trial.solver_target,
         "solver": trial.solver,
         "backend": trial.backend,

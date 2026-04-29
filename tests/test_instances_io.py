@@ -35,6 +35,7 @@ class InstanceIoTests(unittest.TestCase):
             "generator": "unit_test",
             "n": -1,
             "m": -1,
+            "num_colors": 4,
             "bucket": "s",
             "source": "generated",
             "created_at": "2026-04-13T10:00:00Z",
@@ -55,6 +56,7 @@ class InstanceIoTests(unittest.TestCase):
         self.assertEqual(loaded_metadata["instance_id"], "sample-instance")
         self.assertEqual(loaded_metadata["n"], 2)
         self.assertEqual(loaded_metadata["m"], 1)
+        self.assertEqual(loaded_metadata["num_colors"], 4)
         self.assertEqual(loaded_metadata["generation_time_seconds"], 0.125)
         self.assertEqual(loaded_metadata["max_attempts_per_node"], 321)
         self.assertEqual(loaded.graph.nodes[0]["l"], 0)
@@ -71,6 +73,7 @@ class InstanceIoTests(unittest.TestCase):
                 "generator": "manual",
                 "n": 1,
                 "m": 0,
+                "num_colors": 5,
                 "bucket": "s",
                 "source": "handcrafted",
                 "created_at": "2026-04-13T10:00:00Z",
@@ -93,6 +96,7 @@ class InstanceIoTests(unittest.TestCase):
             metadata, graph = load_instance_envelope(path)
 
         self.assertEqual(metadata["instance_id"], "tiny")
+        self.assertEqual(metadata["num_colors"], 5)
         self.assertEqual(metadata["generation_time_seconds"], 0.0)
         self.assertEqual(metadata["max_attempts_per_node"], 10_000)
         self.assertEqual(graph.nodes[0]["label"], 0)
@@ -125,6 +129,7 @@ class InstanceIoTests(unittest.TestCase):
         self.assertEqual(loaded.metadata.instance_id, "record")
         self.assertEqual(loaded.metadata.generation_time_seconds, 0.0)
         self.assertEqual(loaded.metadata.max_attempts_per_node, 10_000)
+        self.assertEqual(loaded.metadata.num_colors, 3)
         self.assertEqual(loaded.graph.number_of_nodes(), 1)
 
     def test_load_accepts_legacy_raw_node_link_files(self) -> None:
@@ -147,6 +152,7 @@ class InstanceIoTests(unittest.TestCase):
         self.assertEqual(metadata["source"], "legacy")
         self.assertEqual(metadata["n"], 1)
         self.assertEqual(metadata["m"], 0)
+        self.assertEqual(metadata["num_colors"], 3)
         self.assertIsNone(metadata["generation_time_seconds"])
         self.assertIsNone(metadata["max_attempts_per_node"])
 
