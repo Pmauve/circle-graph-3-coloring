@@ -75,6 +75,7 @@ Just add the functions you want to use to generate the respective plot to the ``
 ## Benchmark runs
 
 The newer benchmark tooling uses spec-driven run directories under `eval/runs/`.
+For the full task-oriented local and cluster workflow, see `docs/benchmark-pipeline.md`.
 
 Run one benchmark spec with:
 
