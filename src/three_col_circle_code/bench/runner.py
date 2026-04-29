@@ -1,40 +1,23 @@
 import argparse
+from concurrent.futures import ProcessPoolExecutor, as_completed
 import json
 from pathlib import Path
 import sys
-from typing import Any, Iterable, Optional, TextIO
+from typing import Callable, Iterable, Optional, TextIO
 
-from three_col_circle_code.bench.env import collect_environment_metadata
-from three_col_circle_code.bench.planning import (
-    BenchmarkTrial,
-    build_run_manifest,
-    iter_benchmark_trials,
-    load_spec_for_run,
-    materialize_run_instances,
-    prepare_run_directory,
-    validate_run_environment,
+from three_col_circle_code.bench.generate_instance import run_instance_generation
+from three_col_circle_code.bench.merge import merge_benchmark_results
+from three_col_circle_code.bench.plan import DEFAULT_PLAN_ROOT, DEFAULT_WORK_ROOT, create_benchmark_plan
+from three_col_circle_code.bench.plan_io import (
+    InstancePlanRow,
+    TrialPlanRow,
+    instance_result_path,
+    load_instance_plan,
+    load_plan_manifest,
+    load_trial_plan,
 )
-from three_col_circle_code.bench.records import (
-    build_benchmark_result_record,
-    build_invalid_result_record,
-    serialize_validation_errors,
-)
-from three_col_circle_code.bench.report import build_benchmark_report
-from three_col_circle_code.bench.report_data import write_summary_csvs
-from three_col_circle_code.bench.results import (
-    DEFAULT_RUNS_ROOT,
-    RESULTS_FILENAME,
-    append_result,
-    MANIFEST_FILENAME,
-    write_manifest,
-)
-from three_col_circle_code.bench.specs import (
-    canonical_params_json,
-)
-from three_col_circle_code.instances.io import load_instance
-from three_col_circle_code.instances.model import InstanceFormatError, InstanceRecord
-from three_col_circle_code.instances.validate import validate_instance
-from three_col_circle_code.solvers.registry import run_solver
+from three_col_circle_code.bench.results import DEFAULT_RUNS_ROOT, RESULTS_FILENAME
+from three_col_circle_code.bench.run_trial import run_trial
 
 
 def run_benchmark(
@@ -42,122 +25,81 @@ def run_benchmark(
     output_root: Path,
     spec_path: Path,
     progress_stream: TextIO | None = None,
+    jobs: int = 1,
+    run_id: Optional[str] = None,
+    plan_root: Path = DEFAULT_PLAN_ROOT,
+    work_root: Path = DEFAULT_WORK_ROOT,
+    force: bool = False,
+    allow_missing: bool = False,
 ) -> Path:
-    """Run a resumable benchmark run from a JSON run spec."""
-    spec_source, run_spec = load_spec_for_run(spec_path)
-    spec_path = Path(spec_path)
-    validate_run_environment(run_spec)
-    run_dir = prepare_run_directory(
+    """Run a local benchmark pipeline from spec to merged report."""
+    if jobs < 1:
+        raise ValueError("--jobs must be at least 1")
+
+    _emit_progress(progress_stream, f"Planning benchmark from {Path(spec_path)}")
+    plan_dir = create_benchmark_plan(
+        spec_path=spec_path,
+        plan_root=plan_root,
+        work_root=work_root,
+        run_id=run_id,
+        force=force,
+    )
+    manifest = load_plan_manifest(plan_dir)
+    resolved_work_root = Path(str(manifest["work_root"]))
+    instance_rows = load_instance_plan(plan_dir)
+    trial_rows = load_trial_plan(plan_dir, instances=instance_rows)
+
+    _emit_progress(progress_stream, f"Plan directory: {plan_dir}")
+    _emit_progress(progress_stream, f"Work directory: {resolved_work_root}")
+    _emit_progress(progress_stream, f"Generating {len(instance_rows)} instance(s) with jobs={jobs}")
+    _run_phase(
+        phase="instance generation",
+        rows=instance_rows,
+        jobs=jobs,
+        worker=_run_instance_generation_job,
+        plan_dir=plan_dir,
+        force=force,
+        progress_stream=progress_stream,
+    )
+    _ensure_instance_generation_succeeded(
+        work_root=resolved_work_root,
+        rows=instance_rows,
+    )
+
+    _emit_progress(progress_stream, f"Running {len(trial_rows)} trial(s) with jobs={jobs}")
+    _run_phase(
+        phase="trial",
+        rows=trial_rows,
+        jobs=jobs,
+        worker=_run_trial_job,
+        plan_dir=plan_dir,
+        force=force,
+        progress_stream=progress_stream,
+    )
+
+    _emit_progress(progress_stream, "Merging trial outputs")
+    run_dir = merge_benchmark_results(
+        plan_dir=plan_dir,
         output_root=output_root,
-        spec_source=spec_source,
-        run_id=spec_path.stem,
-    )
-    run_id_value = run_dir.name
-    created_at = _load_existing_created_at(run_dir)
-
-    _emit_progress(progress_stream, f"Starting benchmark run '{run_id_value}' from {spec_path}")
-    _emit_progress(progress_stream, f"Run directory: {run_dir}")
-    _emit_progress(progress_stream, f"Resolving {len(run_spec.instance_requests)} requested instances...")
-
-    materialized = materialize_run_instances(
-        run_spec,
-        progress_callback=lambda message: _emit_progress(progress_stream, message),
-    )
-    trials = iter_benchmark_trials(run_spec, materialized.paths)
-    _emit_progress(
-        progress_stream,
-        (
-            f"Planned trials: {len(trials)} across {len(run_spec.instance_requests)} instances "
-            f"and {len(run_spec.solver_configs)} solver configs"
-        ),
-    )
-    _emit_progress(
-        progress_stream,
-        (
-            "Instance pool: "
-            f"{materialized.n_found_flat} flat, "
-            f"{materialized.n_found_nested} nested, "
-            f"{materialized.n_generated} generated"
-        ),
-    )
-
-    write_manifest(
-        run_dir,
-        build_run_manifest(
-            run_id=run_id_value,
-            run_spec=run_spec,
-            created_at=created_at,
-            environment=collect_environment_metadata(),
-        ),
-    )
-
-    completed_trial_keys = _load_completed_trial_keys(run_dir)
-    if completed_trial_keys:
-        _emit_progress(
-            progress_stream,
-            f"Resuming existing run: skipping {len(completed_trial_keys)} completed trials",
-        )
-
-    cached_records: dict[Path, InstanceRecord] = {}
-    cached_validations: dict[Path, tuple[bool, list[dict[str, Any]]]] = {}
-    for index, trial in enumerate(trials, start=1):
-        if trial.key in completed_trial_keys:
-            continue
-        _emit_progress(progress_stream, f"[{index}/{len(trials)}] {_format_trial(trial)}")
-        loaded_record = cached_records.get(trial.instance_path)
-        try:
-            if loaded_record is None:
-                loaded_record = load_instance(trial.instance_path)
-                cached_records[trial.instance_path] = loaded_record
-        except (InstanceFormatError, json.JSONDecodeError, OSError) as exc:
-            result_row = _build_invalid_result_record(
-                run_id=run_id_value,
-                trial=trial,
-                error=exc,
-            )
-            append_result(run_dir, result_row)
-        else:
-            validation_info = cached_validations.get(trial.instance_path)
-            if validation_info is None:
-                validation = validate_instance(loaded_record.graph, metadata=loaded_record.metadata.to_dict())
-                validation_info = (
-                    validation.ok,
-                    serialize_validation_errors(validation.errors),
-                )
-                cached_validations[trial.instance_path] = validation_info
-            result_row = _execute_benchmark_trial(
-                run_dir=run_dir,
-                run_id=run_id_value,
-                trial=trial,
-                record=loaded_record,
-                validation_ok=validation_info[0],
-                validation_errors=validation_info[1],
-            )
-        _emit_progress(progress_stream, f"  -> {_format_result_summary(result_row)}")
-
-    write_summary_csvs(run_dir)
-    report_path = build_benchmark_report(run_dir)
-    status_counts = _load_status_counts(run_dir)
-    _emit_progress(
-        progress_stream,
-        (
-            f"Completed run '{run_id_value}': "
-            f"ok={status_counts.get('ok', 0)}, "
-            f"error={status_counts.get('error', 0)}, "
-            f"invalid={status_counts.get('invalid', 0)}"
-        ),
+        allow_missing=allow_missing,
+        force=True,
     )
     _emit_progress(progress_stream, f"Results: {run_dir / RESULTS_FILENAME}")
-    _emit_progress(progress_stream, f"Manifest: {run_dir / MANIFEST_FILENAME}")
-    _emit_progress(progress_stream, f"Report: {report_path}")
+    _emit_progress(progress_stream, f"Report: {run_dir / 'report.html'}")
     return run_dir
 
 
 def main(argv: Optional[Iterable[str]] = None) -> int:
-    """Run benchmark solvers from a benchmark run spec."""
-    parser = argparse.ArgumentParser(description="Run benchmark solvers from a benchmark run spec.")
+    """Run a local benchmark pipeline from a benchmark run spec."""
+    parser = argparse.ArgumentParser(description="Run a local benchmark pipeline from a benchmark run spec.")
     parser.add_argument("--spec", type=Path, required=True)
     parser.add_argument("--output-root", type=Path, default=DEFAULT_RUNS_ROOT)
+    parser.add_argument("--jobs", type=int, default=1)
+    parser.add_argument("--run-id", default=None)
+    parser.add_argument("--plan-root", type=Path, default=DEFAULT_PLAN_ROOT)
+    parser.add_argument("--work-root", type=Path, default=DEFAULT_WORK_ROOT)
+    parser.add_argument("--force", action="store_true")
+    parser.add_argument("--allow-missing", action="store_true")
     args = parser.parse_args(list(argv) if argv is not None else None)
 
     try:
@@ -165,6 +107,12 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
             output_root=args.output_root,
             spec_path=args.spec,
             progress_stream=sys.stderr,
+            jobs=args.jobs,
+            run_id=args.run_id,
+            plan_root=args.plan_root,
+            work_root=args.work_root,
+            force=args.force,
+            allow_missing=args.allow_missing,
         )
     except ValueError as exc:
         print(f"benchmark run failed: {exc}", file=sys.stderr)
@@ -173,157 +121,77 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     return 0
 
 
-def _load_existing_created_at(run_dir: Path) -> Optional[str]:
-    manifest_path = Path(run_dir) / MANIFEST_FILENAME
-    if not manifest_path.exists():
-        return None
-    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
-    created_at = payload.get("created_at")
-    if created_at is None:
-        return None
-    return str(created_at)
-
-
-def _load_completed_trial_keys(run_dir: Path) -> set[tuple[str, str, str]]:
-    results_path = Path(run_dir) / RESULTS_FILENAME
-    if not results_path.exists():
-        return set()
-
-    completed: set[tuple[str, str, str]] = set()
-    with results_path.open(encoding="utf-8") as infile:
-        for line in infile:
-            if not line.strip():
-                continue
-            row = json.loads(line)
-            completed.add(
-                (
-                    str(row["instance_id"]),
-                    str(row["solver_target"]),
-                    canonical_params_json(row.get("solver_params", {})),
-                )
-            )
-    return completed
-
-
-def _load_status_counts(run_dir: Path) -> dict[str, int]:
-    counts: dict[str, int] = {}
-    results_path = Path(run_dir) / RESULTS_FILENAME
-    if not results_path.exists():
-        return counts
-    with results_path.open(encoding="utf-8") as infile:
-        for line in infile:
-            if not line.strip():
-                continue
-            row = json.loads(line)
-            status = str(row["status"])
-            counts[status] = counts.get(status, 0) + 1
-    return counts
-
-
-def _execute_benchmark_trial(
+def _run_phase(
     *,
-    run_dir: Path,
-    run_id: str,
-    trial: BenchmarkTrial,
-    record: Optional[InstanceRecord] = None,
-    validation_ok: Optional[bool] = None,
-    validation_errors: Optional[list[dict[str, Any]]] = None,
-) -> dict[str, Any]:
-    try:
-        loaded_record = record or load_instance(trial.instance_path)
-    except (InstanceFormatError, json.JSONDecodeError, OSError) as exc:
-        result_row = _build_invalid_result_record(
-            run_id=run_id,
-            trial=trial,
-            error=exc,
-        )
-        append_result(run_dir, result_row)
-        return result_row
+    phase: str,
+    rows: tuple[InstancePlanRow, ...] | tuple[TrialPlanRow, ...],
+    jobs: int,
+    worker: Callable[[Path, int, bool], Path],
+    plan_dir: Path,
+    force: bool,
+    progress_stream: TextIO | None,
+) -> None:
+    """Run one pipeline phase either sequentially or with a process pool."""
+    if not rows:
+        return
+    if jobs == 1:
+        for completed, row in enumerate(rows, start=1):
+            worker(plan_dir, row.index, force)
+            _emit_progress(progress_stream, f"{phase}: completed {completed}/{len(rows)}")
+        return
 
-    if validation_ok is None or validation_errors is None:
-        validation = validate_instance(loaded_record.graph, metadata=loaded_record.metadata.to_dict())
-        validation_ok = validation.ok
-        validation_errors = serialize_validation_errors(validation.errors)
-    solve_result = run_solver(loaded_record, trial.solver_config)
-    result_row = _build_result_record(
-        run_id=run_id,
-        trial=trial,
-        record=loaded_record,
-        validation_ok=validation_ok,
-        validation_errors=validation_errors,
-        solve_result=solve_result,
-    )
-    append_result(run_dir, result_row)
-    return result_row
+    with ProcessPoolExecutor(max_workers=jobs) as executor:
+        futures = {
+            executor.submit(worker, plan_dir, row.index, force): row.index
+            for row in rows
+        }
+        completed = 0
+        for future in as_completed(futures):
+            index = futures[future]
+            try:
+                future.result()
+            except Exception as exc:
+                raise ValueError(f"{phase} failed for index {index}: {exc}") from exc
+            completed += 1
+            _emit_progress(progress_stream, f"{phase}: completed {completed}/{len(rows)}")
 
 
-def _build_result_record(
+def _run_instance_generation_job(plan_dir: Path, index: int, force: bool) -> Path:
+    """Run one planned instance generation row for the local orchestrator."""
+    return run_instance_generation(plan_dir=plan_dir, index=index, force=force)
+
+
+def _run_trial_job(plan_dir: Path, index: int, force: bool) -> Path:
+    """Run one planned trial row for the local orchestrator."""
+    return run_trial(plan_dir=plan_dir, index=index, force=force)
+
+
+def _ensure_instance_generation_succeeded(
     *,
-    run_id: str,
-    trial: BenchmarkTrial,
-    record: InstanceRecord,
-    validation_ok: bool,
-    validation_errors: list[dict[str, Any]],
-    solve_result: Any,
-) -> dict[str, Any]:
-    return build_benchmark_result_record(
-        run_id=run_id,
-        instance_path=trial.instance_path,
-        record=record,
-        solver_target=trial.solver_config.target,
-        solver_params=dict(trial.solver_config.params),
-        solver_label=trial.solver_config.label,
-        validation_ok=validation_ok,
-        validation_errors=validation_errors,
-        solve_result=solve_result,
-    )
-
-
-def _build_invalid_result_record(
-    *,
-    run_id: str,
-    trial: BenchmarkTrial,
-    error: Exception,
-) -> dict[str, Any]:
-    return build_invalid_result_record(
-        run_id=run_id,
-        instance_id=trial.instance_path.stem,
-        instance_path=trial.instance_path,
-        family=trial.instance_request.family,
-        n=trial.instance_request.n,
-        seed=trial.instance_request.seed,
-        solver_target=trial.solver_config.target,
-        solver=trial.solver_config.solver,
-        backend=trial.solver_config.backend,
-        solver_params=dict(trial.solver_config.params),
-        solver_label=trial.solver_config.label,
-        error=error,
-    )
+    work_root: Path,
+    rows: tuple[InstancePlanRow, ...],
+) -> None:
+    """Stop the pipeline when planned instances were not produced successfully."""
+    failures: list[str] = []
+    for row in rows:
+        result_path = instance_result_path(work_root, row.index)
+        if not result_path.exists():
+            failures.append(f"{row.index}: missing result")
+            continue
+        result = json.loads(result_path.read_text(encoding="utf-8"))
+        status = str(result.get("status"))
+        if status not in {"ok", "skipped"}:
+            error = result.get("error")
+            suffix = f": {error}" if error else ""
+            failures.append(f"{row.index}: {status}{suffix}")
+    if failures:
+        raise ValueError("instance generation did not complete successfully: " + "; ".join(failures))
 
 
 def _emit_progress(progress_stream: TextIO | None, message: str) -> None:
     if progress_stream is None:
         return
     print(message, file=progress_stream, flush=True)
-
-
-def _format_trial(trial: BenchmarkTrial) -> str:
-    return (
-        f"{trial.instance_request.instance_id} | "
-        f"{trial.solver_config.target} | "
-        f"params={trial.solver_config.params}"
-    )
-
-
-def _format_result_summary(result_row: dict[str, Any]) -> str:
-    status = str(result_row["status"])
-    wall_time_s = result_row.get("wall_time_s")
-    error = result_row.get("error")
-    if wall_time_s is not None:
-        return f"{status} in {float(wall_time_s):.4f}s"
-    if error:
-        return f"{status}: {error}"
-    return status
 
 
 if __name__ == "__main__":
