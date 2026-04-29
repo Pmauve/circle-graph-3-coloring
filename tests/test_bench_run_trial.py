@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from three_col_circle_code.bench.plan_io import (
     InstancePlanRow,
     TrialPlanRow,
+    instance_result_path,
     trial_result_path,
     write_instance_plan,
     write_plan_manifest,
@@ -142,6 +143,34 @@ class BenchRunTrialTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "does not contain index"):
                 run_trial(plan_dir=plan_dir, index=2)
 
+    def test_run_trial_rejects_missing_instance_generation_result(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            plan_dir, work_root, instance_path = _write_plan(tmp_root)
+            save_instance(_build_record(instance_id="rc-n0002-seed1", family="rc", seed=1), instance_path)
+            instance_result_path(work_root, 1).unlink()
+
+            with self.assertRaisesRegex(ValueError, "run benchmark_generate_instance"):
+                run_trial(plan_dir=plan_dir, index=1)
+
+    def test_run_trial_uses_cached_validation_without_revalidating(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            plan_dir, _work_root, instance_path = _write_plan(tmp_root)
+            save_instance(_build_record(instance_id="rc-n0002-seed1", family="rc", seed=1), instance_path)
+
+            with patch("three_col_circle_code.bench.run_trial.validate_instance", create=True) as validate_instance, patch(
+                "three_col_circle_code.bench.run_trial.run_solver",
+                return_value=_fake_solver_result(),
+            ):
+                result_path = run_trial(plan_dir=plan_dir, index=1)
+
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+
+        self.assertTrue(result["validation_ok"])
+        self.assertEqual(result["validation_errors"], [])
+        validate_instance.assert_not_called()
+
     def test_cli_prints_result_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_root = Path(tmpdir)
@@ -207,7 +236,31 @@ def _write_plan(
             "warmup_repetitions": warmup_repetitions,
         },
     )
+    _write_instance_result(work_root, instance_path)
     return plan_dir, work_root, instance_path
+
+
+def _write_instance_result(work_root: Path, instance_path: Path) -> None:
+    result_path = instance_result_path(work_root, 1)
+    result_path.parent.mkdir(parents=True, exist_ok=True)
+    result_path.write_text(
+        json.dumps(
+            {
+                "index": 1,
+                "kind": "instance",
+                "status": "ok",
+                "instance_id": "rc-n0002-seed1",
+                "instance_path": str(instance_path),
+                "generated": False,
+                "validation_ok": True,
+                "validation_errors": [],
+                "started_at": "2026-04-29T00:00:00+00:00",
+                "finished_at": "2026-04-29T00:00:00+00:00",
+                "error": None,
+            }
+        ),
+        encoding="utf-8",
+    )
 
 
 def _build_record(*, instance_id: str, family: str, seed: int, n: int = 2) -> InstanceRecord:

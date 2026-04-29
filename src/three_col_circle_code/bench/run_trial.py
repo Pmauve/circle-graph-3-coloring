@@ -7,6 +7,7 @@ import sys
 from typing import Any, Iterable, Optional
 
 from three_col_circle_code.bench.plan_io import (
+    instance_result_path,
     load_instance_plan,
     load_plan_manifest,
     load_trial_plan,
@@ -14,11 +15,9 @@ from three_col_circle_code.bench.plan_io import (
 )
 from three_col_circle_code.bench.records import (
     build_invalid_result_record,
-    serialize_validation_errors,
 )
 from three_col_circle_code.instances.io import load_instance
 from three_col_circle_code.instances.model import InstanceFormatError
-from three_col_circle_code.instances.validate import validate_instance
 from three_col_circle_code.solvers.common import SolverConfig
 from three_col_circle_code.solvers.registry import run_solver
 
@@ -38,6 +37,11 @@ def run_trial(
         return result_path
 
     started_at = _now()
+    validation_ok, validation_errors = _load_cached_instance_validation(
+        plan_dir=plan_dir,
+        work_root=resolved_work_root,
+        trial=trial_row,
+    )
     try:
         record = load_instance(trial_row.instance_path)
     except (InstanceFormatError, json.JSONDecodeError, OSError) as exc:
@@ -49,20 +53,18 @@ def run_trial(
         _write_result(result_path, result)
         return result_path
 
-    validation = validate_instance(record.graph, metadata=record.metadata.to_dict())
-    validation_errors = serialize_validation_errors(validation.errors)
     solver_config = SolverConfig(
         solver=trial_row.solver,
         backend=trial_row.backend,
         params=dict(trial_row.solver_params),
         label=trial_row.solver_label,
     )
-    warmup_measurements = _run_measurements(
+    warmup_measurements, _warmup_details = _run_measurements(
         record=record,
         solver_config=solver_config,
         repetitions=trial_row.warmup_repetitions,
     )
-    measurements = _run_measurements(
+    measurements, measurement_details = _run_measurements(
         record=record,
         solver_config=solver_config,
         repetitions=trial_row.repetitions,
@@ -71,10 +73,11 @@ def run_trial(
         run_id=_run_id_for_plan(plan_dir),
         trial=trial_row,
         record=record,
-        validation_ok=validation.ok,
+        validation_ok=validation_ok,
         validation_errors=validation_errors,
         warmup_measurements=warmup_measurements,
         measurements=measurements,
+        measurement_details=measurement_details,
         started_at=started_at,
     )
     _write_result(result_path, result)
@@ -131,6 +134,46 @@ def _run_id_for_plan(plan_dir: Path) -> str:
     return str(manifest.get("run_id", Path(plan_dir).name))
 
 
+def _load_cached_instance_validation(
+    *,
+    plan_dir: Path,
+    work_root: Path,
+    trial: Any,
+) -> tuple[bool, list[dict[str, Any]]]:
+    """Load validation data written by the matching instance generation task."""
+    instances = load_instance_plan(plan_dir)
+    instance_row = next((row for row in instances if row.instance_id == trial.instance_id), None)
+    if instance_row is None:
+        raise ValueError(f"trial {trial.index} references unknown instance id {trial.instance_id!r}")
+
+    result_path = instance_result_path(work_root, instance_row.index)
+    if not result_path.exists():
+        raise ValueError(
+            f"missing instance generation result for {trial.instance_id!r}; "
+            f"run benchmark_generate_instance --index {instance_row.index} first"
+        )
+    result = json.loads(result_path.read_text(encoding="utf-8"))
+    status = str(result.get("status"))
+    if result.get("instance_id") != trial.instance_id:
+        raise ValueError(
+            f"instance generation result {instance_row.index} belongs to "
+            f"{result.get('instance_id')!r}, expected {trial.instance_id!r}"
+        )
+    if str(result.get("instance_path")) != str(trial.instance_path):
+        raise ValueError(f"instance generation result {instance_row.index} path does not match trial plan")
+    if status not in {"ok", "skipped"}:
+        error = result.get("error")
+        suffix = f": {error}" if error else ""
+        raise ValueError(f"instance generation result for {trial.instance_id!r} is {status}{suffix}")
+    validation_ok = bool(result.get("validation_ok", False))
+    validation_errors = result.get("validation_errors", [])
+    if not isinstance(validation_errors, list):
+        raise ValueError(f"instance generation result for {trial.instance_id!r} has invalid validation_errors")
+    if not validation_ok:
+        raise ValueError(f"instance generation result for {trial.instance_id!r} did not validate successfully")
+    return validation_ok, [dict(item) for item in validation_errors]
+
+
 def _build_invalid_result_record(*, trial: Any, started_at: str, error: Exception) -> dict[str, Any]:
     """Build an invalid trial result row for a missing or malformed instance."""
     return build_invalid_result_record(
@@ -166,11 +209,13 @@ def _run_measurements(
     record: Any,
     solver_config: SolverConfig,
     repetitions: int,
-) -> list[dict[str, Any]]:
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Run the solver repeatedly and return compact measurement rows."""
     measurements: list[dict[str, Any]] = []
+    last_details: dict[str, Any] = {}
     for repetition in range(1, repetitions + 1):
         solve_result = run_solver(record, solver_config)
+        last_details = dict(solve_result.details)
         measurements.append(
             {
                 "repetition": repetition,
@@ -178,10 +223,9 @@ def _run_measurements(
                 "wall_time_s": solve_result.wall_time_s,
                 "is_colorable": solve_result.is_colorable,
                 "error": solve_result.error,
-                "details": solve_result.details,
             }
         )
-    return measurements
+    return measurements, last_details
 
 
 def _build_repeated_result_record(
@@ -193,6 +237,7 @@ def _build_repeated_result_record(
     validation_errors: list[dict[str, Any]],
     warmup_measurements: list[dict[str, Any]],
     measurements: list[dict[str, Any]],
+    measurement_details: dict[str, Any],
     started_at: str,
 ) -> dict[str, Any]:
     """Build the isolated trial result row for repeated measurements."""
@@ -207,7 +252,6 @@ def _build_repeated_result_record(
         for item in ok_measurements
         if item.get("is_colorable") is not None
     }
-    last_measurement = measurements[-1] if measurements else {}
     status = "ok" if len(ok_measurements) == len(measurements) else "error"
     error = None
     if status != "ok":
@@ -238,7 +282,7 @@ def _build_repeated_result_record(
         "is_colorable": next(iter(answer_values)) if len(answer_values) == 1 else None,
         "validation_ok": validation_ok,
         "validation_errors": validation_errors,
-        "details": dict(last_measurement.get("details", {})),
+        "details": dict(measurement_details),
         "error": error,
         "warmup_measurements": warmup_measurements,
         "measurements": measurements,

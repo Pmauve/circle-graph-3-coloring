@@ -228,7 +228,6 @@ def _write_trial_result(work_root: Path, index: int, *, solver_params: dict, sol
                 "wall_time_s": 0.1 * index,
                 "is_colorable": True,
                 "error": None,
-                "details": {},
             }
         ],
         "error": None,
