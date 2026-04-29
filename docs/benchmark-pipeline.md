@@ -7,6 +7,7 @@ Smoke spec:
 ```bash
 eval/sample_specs/pipeline-smoke.json
 eval/sample_specs/pipeline-parallel-smoke.json
+eval/sample_specs/sosa-k-smoke.json
 ```
 
 ## Local
@@ -18,6 +19,8 @@ benchmark_run --spec eval/sample_specs/pipeline-smoke.json --jobs 4
 ```
 
 This plans the run, generates missing instances, runs all trials, merges results, writes summaries, and builds `report.html`.
+
+Set instance-side `num_colors` in an `instances` block when generating `k > 3` instances. Solver `params.num_colors` stays independent, so the same generated instance can still be tested with different solver palettes.
 
 ## Cluster
 

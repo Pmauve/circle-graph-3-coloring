@@ -26,7 +26,7 @@ class BenchPlanningTests(unittest.TestCase):
             request=run_spec.instance_requests[0],
         )
 
-        self.assertEqual(path, Path("eval/instances/rc/s/rc-n0002-seed1.json"))
+        self.assertEqual(path, Path("eval/instances/rc/s/rc-k03-n0002-seed1.json"))
 
     def test_prepare_run_directory_rejects_same_run_id_with_different_spec(self) -> None:
         with self.assertRaisesRegex(ValueError, "different benchmark spec"):
