@@ -1,0 +1,652 @@
+use std::collections::HashSet;
+
+use crate::bitset::BitSet;
+use crate::colors::{ColorMask, ALL_COLORS};
+use crate::dimacs::DimacsCircle;
+use crate::error::SosaError;
+use crate::partition::CirclePartition;
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct CircleInstance {
+    pub n: usize,
+    pub endpoint_at: Vec<u32>,
+    pub left: Vec<u32>,
+    pub right: Vec<u32>,
+    pub mate: Vec<u32>,
+    pub adj_offsets: Vec<u32>,
+    pub adj: Vec<u32>,
+    pub allowed: Vec<ColorMask>,
+}
+
+impl CircleInstance {
+    pub fn from_dimacs(dimacs: DimacsCircle) -> Result<Self, SosaError> {
+        Self::from_dimacs_with_crossing_validation(dimacs, true)
+    }
+
+    pub fn from_dimacs_with_crossing_validation(
+        dimacs: DimacsCircle,
+        validate_crossings: bool,
+    ) -> Result<Self, SosaError> {
+        let n = dimacs.n;
+        let endpoint_count = 2 * n;
+        let mut endpoint_at = Vec::with_capacity(endpoint_count);
+        let mut left = vec![u32::MAX; n];
+        let mut right = vec![u32::MAX; n];
+
+        for (position, &dimacs_id) in dimacs.circle_order.iter().enumerate() {
+            let vertex = dimacs_id - 1;
+            endpoint_at.push(vertex);
+            let slot = &mut left[vertex as usize];
+            if *slot == u32::MAX {
+                *slot = position as u32;
+            } else {
+                right[vertex as usize] = position as u32;
+            }
+        }
+
+        let mut mate = vec![u32::MAX; endpoint_count];
+        for vertex in 0..n {
+            if left[vertex] == u32::MAX || right[vertex] == u32::MAX {
+                return Err(SosaError::Input(format!(
+                    "vertex {} does not have exactly two endpoints",
+                    vertex + 1
+                )));
+            }
+            mate[left[vertex] as usize] = right[vertex];
+            mate[right[vertex] as usize] = left[vertex];
+        }
+
+        let mut edges = Vec::with_capacity(dimacs.edges.len());
+        let mut seen = HashSet::with_capacity(dimacs.edges.len());
+        for (u_dimacs, v_dimacs) in dimacs.edges {
+            let u = u_dimacs - 1;
+            let v = v_dimacs - 1;
+            if u == v {
+                return Err(SosaError::Input(format!("self-loop on vertex {u_dimacs}")));
+            }
+            let edge = if u < v { (u, v) } else { (v, u) };
+            if !seen.insert(edge) {
+                return Err(SosaError::Input(format!(
+                    "duplicate edge {} {}",
+                    edge.0 + 1,
+                    edge.1 + 1
+                )));
+            }
+            edges.push(edge);
+        }
+        edges.sort_unstable();
+
+        let instance = Self::from_parts(
+            n,
+            endpoint_at,
+            left,
+            right,
+            mate,
+            &edges,
+            vec![ALL_COLORS; n],
+        )?;
+        if validate_crossings {
+            instance.validate_edge_crossings(&edges)?;
+        }
+        Ok(instance)
+    }
+
+    pub fn from_parts(
+        n: usize,
+        endpoint_at: Vec<u32>,
+        left: Vec<u32>,
+        right: Vec<u32>,
+        mate: Vec<u32>,
+        edges: &[(u32, u32)],
+        allowed: Vec<ColorMask>,
+    ) -> Result<Self, SosaError> {
+        let (adj_offsets, adj) = build_csr(n, edges)?;
+        Ok(Self {
+            n,
+            endpoint_at,
+            left,
+            right,
+            mate,
+            adj_offsets,
+            adj,
+            allowed,
+        })
+    }
+
+    pub fn endpoint_count(&self) -> usize {
+        self.endpoint_at.len()
+    }
+
+    pub fn neighbors(&self, vertex: u32) -> &[u32] {
+        let start = self.adj_offsets[vertex as usize] as usize;
+        let end = self.adj_offsets[vertex as usize + 1] as usize;
+        &self.adj[start..end]
+    }
+
+    pub fn degree(&self, vertex: u32) -> usize {
+        self.neighbors(vertex).len()
+    }
+
+    pub fn crosses(&self, a: u32, b: u32) -> bool {
+        let a_left = self.left[a as usize];
+        let a_right = self.right[a as usize];
+        let b_left = self.left[b as usize];
+        let b_right = self.right[b as usize];
+        (a_left < b_left && b_left < a_right && a_right < b_right)
+            || (b_left < a_left && a_left < b_right && b_right < a_right)
+    }
+
+    pub fn rebuild_from_active(
+        &self,
+        active: &BitSet,
+        allowed: Vec<ColorMask>,
+    ) -> Result<CircleInstance, SosaError> {
+        if active.len() != self.n || allowed.len() != self.n {
+            return Err(SosaError::Internal(
+                "active mask and allowed colors must match instance size".to_string(),
+            ));
+        }
+
+        let mut old_to_new = vec![u32::MAX; self.n];
+        let mut new_n = 0usize;
+        for old_vertex in active.iter_ones() {
+            old_to_new[old_vertex] = new_n as u32;
+            new_n += 1;
+        }
+
+        let mut endpoint_at = Vec::with_capacity(2 * new_n);
+        let mut left = vec![u32::MAX; new_n];
+        let mut right = vec![u32::MAX; new_n];
+        for &old_vertex in &self.endpoint_at {
+            let new_vertex = old_to_new[old_vertex as usize];
+            if new_vertex == u32::MAX {
+                continue;
+            }
+            let new_position = endpoint_at.len() as u32;
+            endpoint_at.push(new_vertex);
+            let left_slot = &mut left[new_vertex as usize];
+            if *left_slot == u32::MAX {
+                *left_slot = new_position;
+            } else {
+                right[new_vertex as usize] = new_position;
+            }
+        }
+
+        let mut mate = vec![u32::MAX; endpoint_at.len()];
+        for vertex in 0..new_n {
+            if left[vertex] == u32::MAX || right[vertex] == u32::MAX {
+                return Err(SosaError::Internal(format!(
+                    "active vertex {vertex} does not have exactly two rebuilt endpoints"
+                )));
+            }
+            mate[left[vertex] as usize] = right[vertex];
+            mate[right[vertex] as usize] = left[vertex];
+        }
+
+        let mut edges = Vec::new();
+        for old_u in active.iter_ones() {
+            let new_u = old_to_new[old_u];
+            for &old_v in self.neighbors(old_u as u32) {
+                if old_v as usize <= old_u {
+                    continue;
+                }
+                let new_v = old_to_new[old_v as usize];
+                if new_v != u32::MAX {
+                    edges.push((new_u, new_v));
+                }
+            }
+        }
+        edges.sort_unstable();
+
+        let mut rebuilt_allowed = Vec::with_capacity(new_n);
+        for old_vertex in active.iter_ones() {
+            rebuilt_allowed.push(allowed[old_vertex]);
+        }
+
+        Self::from_parts(
+            new_n,
+            endpoint_at,
+            left,
+            right,
+            mate,
+            &edges,
+            rebuilt_allowed,
+        )
+    }
+
+    pub fn rebuild_from_active_with_partition(
+        &self,
+        active: &BitSet,
+        allowed: Vec<ColorMask>,
+        partition: &CirclePartition,
+    ) -> Result<(CircleInstance, CirclePartition), SosaError> {
+        if partition.n_endpoints != self.endpoint_count() {
+            return Err(SosaError::Internal(
+                "partition endpoint count must match instance endpoint count".to_string(),
+            ));
+        }
+        if active.len() != self.n || allowed.len() != self.n {
+            return Err(SosaError::Internal(
+                "active mask and allowed colors must match instance size".to_string(),
+            ));
+        }
+
+        let mut old_to_new = vec![u32::MAX; self.n];
+        let mut new_n = 0usize;
+        for old_vertex in active.iter_ones() {
+            old_to_new[old_vertex] = new_n as u32;
+            new_n += 1;
+        }
+
+        let new_endpoint_count = 2 * new_n;
+        let old_boundaries = [
+            partition.left_boundary,
+            partition.top_boundary,
+            partition.right_boundary,
+            partition.bottom_boundary,
+        ];
+        let mut new_boundaries = [usize::MAX; 4];
+
+        let mut endpoint_at = Vec::with_capacity(new_endpoint_count);
+        let mut left = vec![u32::MAX; new_n];
+        let mut right = vec![u32::MAX; new_n];
+        for (old_position, &old_vertex) in self.endpoint_at.iter().enumerate() {
+            for (boundary_index, &old_boundary) in old_boundaries.iter().enumerate() {
+                if old_position == old_boundary {
+                    new_boundaries[boundary_index] = if new_endpoint_count == 0 {
+                        0
+                    } else {
+                        endpoint_at.len() % new_endpoint_count
+                    };
+                }
+            }
+
+            let new_vertex = old_to_new[old_vertex as usize];
+            if new_vertex == u32::MAX {
+                continue;
+            }
+            let new_position = endpoint_at.len() as u32;
+            endpoint_at.push(new_vertex);
+            let left_slot = &mut left[new_vertex as usize];
+            if *left_slot == u32::MAX {
+                *left_slot = new_position;
+            } else {
+                right[new_vertex as usize] = new_position;
+            }
+        }
+        for boundary in &mut new_boundaries {
+            if *boundary == usize::MAX {
+                *boundary = 0;
+            }
+        }
+
+        let mut mate = vec![u32::MAX; endpoint_at.len()];
+        for vertex in 0..new_n {
+            if left[vertex] == u32::MAX || right[vertex] == u32::MAX {
+                return Err(SosaError::Internal(format!(
+                    "active vertex {vertex} does not have exactly two rebuilt endpoints"
+                )));
+            }
+            mate[left[vertex] as usize] = right[vertex];
+            mate[right[vertex] as usize] = left[vertex];
+        }
+
+        let mut edges = Vec::new();
+        for old_u in active.iter_ones() {
+            let new_u = old_to_new[old_u];
+            for &old_v in self.neighbors(old_u as u32) {
+                if old_v as usize <= old_u {
+                    continue;
+                }
+                let new_v = old_to_new[old_v as usize];
+                if new_v != u32::MAX {
+                    edges.push((new_u, new_v));
+                }
+            }
+        }
+        edges.sort_unstable();
+
+        let mut rebuilt_allowed = Vec::with_capacity(new_n);
+        for old_vertex in active.iter_ones() {
+            rebuilt_allowed.push(allowed[old_vertex]);
+        }
+
+        let rebuilt = Self::from_parts(
+            new_n,
+            endpoint_at,
+            left,
+            right,
+            mate,
+            &edges,
+            rebuilt_allowed,
+        )?;
+        let rebuilt_partition = CirclePartition::new(
+            new_endpoint_count,
+            new_boundaries[0],
+            new_boundaries[1],
+            new_boundaries[2],
+            new_boundaries[3],
+        )?;
+        Ok((rebuilt, rebuilt_partition))
+    }
+
+    fn validate_edge_crossings(&self, edges: &[(u32, u32)]) -> Result<(), SosaError> {
+        let edge_set: HashSet<(u32, u32)> = edges.iter().copied().collect();
+        for &(u, v) in edges {
+            if !self.crosses(u, v) {
+                return Err(SosaError::Input(format!(
+                    "declared edge {} {} does not match a chord crossing",
+                    u + 1,
+                    v + 1
+                )));
+            }
+        }
+        for u in 0..self.n as u32 {
+            for v in (u + 1)..self.n as u32 {
+                if self.crosses(u, v) && !edge_set.contains(&(u, v)) {
+                    return Err(SosaError::Input(format!(
+                        "missing edge for crossing chords {} {}",
+                        u + 1,
+                        v + 1
+                    )));
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+fn build_csr(n: usize, edges: &[(u32, u32)]) -> Result<(Vec<u32>, Vec<u32>), SosaError> {
+    let mut degree = vec![0usize; n];
+    for &(u, v) in edges {
+        if u as usize >= n || v as usize >= n {
+            return Err(SosaError::Input(
+                "edge endpoint outside local vertex range".to_string(),
+            ));
+        }
+        degree[u as usize] += 1;
+        degree[v as usize] += 1;
+    }
+
+    let mut adj_offsets = Vec::with_capacity(n + 1);
+    adj_offsets.push(0);
+    for count in degree {
+        let next = *adj_offsets.last().unwrap() as usize + count;
+        adj_offsets.push(next as u32);
+    }
+
+    let mut cursor = adj_offsets[..n].to_vec();
+    let mut adj = vec![0u32; *adj_offsets.last().unwrap() as usize];
+    for &(u, v) in edges {
+        let u_index = cursor[u as usize] as usize;
+        adj[u_index] = v;
+        cursor[u as usize] += 1;
+        let v_index = cursor[v as usize] as usize;
+        adj[v_index] = u;
+        cursor[v as usize] += 1;
+    }
+    for vertex in 0..n {
+        let start = adj_offsets[vertex] as usize;
+        let end = adj_offsets[vertex + 1] as usize;
+        adj[start..end].sort_unstable();
+    }
+    Ok((adj_offsets, adj))
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::dimacs::parse_dimacs_circle;
+
+    use super::*;
+
+    #[test]
+    fn builds_triangle() {
+        let dimacs = parse_dimacs_circle(
+            "\
+c ircle representation START
+c 1 2 3 1 2 3
+c ircle representation END
+p edge 3 3
+e 1 2
+e 1 3
+e 2 3
+",
+        )
+        .unwrap();
+
+        let instance = CircleInstance::from_dimacs(dimacs).unwrap();
+
+        assert_eq!(instance.n, 3);
+        assert_eq!(instance.endpoint_at, vec![0, 1, 2, 0, 1, 2]);
+        assert_eq!(instance.left, vec![0, 1, 2]);
+        assert_eq!(instance.right, vec![3, 4, 5]);
+        assert_eq!(instance.neighbors(0), &[1, 2]);
+        assert!(instance.crosses(0, 1));
+    }
+
+    #[test]
+    fn builds_independent_non_crossing_chords() {
+        let dimacs = parse_dimacs_circle(
+            "\
+c ircle representation START
+c 1 1 2 2
+c ircle representation END
+p edge 2 0
+",
+        )
+        .unwrap();
+
+        let instance = CircleInstance::from_dimacs(dimacs).unwrap();
+
+        assert_eq!(instance.n, 2);
+        assert_eq!(instance.neighbors(0), &[]);
+        assert!(!instance.crosses(0, 1));
+    }
+
+    #[test]
+    fn builds_k4() {
+        let dimacs = parse_dimacs_circle(
+            "\
+c ircle representation START
+c 1 2 3 4 1 2 3 4
+c ircle representation END
+p edge 4 6
+e 1 2
+e 1 3
+e 1 4
+e 2 3
+e 2 4
+e 3 4
+",
+        )
+        .unwrap();
+
+        let instance = CircleInstance::from_dimacs(dimacs).unwrap();
+
+        assert_eq!(instance.degree(0), 3);
+        assert!(instance.crosses(0, 3));
+    }
+
+    #[test]
+    fn rejects_self_loop() {
+        let mut dimacs = parse_dimacs_circle(
+            "\
+c ircle representation START
+c 1 1
+c ircle representation END
+p edge 1 0
+",
+        )
+        .unwrap();
+        dimacs.edges.push((1, 1));
+
+        assert!(CircleInstance::from_dimacs(dimacs)
+            .unwrap_err()
+            .to_string()
+            .contains("self-loop"));
+    }
+
+    #[test]
+    fn rejects_duplicate_edge() {
+        let mut dimacs = parse_dimacs_circle(
+            "\
+c ircle representation START
+c 1 2 1 2
+c ircle representation END
+p edge 2 1
+e 1 2
+",
+        )
+        .unwrap();
+        dimacs.edges.push((2, 1));
+
+        assert!(CircleInstance::from_dimacs(dimacs)
+            .unwrap_err()
+            .to_string()
+            .contains("duplicate"));
+    }
+
+    #[test]
+    fn rejects_missing_crossing_edge() {
+        let dimacs = parse_dimacs_circle(
+            "\
+c ircle representation START
+c 1 2 1 2
+c ircle representation END
+p edge 2 0
+",
+        )
+        .unwrap();
+
+        assert!(CircleInstance::from_dimacs(dimacs)
+            .unwrap_err()
+            .to_string()
+            .contains("missing edge"));
+    }
+
+    #[test]
+    fn rejects_extra_non_crossing_edge() {
+        let dimacs = parse_dimacs_circle(
+            "\
+c ircle representation START
+c 1 1 2 2
+c ircle representation END
+p edge 2 1
+e 1 2
+",
+        )
+        .unwrap();
+
+        assert!(CircleInstance::from_dimacs(dimacs)
+            .unwrap_err()
+            .to_string()
+            .contains("does not match"));
+    }
+
+    #[test]
+    fn rebuilds_all_active_instance() {
+        let instance = triangle_instance();
+        let active = BitSet::full(3);
+        let rebuilt = instance
+            .rebuild_from_active(&active, instance.allowed.clone())
+            .unwrap();
+
+        assert_eq!(rebuilt.endpoint_at, instance.endpoint_at);
+        assert_eq!(rebuilt.adj, instance.adj);
+    }
+
+    #[test]
+    fn rebuilds_subset_with_dense_vertex_ids() {
+        let instance = triangle_instance();
+        let mut active = BitSet::empty(3);
+        active.set(0, true);
+        active.set(2, true);
+        let mut allowed = instance.allowed.clone();
+        allowed[2] = 0b001;
+
+        let rebuilt = instance.rebuild_from_active(&active, allowed).unwrap();
+
+        assert_eq!(rebuilt.n, 2);
+        assert_eq!(rebuilt.endpoint_at, vec![0, 1, 0, 1]);
+        assert_eq!(rebuilt.left, vec![0, 1]);
+        assert_eq!(rebuilt.right, vec![2, 3]);
+        assert_eq!(rebuilt.neighbors(0), &[1]);
+        assert_eq!(rebuilt.allowed, vec![ALL_COLORS, 0b001]);
+    }
+
+    #[test]
+    fn rebuilds_empty_instance() {
+        let instance = triangle_instance();
+        let active = BitSet::empty(3);
+        let rebuilt = instance
+            .rebuild_from_active(&active, instance.allowed.clone())
+            .unwrap();
+
+        assert_eq!(rebuilt.n, 0);
+        assert!(rebuilt.endpoint_at.is_empty());
+        assert_eq!(rebuilt.adj_offsets, vec![0]);
+    }
+
+    #[test]
+    fn rebuilds_partition_boundaries_without_full_map() {
+        let instance = path_instance();
+        let mut active = BitSet::full(3);
+        active.clear(0);
+        let partition = CirclePartition::new(instance.endpoint_count(), 0, 1, 3, 5).unwrap();
+
+        let (rebuilt, rebuilt_partition) = instance
+            .rebuild_from_active_with_partition(&active, instance.allowed.clone(), &partition)
+            .unwrap();
+
+        assert_eq!(rebuilt.n, 2);
+        assert_eq!(
+            rebuilt_partition,
+            CirclePartition::new(4, 0, 0, 1, 3).unwrap()
+        );
+    }
+
+    #[test]
+    fn rebuilds_partition_when_all_vertices_deleted() {
+        let instance = triangle_instance();
+        let active = BitSet::empty(3);
+        let partition = CirclePartition::new(instance.endpoint_count(), 0, 2, 4, 5).unwrap();
+
+        let (rebuilt, rebuilt_partition) = instance
+            .rebuild_from_active_with_partition(&active, instance.allowed.clone(), &partition)
+            .unwrap();
+
+        assert_eq!(rebuilt.n, 0);
+        assert_eq!(rebuilt_partition, CirclePartition::empty(0));
+    }
+
+    fn triangle_instance() -> CircleInstance {
+        let dimacs = parse_dimacs_circle(
+            "\
+c ircle representation START
+c 1 2 3 1 2 3
+c ircle representation END
+p edge 3 3
+e 1 2
+e 1 3
+e 2 3
+",
+        )
+        .unwrap();
+        CircleInstance::from_dimacs(dimacs).unwrap()
+    }
+
+    fn path_instance() -> CircleInstance {
+        let dimacs = parse_dimacs_circle(
+            "\
+c ircle representation START
+c 1 2 1 3 2 3
+c ircle representation END
+p edge 3 2
+e 1 2
+e 2 3
+",
+        )
+        .unwrap();
+        CircleInstance::from_dimacs(dimacs).unwrap()
+    }
+}

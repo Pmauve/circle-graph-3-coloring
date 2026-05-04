@@ -1,0 +1,323 @@
+from __future__ import annotations
+
+import os
+import subprocess
+import tempfile
+from collections.abc import Mapping
+from pathlib import Path
+from time import perf_counter
+from typing import Any, Optional
+
+from three_col_circle_code.instances.dimacs_circle import write_dimacs_circle
+from three_col_circle_code.instances.io import load_instance
+from three_col_circle_code.solvers.common import (
+    SOLVER_STATUS_ERROR,
+    SOLVER_STATUS_OK,
+    SolverResult,
+)
+
+
+SOSA_3_COL_NATIVE_SOLVER = "sosa-3-col-native"
+SOSA_NATIVE_BIN_ENV = "SOSA_NATIVE_BIN"
+IMPLEMENTATION_STATUS = "native-rust-file-backend"
+DEFAULT_BASE_CASE_N = 128
+DEFAULT_TIMEOUT_S = 3600.0
+
+
+def solve_sosa_3_col_native_from_path(
+    instance_path: str | Path,
+    *,
+    params: Optional[Mapping[str, Any]] = None,
+    validate_instance_artifact: bool = False,
+) -> SolverResult:
+    """Run the standalone Rust SOSA solver on a DIMACS-circle `.col` file."""
+    config = dict(params or {})
+    binary = _resolve_native_binary()
+    n_vertices, m_edges = _read_problem_size(instance_path)
+    try:
+        base_case_n = _parse_base_case_n(config)
+        timeout_s = _parse_timeout_s(config)
+    except ValueError as exc:
+        return _error_result(
+            n_vertices=n_vertices,
+            m_edges=m_edges,
+            details={
+                "implementation_status": IMPLEMENTATION_STATUS,
+                "config": config,
+                "core_time_source": "missing",
+                "binary": binary,
+            },
+            error=str(exc),
+        )
+    details: dict[str, Any] = {
+        "implementation_status": IMPLEMENTATION_STATUS,
+        "config": config,
+        "core_time_source": "missing",
+        "binary": binary,
+        "base_case_n": base_case_n,
+        "timeout_s": timeout_s,
+        "skip_graph_validation": not validate_instance_artifact,
+    }
+
+    if not binary or not Path(binary).is_file():
+        return _error_result(
+            n_vertices=n_vertices,
+            m_edges=m_edges,
+            details=details,
+            error=f"{SOSA_NATIVE_BIN_ENV} is not set or does not point to an executable",
+        )
+
+    try:
+        with _native_input_path(instance_path) as native_input_path:
+            return _run_native_binary(
+                binary=binary,
+                instance_path=native_input_path,
+                n_vertices=n_vertices,
+                m_edges=m_edges,
+                base_case_n=base_case_n,
+                timeout_s=timeout_s,
+                validate_instance_artifact=validate_instance_artifact,
+                details=details,
+            )
+    except Exception as exc:
+        return _error_result(
+            n_vertices=n_vertices,
+            m_edges=m_edges,
+            details=details | {"error_type": type(exc).__name__},
+            error=str(exc),
+        )
+
+
+def _run_native_binary(
+    *,
+    binary: str,
+    instance_path: Path,
+    n_vertices: int,
+    m_edges: int,
+    base_case_n: int,
+    timeout_s: float,
+    validate_instance_artifact: bool,
+    details: dict[str, Any],
+) -> SolverResult:
+    command = [
+        binary,
+        "solve",
+        str(instance_path),
+        "--base-case-n",
+        str(base_case_n),
+    ]
+    if not validate_instance_artifact:
+        command.append("--skip-graph-validation")
+
+    started_at = perf_counter()
+    try:
+        completed = subprocess.run(
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=timeout_s,
+        )
+    except subprocess.TimeoutExpired as exc:
+        wall_time_s = perf_counter() - started_at
+        return _error_result(
+            n_vertices=n_vertices,
+            m_edges=m_edges,
+            details=details
+            | {
+                "command": command,
+                "stdout_tail": _tail(exc.stdout),
+                "stderr_tail": _tail(exc.stderr),
+            },
+            error=f"native SOSA timed out after {timeout_s:g}s",
+            wall_time_s=wall_time_s,
+        )
+    except OSError as exc:
+        return _error_result(
+            n_vertices=n_vertices,
+            m_edges=m_edges,
+            details=details | {"command": command},
+            error=f"failed to run native SOSA binary: {exc}",
+        )
+    wall_time_s = perf_counter() - started_at
+
+    status_line, core_time_s, parse_error = _parse_native_stdout(completed.stdout)
+    details.update(
+        {
+            "command": command,
+            "returncode": completed.returncode,
+            "stdout_tail": _tail(completed.stdout),
+            "stderr_tail": _tail(completed.stderr),
+        }
+    )
+    if core_time_s is not None:
+        details["core_time_source"] = "sosa_native_reported"
+
+    if completed.returncode != 0 or status_line == "ERROR" or parse_error is not None:
+        error_parts = []
+        if parse_error is not None:
+            error_parts.append(parse_error)
+        if completed.returncode != 0:
+            error_parts.append(f"native SOSA exited with code {completed.returncode}")
+        if completed.stderr:
+            error_parts.append(completed.stderr.strip())
+        if completed.stdout:
+            error_parts.append(completed.stdout.strip())
+        return _error_result(
+            n_vertices=n_vertices,
+            m_edges=m_edges,
+            details=details,
+            error="; ".join(error_parts) or "native SOSA failed",
+            wall_time_s=wall_time_s,
+            core_time_s=core_time_s,
+        )
+
+    if status_line == "COLORABLE":
+        is_colorable = True
+    elif status_line == "NOT_COLORABLE":
+        is_colorable = False
+    else:
+        return _error_result(
+            n_vertices=n_vertices,
+            m_edges=m_edges,
+            details=details,
+            error=f"unsupported native SOSA status {status_line!r}",
+            wall_time_s=wall_time_s,
+            core_time_s=core_time_s,
+        )
+
+    return SolverResult(
+        solver=SOSA_3_COL_NATIVE_SOLVER,
+        backend=None,
+        status=SOLVER_STATUS_OK,
+        wall_time_s=wall_time_s,
+        core_time_s=core_time_s,
+        is_colorable=is_colorable,
+        n_vertices=n_vertices,
+        m_edges=m_edges,
+        details=details,
+        error=None,
+    )
+
+
+def _parse_base_case_n(config: Mapping[str, Any]) -> int:
+    raw_value = config.get("base_case_n", DEFAULT_BASE_CASE_N)
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("native SOSA parameter 'base_case_n' must be an integer") from exc
+    if value < 0:
+        raise ValueError("native SOSA parameter 'base_case_n' must be non-negative")
+    return value
+
+
+def _parse_timeout_s(config: Mapping[str, Any]) -> float:
+    raw_value = config.get("timeout_s", DEFAULT_TIMEOUT_S)
+    try:
+        value = float(raw_value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("native SOSA parameter 'timeout_s' must be numeric") from exc
+    if value <= 0.0:
+        raise ValueError("native SOSA parameter 'timeout_s' must be positive")
+    return value
+
+
+def _resolve_native_binary() -> Optional[str]:
+    configured = os.environ.get(SOSA_NATIVE_BIN_ENV)
+    if configured:
+        return configured
+    binary_name = "sosa_native.exe" if os.name == "nt" else "sosa_native"
+    repo_root = Path(__file__).resolve().parents[4]
+    candidate = repo_root / "native" / "sosa_native" / "target" / "release" / binary_name
+    if candidate.is_file():
+        return str(candidate)
+    return None
+
+
+class _native_input_path:
+    def __init__(self, instance_path: str | Path):
+        self.original_path = Path(instance_path)
+        self._tempdir: Optional[tempfile.TemporaryDirectory[str]] = None
+        self.path: Optional[Path] = None
+
+    def __enter__(self) -> Path:
+        if self.original_path.suffix == ".col":
+            self.path = self.original_path
+            return self.path
+
+        record = load_instance(self.original_path, validate=False)
+        self._tempdir = tempfile.TemporaryDirectory(prefix="sosa-native-")
+        self.path = Path(self._tempdir.name) / f"{record.metadata.instance_id}.col"
+        write_dimacs_circle(record, self.path)
+        return self.path
+
+    def __exit__(self, exc_type: object, exc: object, traceback: object) -> None:
+        if self._tempdir is not None:
+            self._tempdir.cleanup()
+
+
+def _parse_native_stdout(stdout: str) -> tuple[Optional[str], Optional[float], Optional[str]]:
+    status: Optional[str] = None
+    core_time_s: Optional[float] = None
+    for raw_line in stdout.splitlines():
+        parts = raw_line.strip().split()
+        if not parts:
+            continue
+        if parts[:1] == ["s"] and len(parts) == 2:
+            status = parts[1]
+        elif parts[:2] == ["t", "core_time_s"] and len(parts) == 3:
+            try:
+                core_time_s = float(parts[2])
+            except ValueError:
+                return status, None, f"invalid native SOSA core_time_s value {parts[2]!r}"
+    if status is None:
+        return None, core_time_s, "native SOSA output is missing status line"
+    return status, core_time_s, None
+
+
+def _read_problem_size(instance_path: str | Path) -> tuple[int, int]:
+    path = Path(instance_path)
+    if path.suffix != ".col":
+        try:
+            record = load_instance(path, validate=False)
+            return record.graph.number_of_nodes(), record.graph.number_of_edges()
+        except Exception:
+            return 0, 0
+    try:
+        with path.open("r", encoding="utf-8-sig") as infile:
+            for raw_line in infile:
+                parts = raw_line.strip().split()
+                if len(parts) == 4 and parts[0] == "p" and parts[1] in {"edge", "col"}:
+                    return int(parts[2]), int(parts[3])
+    except (OSError, ValueError):
+        pass
+    return 0, 0
+
+
+def _tail(text: Optional[str], *, limit: int = 4000) -> str:
+    if text is None:
+        return ""
+    return text[-limit:]
+
+
+def _error_result(
+    *,
+    n_vertices: int,
+    m_edges: int,
+    details: dict[str, Any],
+    error: str,
+    wall_time_s: Optional[float] = None,
+    core_time_s: Optional[float] = None,
+) -> SolverResult:
+    return SolverResult(
+        solver=SOSA_3_COL_NATIVE_SOLVER,
+        backend=None,
+        status=SOLVER_STATUS_ERROR,
+        wall_time_s=wall_time_s,
+        core_time_s=core_time_s,
+        is_colorable=None,
+        n_vertices=n_vertices,
+        m_edges=m_edges,
+        details=details,
+        error=error,
+    )

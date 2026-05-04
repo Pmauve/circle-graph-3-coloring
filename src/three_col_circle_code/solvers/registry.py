@@ -18,6 +18,10 @@ from three_col_circle_code.solvers.sosa.solver import (
     solve_sosa_3_col_exact,
     solve_sosa_k_col_heuristic,
 )
+from three_col_circle_code.solvers.sosa.native import (
+    SOSA_3_COL_NATIVE_SOLVER,
+    solve_sosa_3_col_native_from_path,
+)
 from three_col_circle_code.solvers.zykovcolor import (
     ZYKOVCOLOR_SOLVER,
     solve_zykovcolor,
@@ -31,6 +35,7 @@ def available_solver_names() -> tuple[str, ...]:
         SAT_BASELINE_SOLVER,
         SOSA_3_COL_EXACT_SOLVER,
         SOSA_K_COL_HEURISTIC_SOLVER,
+        SOSA_3_COL_NATIVE_SOLVER,
         ZYKOVCOLOR_SOLVER,
     )
 
@@ -79,6 +84,8 @@ def run_solver(
         if config.backend is not None:
             raise ValueError("SOSA solver does not support backends")
         return solve_sosa_k_col_heuristic(graph, params=config.params)
+    if config.solver == SOSA_3_COL_NATIVE_SOLVER:
+        raise ValueError("native SOSA solver requires a file path; use run_solver_from_path")
     if config.solver == ZYKOVCOLOR_SOLVER:
         if config.backend is not None:
             raise ValueError("ZykovColor solver does not support backends")
@@ -101,11 +108,19 @@ def run_solver_from_path(
         if not report.ok:
             errors = [{"code": issue.code, "message": issue.message} for issue in report.errors]
             raise ValueError(f"instance artifact did not validate: {errors}")
-    elif config.solver != ZYKOVCOLOR_SOLVER:
+    elif config.solver not in (SOSA_3_COL_NATIVE_SOLVER, ZYKOVCOLOR_SOLVER):
         record = load_instance(instance_path, validate=False)
     else:
         record = None
 
+    if config.solver == SOSA_3_COL_NATIVE_SOLVER:
+        if config.backend is not None:
+            raise ValueError("SOSA solver does not support backends")
+        return solve_sosa_3_col_native_from_path(
+            instance_path,
+            params=config.params,
+            validate_instance_artifact=validate_instance_artifact,
+        )
     if config.solver == ZYKOVCOLOR_SOLVER:
         if config.backend is not None:
             raise ValueError("ZykovColor solver does not support backends")
@@ -127,7 +142,12 @@ def _parse_solver_spec(spec: str) -> tuple[str, Optional[str]]:
 
 def _validate_solver_config(*, solver: str, backend: Optional[str]) -> None:
     """Validate a solver/backend pair against the current registry."""
-    if solver in (SOSA_3_COL_EXACT_SOLVER, SOSA_K_COL_HEURISTIC_SOLVER, ZYKOVCOLOR_SOLVER):
+    if solver in (
+        SOSA_3_COL_EXACT_SOLVER,
+        SOSA_K_COL_HEURISTIC_SOLVER,
+        SOSA_3_COL_NATIVE_SOLVER,
+        ZYKOVCOLOR_SOLVER,
+    ):
         if backend is not None:
             raise ValueError(f"{solver} solver does not support backends")
         return

@@ -13,11 +13,13 @@ from three_col_circle_code.solvers.registry import (
     available_solver_names,
     resolve_solver_configs,
     run_solver,
+    run_solver_from_path,
 )
 from three_col_circle_code.solvers.sat import SAT_BASELINE_SOLVER
 from three_col_circle_code.solvers.sosa import (
     SOSA_3_COL_EXACT_SOLVER,
     SOSA_K_COL_HEURISTIC_SOLVER,
+    SOSA_3_COL_NATIVE_SOLVER,
 )
 from three_col_circle_code.solvers.zykovcolor import ZYKOVCOLOR_SOLVER
 from three_col_circle_code.sat.baseline import LEGACY_PYSMT_MSAT, PYSAT_CADICAL, PYSAT_KISSAT404
@@ -31,6 +33,7 @@ class SolverRegistryTests(unittest.TestCase):
                 SAT_BASELINE_SOLVER,
                 SOSA_3_COL_EXACT_SOLVER,
                 SOSA_K_COL_HEURISTIC_SOLVER,
+                SOSA_3_COL_NATIVE_SOLVER,
                 ZYKOVCOLOR_SOLVER,
             ),
         )
@@ -162,6 +165,41 @@ class SolverRegistryTests(unittest.TestCase):
             result = run_solver(graph, config)
 
         solve.assert_called_once_with(graph, params={"num_colors": 4, "produce_witness": False})
+        self.assertIs(result, fake_result)
+
+    def test_run_solver_rejects_native_sosa_without_path(self) -> None:
+        graph = nx.path_graph(2)
+        config = SolverConfig(solver=SOSA_3_COL_NATIVE_SOLVER)
+
+        with self.assertRaisesRegex(ValueError, "requires a file path"):
+            run_solver(graph, config)
+
+    def test_run_solver_from_path_dispatches_to_native_sosa_solver(self) -> None:
+        path = Path("instance.col")
+        config = SolverConfig(solver=SOSA_3_COL_NATIVE_SOLVER, params={"base_case_n": 16})
+        fake_result = SolverResult(
+            solver=SOSA_3_COL_NATIVE_SOLVER,
+            backend=None,
+            status=SOLVER_STATUS_OK,
+            wall_time_s=0.1,
+            is_colorable=True,
+            n_vertices=2,
+            m_edges=1,
+            details={},
+            error=None,
+        )
+
+        with patch(
+            "three_col_circle_code.solvers.registry.solve_sosa_3_col_native_from_path",
+            return_value=fake_result,
+        ) as solve:
+            result = run_solver_from_path(path, config)
+
+        solve.assert_called_once_with(
+            path,
+            params={"base_case_n": 16},
+            validate_instance_artifact=False,
+        )
         self.assertIs(result, fake_result)
 
 
