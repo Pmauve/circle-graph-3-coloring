@@ -36,7 +36,7 @@ def run_instance_generation(
     started_at = _now()
     generated = False
     try:
-        existing_info = None if force else _load_valid_existing_instance(instance_row.instance_path)
+        existing_info = _load_valid_existing_instance(instance_row.instance_path)
         if existing_info is None:
             record = generate_instance(
                 family=instance_row.family,

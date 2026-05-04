@@ -48,16 +48,19 @@ def resolve_existing_instance_path(
     instance_pool_root: Path,
     request: InstanceRequest,
 ) -> tuple[Optional[Path], Optional[str]]:
-    flat_instance_path = Path(instance_pool_root) / f"{request.instance_id}.col"
-    if flat_instance_path.exists():
-        return flat_instance_path, "flat"
+    for instance_id, id_kind in _candidate_instance_ids(request):
+        flat_instance_path = Path(instance_pool_root) / f"{instance_id}.col"
+        if flat_instance_path.exists():
+            return flat_instance_path, f"flat-{id_kind}"
 
-    nested_instance_path = expected_instance_path(
-        instance_pool_root=instance_pool_root,
-        request=request,
-    )
-    if nested_instance_path.exists():
-        return nested_instance_path, "nested"
+        nested_instance_path = (
+            Path(instance_pool_root)
+            / request.family
+            / bucket_for_n(request.n)
+            / f"{instance_id}.col"
+        )
+        if nested_instance_path.exists():
+            return nested_instance_path, f"nested-{id_kind}"
     return None, None
 
 
@@ -71,6 +74,16 @@ def expected_instance_path(
         / request.family
         / bucket_for_n(request.n)
         / f"{request.instance_id}.col"
+    )
+
+
+def _candidate_instance_ids(request: InstanceRequest) -> tuple[tuple[str, str], ...]:
+    legacy_id = f"{request.family}-n{request.n:04d}-seed{request.seed}"
+    if legacy_id == request.instance_id:
+        return ((request.instance_id, "canonical"),)
+    return (
+        (request.instance_id, "canonical"),
+        (legacy_id, "legacy"),
     )
 
 

@@ -93,7 +93,7 @@ class BenchGenerateInstanceTests(unittest.TestCase):
         validate.assert_called_once()
         generate.assert_not_called()
 
-    def test_run_instance_generation_force_regenerates_existing_instance(self) -> None:
+    def test_run_instance_generation_force_rechecks_existing_instance_without_regenerating(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_root = Path(tmpdir)
             instance_path = tmp_root / "instances" / "rc" / "s" / "rc-k03-n0002-seed1.json"
@@ -108,9 +108,9 @@ class BenchGenerateInstanceTests(unittest.TestCase):
 
             result = json.loads(result_path.read_text(encoding="utf-8"))
 
-        self.assertEqual(result["status"], "ok")
-        self.assertTrue(result["generated"])
-        generate.assert_called_once()
+        self.assertEqual(result["status"], "skipped")
+        self.assertFalse(result["generated"])
+        generate.assert_not_called()
 
     def test_run_instance_generation_regenerates_invalid_existing_instance(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
