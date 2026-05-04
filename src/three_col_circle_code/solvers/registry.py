@@ -15,11 +15,20 @@ from three_col_circle_code.solvers.sosa.solver import (
     solve_sosa_3_col_exact,
     solve_sosa_k_col_heuristic,
 )
+from three_col_circle_code.solvers.zykovcolor import (
+    ZYKOVCOLOR_SOLVER,
+    solve_zykovcolor,
+)
 
 
 def available_solver_names() -> tuple[str, ...]:
     """Return the registered solver families."""
-    return (SAT_BASELINE_SOLVER, SOSA_3_COL_EXACT_SOLVER, SOSA_K_COL_HEURISTIC_SOLVER)
+    return (
+        SAT_BASELINE_SOLVER,
+        SOSA_3_COL_EXACT_SOLVER,
+        SOSA_K_COL_HEURISTIC_SOLVER,
+        ZYKOVCOLOR_SOLVER,
+    )
 
 
 def resolve_solver_configs(
@@ -66,6 +75,10 @@ def run_solver(
         if config.backend is not None:
             raise ValueError("SOSA solver does not support backends")
         return solve_sosa_k_col_heuristic(graph, params=config.params)
+    if config.solver == ZYKOVCOLOR_SOLVER:
+        if config.backend is not None:
+            raise ValueError("ZykovColor solver does not support backends")
+        return solve_zykovcolor(instance_or_graph, params=config.params)
     raise ValueError(
         f"unsupported solver {config.solver!r}; expected one of {available_solver_names()}"
     )
@@ -83,9 +96,9 @@ def _parse_solver_spec(spec: str) -> tuple[str, Optional[str]]:
 
 def _validate_solver_config(*, solver: str, backend: Optional[str]) -> None:
     """Validate a solver/backend pair against the current registry."""
-    if solver in (SOSA_3_COL_EXACT_SOLVER, SOSA_K_COL_HEURISTIC_SOLVER):
+    if solver in (SOSA_3_COL_EXACT_SOLVER, SOSA_K_COL_HEURISTIC_SOLVER, ZYKOVCOLOR_SOLVER):
         if backend is not None:
-            raise ValueError("SOSA solver does not support backends")
+            raise ValueError(f"{solver} solver does not support backends")
         return
     if solver != SAT_BASELINE_SOLVER:
         raise ValueError(

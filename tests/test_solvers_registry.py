@@ -19,6 +19,7 @@ from three_col_circle_code.solvers.sosa import (
     SOSA_3_COL_EXACT_SOLVER,
     SOSA_K_COL_HEURISTIC_SOLVER,
 )
+from three_col_circle_code.solvers.zykovcolor import ZYKOVCOLOR_SOLVER
 from three_col_circle_code.sat.baseline import LEGACY_PYSMT_MSAT, PYSAT_CADICAL, PYSAT_KISSAT404
 
 
@@ -26,7 +27,12 @@ class SolverRegistryTests(unittest.TestCase):
     def test_available_solver_names_lists_registered_solver_families(self) -> None:
         self.assertEqual(
             available_solver_names(),
-            (SAT_BASELINE_SOLVER, SOSA_3_COL_EXACT_SOLVER, SOSA_K_COL_HEURISTIC_SOLVER),
+            (
+                SAT_BASELINE_SOLVER,
+                SOSA_3_COL_EXACT_SOLVER,
+                SOSA_K_COL_HEURISTIC_SOLVER,
+                ZYKOVCOLOR_SOLVER,
+            ),
         )
 
     def test_resolve_solver_configs_expands_sat_family_to_all_backends(self) -> None:
