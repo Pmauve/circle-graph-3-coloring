@@ -39,13 +39,14 @@ def solve_zykovcolor(
     decision_num_colors = int(requested_params.get("decision_num_colors", DEFAULT_DECISION_NUM_COLORS))
     timeout_s = float(requested_params.get("timeout_s", DEFAULT_TIMEOUT_S))
     configuration = str(requested_params.get("configuration", DEFAULT_CONFIGURATION))
+    mode_args = _mode_args(requested_params.get("mode"), decision_num_colors=decision_num_colors)
     extra_args = _normalize_extra_args(requested_params.get("extra_args", ()))
 
     try:
         with tempfile.TemporaryDirectory(prefix="zykovcolor-") as tmpdir:
             dimacs_path = Path(tmpdir) / f"{record.metadata.instance_id}.col"
             write_dimacs_circle(record, dimacs_path)
-            command = [executable, str(dimacs_path), f"--{configuration}", *extra_args]
+            command = [executable, str(dimacs_path), f"--{configuration}", *mode_args, *extra_args]
             started_at = perf_counter()
             completed = subprocess.run(
                 command,
@@ -168,6 +169,14 @@ def _normalize_extra_args(value: Any) -> list[str]:
     return [str(item) for item in value]
 
 
+def _mode_args(value: Any, *, decision_num_colors: int) -> list[str]:
+    if value is None or value == "chromatic-number":
+        return []
+    if value in {"single-k", "single_k"}:
+        return ["--strategy", "2", "--num-colors", str(decision_num_colors)]
+    raise ValueError("ZykovColor params.mode must be 'chromatic-number' or 'single-k'")
+
+
 def _error_result(
     *,
     record: InstanceRecord,
@@ -196,4 +205,3 @@ def _tail(value: Optional[str], *, max_chars: int = 4000) -> str:
     if value is None:
         return ""
     return value[-max_chars:]
-

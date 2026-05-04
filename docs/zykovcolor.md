@@ -42,6 +42,7 @@ or with solver params:
   "params": {
     "executable": "external/ZykovColor/cmake-build/ZykovColor",
     "configuration": "zykov-color",
+    "mode": "single-k",
     "decision_num_colors": 3,
     "timeout_s": 3600
   }
@@ -61,3 +62,23 @@ For chromatic-number output, the benchmark decision answer is:
 is_colorable = chromatic_number <= decision_num_colors
 ```
 
+For a fair fixed 3-colorability comparison against SOSA, use:
+
+```json
+{
+  "target": "zykovcolor",
+  "label": "ZykovColor k=3",
+  "params": {
+    "configuration": "zykov-color",
+    "mode": "single-k",
+    "decision_num_colors": 3,
+    "timeout_s": 3600
+  }
+}
+```
+
+Internally this passes ZykovColor's numeric CLI strategy for single-k solving:
+
+```text
+--strategy 2 --num-colors 3
+```

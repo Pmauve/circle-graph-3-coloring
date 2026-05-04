@@ -50,13 +50,16 @@ class ZykovColorSolverTests(unittest.TestCase):
             )
             result = solve_zykovcolor(
                 _sample_record(),
-                params={"executable": str(executable)},
+                params={"executable": str(executable), "mode": "single-k", "decision_num_colors": 3},
             )
 
         self.assertEqual(result.status, SOLVER_STATUS_OK)
         self.assertTrue(result.is_colorable)
         self.assertEqual(result.details["chromatic_number"], 3)
         self.assertEqual(result.details["returncode"], 0)
+        self.assertIn("--strategy", result.details["command"])
+        self.assertIn("2", result.details["command"])
+        self.assertIn("--num-colors", result.details["command"])
 
     def test_solve_zykovcolor_reports_parse_errors(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
