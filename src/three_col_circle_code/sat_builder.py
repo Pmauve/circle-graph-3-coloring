@@ -8,7 +8,7 @@ from pysmt.shortcuts import Symbol, And, Or, Not, Solver, EqualsOrIff, Implies, 
 from three_col_circle_code.timer import Timer
 from three_col_circle_code.util import *
 
-solver_timer = Timer(name="solver", text="Solving 3-SAT instance took {:0.6} seconds")
+solver_timer = Timer(name="solver", text="Solving 3-SAT instance took {:0.6} seconds", logger=None)
 
 computing_c_timer = Timer(name="computing_cl", text="Computing clauses for c* took {:0.6f} seconds")
 solving_c_timer = Timer(name="solving_c", text="Solving SAT for c^* took {:0.6f} seconds")
@@ -58,13 +58,14 @@ def is_three_colorable(graph):
     can_solve = solver.solve()
     elapsed_time = solver_timer.stop()
     if can_solve:
-        print("we have a solution")
+        # print("we have a solution")
         partial_model = [EqualsOrIff(variables[c], solver.get_value(variables[c])) for c in
                          variable_names]
         # print("partial model: " + str(partial_model))
     else:
-        print("we have no solution")
-        print("unsat core:", get_unsat_core(clauses))
+        # print("we have no solution")
+        # print("unsat core:", get_unsat_core(clauses))
+        pass
     return can_solve, elapsed_time
 
 

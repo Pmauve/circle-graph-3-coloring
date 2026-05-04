@@ -93,6 +93,30 @@ class BenchRunTrialTests(unittest.TestCase):
         self.assertEqual([row["wall_time_s"] for row in result["measurements"]], [0.3, 0.1, 0.2])
         self.assertEqual(run_solver.call_count, 4)
 
+    def test_run_trial_uses_planned_instance_id_for_legacy_instance_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            plan_dir, _work_root, instance_path = _write_plan(
+                tmp_root,
+                instance_id="rc_fast-k03-n0200-seed42",
+                family="rc_fast",
+            )
+            save_instance(
+                _build_record(instance_id="rc_fast-n0200-seed42", family="rc_fast", seed=1),
+                instance_path,
+            )
+
+            with patch(
+                "three_col_circle_code.bench.run_trial.run_solver",
+                return_value=_fake_solver_result(),
+            ):
+                result_path = run_trial(plan_dir=plan_dir, index=1)
+
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(result["instance_id"], "rc_fast-k03-n0200-seed42")
+        self.assertEqual(result["family"], "rc_fast")
+
     def test_run_trial_marks_inconsistent_repeated_answers_as_error(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_root = Path(tmpdir)
@@ -217,15 +241,17 @@ def _write_plan(
     *,
     repetitions: int = 1,
     warmup_repetitions: int = 0,
+    instance_id: str = "rc-n0002-seed1",
+    family: str = "rc",
 ) -> tuple[Path, Path, Path]:
     plan_dir = tmp_root / "plans" / "smoke"
     work_root = tmp_root / "work" / "smoke"
-    instance_path = tmp_root / "instances" / "rc" / "s" / "rc-n0002-seed1.json"
+    instance_path = tmp_root / "instances" / family / "s" / f"{instance_id}.json"
     instances = (
         InstancePlanRow(
             index=1,
-            instance_id="rc-n0002-seed1",
-            family="rc",
+            instance_id=instance_id,
+            family=family,
             n=2,
             seed=1,
             instance_path=instance_path,
@@ -234,9 +260,9 @@ def _write_plan(
     trials = (
         TrialPlanRow(
             index=1,
-            instance_id="rc-n0002-seed1",
+            instance_id=instance_id,
             instance_path=instance_path,
-            family="rc",
+            family=family,
             n=2,
             seed=1,
             solver="sosa-3-col-exact",
@@ -275,7 +301,7 @@ def _write_instance_result(work_root: Path, instance_path: Path) -> None:
                 "index": 1,
                 "kind": "instance",
                 "status": "ok",
-                "instance_id": "rc-n0002-seed1",
+                "instance_id": instance_path.stem,
                 "instance_path": str(instance_path),
                 "generated": False,
                 "validation_ok": True,

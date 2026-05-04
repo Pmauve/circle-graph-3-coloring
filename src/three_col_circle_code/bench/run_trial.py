@@ -289,7 +289,7 @@ def _build_repeated_result_record(
     return {
         "run_id": run_id,
         "index": trial.index,
-        "instance_id": record.metadata.instance_id,
+        "instance_id": trial.instance_id,
         "instance_path": str(trial.instance_path),
         "family": record.metadata.family,
         "bucket": record.metadata.bucket,
