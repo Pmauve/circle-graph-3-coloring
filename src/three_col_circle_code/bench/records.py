@@ -29,6 +29,7 @@ def build_benchmark_result_record(
         "bucket": record.metadata.bucket,
         "n": record.metadata.n,
         "m": record.metadata.m,
+        "average_degree": _average_degree(record.metadata.n, record.metadata.m),
         "num_colors": record.metadata.num_colors,
         "seed": record.metadata.seed,
         "source": record.metadata.source,
@@ -40,6 +41,8 @@ def build_benchmark_result_record(
         "status": solve_result.status,
         "mean_wall_time_s": solve_result.wall_time_s,
         "median_wall_time_s": solve_result.wall_time_s,
+        "mean_core_time_s": solve_result.core_time_s,
+        "median_core_time_s": solve_result.core_time_s,
         "is_colorable": solve_result.is_colorable,
         "validation_ok": validation_ok,
         "validation_errors": validation_errors,
@@ -80,6 +83,7 @@ def build_invalid_result_record(
         "bucket": None,
         "n": n,
         "m": None,
+        "average_degree": None,
         "num_colors": num_colors,
         "seed": seed,
         "source": None,
@@ -91,6 +95,8 @@ def build_invalid_result_record(
         "status": BENCH_STATUS_INVALID,
         "mean_wall_time_s": None,
         "median_wall_time_s": None,
+        "mean_core_time_s": None,
+        "median_core_time_s": None,
         "is_colorable": None,
         "validation_ok": False,
         "validation_errors": [
@@ -112,3 +118,9 @@ def build_invalid_result_record(
 def serialize_validation_errors(errors: Iterable[Any]) -> list[dict[str, Any]]:
     """Serialize validation issues into JSON-compatible dictionaries."""
     return [{"code": issue.code, "message": issue.message} for issue in errors]
+
+
+def _average_degree(n_vertices: int, n_edges: int) -> float:
+    if n_vertices == 0:
+        return 0.0
+    return 2.0 * n_edges / n_vertices

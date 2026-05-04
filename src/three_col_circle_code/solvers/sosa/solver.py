@@ -105,11 +105,13 @@ def _solve_sosa(
         stats=stats,
         depth=0,
     )
+    elapsed_s = perf_counter() - started_at
     return SolverResult(
         solver=solver,
         backend=None,
         status=SOLVER_STATUS_OK,
-        wall_time_s=perf_counter() - started_at,
+        wall_time_s=elapsed_s,
+        core_time_s=elapsed_s,
         is_colorable=solve_result.is_colorable,
         n_vertices=geometry.n_vertices,
         m_edges=geometry.m_edges,
@@ -262,6 +264,7 @@ def _error_result(
         backend=None,
         status=SOLVER_STATUS_ERROR,
         wall_time_s=None,
+        core_time_s=None,
         is_colorable=None,
         n_vertices=graph.number_of_nodes(),
         m_edges=graph.number_of_edges(),
@@ -295,6 +298,7 @@ def _result_details(
     details: dict[str, Any] = {
         "implementation_status": IMPLEMENTATION_STATUS,
         "config": config_dict or {},
+        "core_time_source": "sosa_after_parse_timer",
     }
     details.update(stats.to_details_dict())
     if geometry is not None and witness is not None:

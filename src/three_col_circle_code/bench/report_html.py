@@ -90,6 +90,26 @@ _TEMPLATE = """
       .plot-wrap {
         overflow-x: auto;
       }
+      .metric-toggle {
+        display: inline-flex;
+        gap: 6px;
+        margin: 8px 0 12px;
+      }
+      .metric-toggle button {
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: #ffffff;
+        color: var(--text);
+        cursor: pointer;
+        padding: 6px 10px;
+      }
+      .metric-toggle button.active {
+        background: var(--accent);
+        color: #ffffff;
+      }
+      .metric-core {
+        display: none;
+      }
       @media (max-width: 720px) {
         body { padding: 16px; }
         .section { padding: 14px; }
@@ -134,7 +154,12 @@ _TEMPLATE = """
         <div class="section-header">
         <h2>Runtime vs Size</h2>
         </div>
-        <div class="plot-wrap">{{ runtime_vs_size_html | safe }}</div>
+        <div class="metric-toggle" aria-label="Runtime metric">
+          <button type="button" class="active" data-runtime-metric="wall">Wall time</button>
+          <button type="button" data-runtime-metric="core">Core time</button>
+        </div>
+        <div class="plot-wrap metric-wall">{{ runtime_vs_size_wall_html | safe }}</div>
+        <div class="plot-wrap metric-core">{{ runtime_vs_size_core_html | safe }}</div>
       </section>
 
       <section class="section">
@@ -164,8 +189,14 @@ _TEMPLATE = """
               <td>{{ row.n_invalid }}</td>
               <td>{{ row.repetitions }}</td>
               <td>{{ row.ok_repetitions }}</td>
-              <td>{{ "%.6f"|format(row.mean_wall_time_s) if row.mean_wall_time_s is not none else "n/a" }}</td>
-              <td>{{ "%.6f"|format(row.median_wall_time_s) if row.median_wall_time_s is not none else "n/a" }}</td>
+              <td>
+                <span class="metric-wall">{{ "%.6f"|format(row.mean_wall_time_s) if row.mean_wall_time_s is not none else "n/a" }}</span>
+                <span class="metric-core">{{ "%.6f"|format(row.mean_core_time_s) if row.mean_core_time_s is not none else "n/a" }}</span>
+              </td>
+              <td>
+                <span class="metric-wall">{{ "%.6f"|format(row.median_wall_time_s) if row.median_wall_time_s is not none else "n/a" }}</span>
+                <span class="metric-core">{{ "%.6f"|format(row.median_core_time_s) if row.median_core_time_s is not none else "n/a" }}</span>
+              </td>
             </tr>
             {% endfor %}
           </tbody>
@@ -209,6 +240,24 @@ _TEMPLATE = """
         {% endif %}
       </section>
     </main>
+    <script>
+      const metricButtons = document.querySelectorAll("[data-runtime-metric]");
+      function setRuntimeMetric(metric) {
+        document.querySelectorAll(".metric-wall").forEach((node) => {
+          node.style.display = metric === "wall" ? "" : "none";
+        });
+        document.querySelectorAll(".metric-core").forEach((node) => {
+          node.style.display = metric === "core" ? "" : "none";
+        });
+        metricButtons.forEach((button) => {
+          button.classList.toggle("active", button.dataset.runtimeMetric === metric);
+        });
+      }
+      metricButtons.forEach((button) => {
+        button.addEventListener("click", () => setRuntimeMetric(button.dataset.runtimeMetric));
+      });
+      setRuntimeMetric("wall");
+    </script>
   </body>
 </html>
 """
@@ -217,9 +266,15 @@ _TEMPLATE = """
 def render_report_html(
     *,
     data: BenchmarkReportData,
-    runtime_vs_size_figure: object,
+    runtime_vs_size_wall_figure: object = None,
+    runtime_vs_size_core_figure: object = None,
+    runtime_vs_size_figure: object = None,
 ) -> str:
     """Render the benchmark report HTML document."""
+    if runtime_vs_size_wall_figure is None:
+        runtime_vs_size_wall_figure = runtime_vs_size_figure
+    if runtime_vs_size_core_figure is None:
+        runtime_vs_size_core_figure = runtime_vs_size_wall_figure
     template = Environment(
         autoescape=select_autoescape(default_for_string=True, enabled_extensions=("html",)),
     ).from_string(_TEMPLATE)
@@ -227,7 +282,8 @@ def render_report_html(
         title=data.metadata.run_id,
         metadata=data.metadata,
         headline=data.headline_metrics,
-        runtime_vs_size_html=_figure_html(runtime_vs_size_figure, include_plotlyjs="inline"),
+        runtime_vs_size_wall_html=_figure_html(runtime_vs_size_wall_figure, include_plotlyjs="inline"),
+        runtime_vs_size_core_html=_figure_html(runtime_vs_size_core_figure, include_plotlyjs=False),
         solver_summary_rows=data.solver_summary_rows,
         disagreement_rows=data.disagreement_rows,
     )

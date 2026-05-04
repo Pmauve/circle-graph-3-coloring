@@ -156,6 +156,20 @@ def _validate_metadata(
             "metadata.num_colors_invalid",
             f"metadata num_colors={metadata_obj.num_colors} must be at least 1",
         )
+    if metadata_obj.average_degree is not None:
+        expected_average_degree = (
+            0.0
+            if graph.number_of_nodes() == 0
+            else 2.0 * graph.number_of_edges() / graph.number_of_nodes()
+        )
+        if abs(metadata_obj.average_degree - expected_average_degree) > 1e-9:
+            report.add_error(
+                "metadata.average_degree_mismatch",
+                "metadata average_degree={} does not match expected {}".format(
+                    metadata_obj.average_degree,
+                    expected_average_degree,
+                ),
+            )
     expected_bucket = bucket_for_n(graph.number_of_nodes())
     if metadata_obj.bucket != expected_bucket:
         report.add_error(

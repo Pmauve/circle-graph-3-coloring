@@ -15,6 +15,7 @@ from three_col_circle_code.solvers.registry import available_solver_names, run_s
 from three_col_circle_code.solvers.common import SolverConfig
 from three_col_circle_code.solvers.zykovcolor import (
     ZYKOVCOLOR_SOLVER,
+    _parse_core_time,
     parse_zykovcolor_output,
     solve_zykovcolor,
 )
@@ -41,6 +42,9 @@ class ZykovColorSolverTests(unittest.TestCase):
         parsed = parse_zykovcolor_output("IncSatGC computed SAT for k = 3\n")
 
         self.assertEqual(parsed, (True, {"zykovcolor_mode": "single_k", "k": 3, "raw_answer": "SAT"}))
+
+    def test_parse_total_stats_time(self) -> None:
+        self.assertEqual(_parse_core_time("c Stats: Time ┌ Total: 0s 10ms\n"), 0.01)
 
     def test_solve_zykovcolor_runs_external_executable(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

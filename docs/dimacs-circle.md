@@ -5,6 +5,7 @@ representation in comment lines. General graph solvers can ignore the comments.
 Circle-graph solvers can read the comments to recover the chord representation.
 
 ```text
+c format version 1
 c instance id rc-n0004-seed1
 c family rc
 c seed 1
@@ -55,8 +56,9 @@ Validation rules:
 - Writers preserve the endpoint order from the source instance and wrap at a
   fixed token count for deterministic output.
 - Metadata comments outside the circle block are optional and ignored by
-  generic DIMACS solvers. Writers should include all canonical JSON metadata
-  fields when they are available:
+  generic DIMACS solvers. Writers should include all canonical metadata fields
+  when they are available:
+  - `c format version 1`
   - `c instance id <value>`
   - `c family <value>`
   - `c seed <integer-or-none>`

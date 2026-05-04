@@ -166,7 +166,7 @@ class RandomInstanceGenerationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             output_dir = Path(tmpdir)
             path = write_instance(record, output_dir)
-            payload = json.loads(path.read_text(encoding="utf-8"))
+            text = path.read_text(encoding="utf-8")
             loaded = load_instance(path)
             report = validate_instance_file(path)
 
@@ -174,8 +174,10 @@ class RandomInstanceGenerationTests(unittest.TestCase):
             path,
             instance_output_path(record, output_dir),
         )
-        self.assertIn("metadata", payload)
-        self.assertIn("graph", payload)
+        self.assertEqual(path.suffix, ".col")
+        self.assertIn("c format version 1\n", text)
+        self.assertIn("c average degree ", text)
+        self.assertIn("p edge ", text)
         self.assertEqual(loaded.metadata.instance_id, record.metadata.instance_id)
         self.assertEqual(loaded.metadata.num_colors, 3)
         self.assertIsNotNone(loaded.metadata.generation_time_seconds)

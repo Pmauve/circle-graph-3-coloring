@@ -8,13 +8,18 @@ DEFAULT_INSTANCE_ROOT = Path("eval") / "instances"
 
 
 def discover_instances(root: Union[str, Path] = DEFAULT_INSTANCE_ROOT) -> list[Path]:
-    """Return all JSON instance files below a root in deterministic order."""
+    """Return all supported instance files below a root in deterministic order."""
     root_path = Path(root)
     if root_path.is_file():
-        return [root_path] if root_path.suffix == ".json" else []
+        return [root_path] if root_path.suffix in {".col", ".json"} else []
     if not root_path.exists():
         return []
-    return sorted(path for path in root_path.rglob("*.json") if path.is_file())
+    return sorted(
+        path
+        for suffix in ("*.col", "*.json")
+        for path in root_path.rglob(suffix)
+        if path.is_file()
+    )
 
 
 def filter_instances(

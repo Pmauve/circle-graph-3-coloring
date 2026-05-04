@@ -34,6 +34,7 @@ class ReportRow:
     bucket: Optional[str]
     n: Optional[int]
     m: Optional[int]
+    average_degree: Optional[float]
     num_colors: Optional[int]
     seed: Optional[int]
     source: Optional[str]
@@ -47,7 +48,10 @@ class ReportRow:
     ok_repetitions: int
     mean_wall_time_s: Optional[float]
     median_wall_time_s: Optional[float]
+    mean_core_time_s: Optional[float]
+    median_core_time_s: Optional[float]
     measurement_wall_times: tuple[float, ...]
+    measurement_core_times: tuple[float, ...]
     is_colorable: Optional[bool]
     validation_ok: bool
     error: Optional[str]
@@ -91,6 +95,8 @@ class SolverSummaryRow:
     ok_repetitions: int
     mean_wall_time_s: Optional[float]
     median_wall_time_s: Optional[float]
+    mean_core_time_s: Optional[float]
+    median_core_time_s: Optional[float]
 
 
 @dataclass(frozen=True)
@@ -216,6 +222,7 @@ def _normalize_report_row(row: Mapping[str, Any]) -> ReportRow:
         bucket=_optional_str(row.get("bucket")),
         n=_optional_int(row.get("n")),
         m=_optional_int(row.get("m")),
+        average_degree=_average_degree_from_row(row),
         num_colors=_optional_int(row.get("num_colors")),
         seed=_optional_int(row.get("seed")),
         source=_optional_str(row.get("source")),
@@ -229,7 +236,10 @@ def _normalize_report_row(row: Mapping[str, Any]) -> ReportRow:
         ok_repetitions=int(row.get("ok_repetitions", 1 if row.get("status") == "ok" else 0)),
         mean_wall_time_s=_optional_float(row.get("mean_wall_time_s", row.get("wall_time_s"))),
         median_wall_time_s=_optional_float(row.get("median_wall_time_s", row.get("wall_time_s"))),
+        mean_core_time_s=_optional_float(row.get("mean_core_time_s", row.get("core_time_s"))),
+        median_core_time_s=_optional_float(row.get("median_core_time_s", row.get("core_time_s"))),
         measurement_wall_times=_measurement_wall_times(row),
+        measurement_core_times=_measurement_core_times(row),
         is_colorable=_optional_bool(row.get("is_colorable")),
         validation_ok=bool(row.get("validation_ok", False)),
         error=_optional_str(row.get("error")),
@@ -364,6 +374,11 @@ def _build_solver_summary_rows(
             for row in target_rows
             for wall_time in row.measurement_wall_times
         ]
+        core_times = [
+            core_time
+            for row in target_rows
+            for core_time in row.measurement_core_times
+        ]
         summary_rows.append(
             SolverSummaryRow(
                 solver_target=solver_target,
@@ -375,6 +390,8 @@ def _build_solver_summary_rows(
                 ok_repetitions=sum(row.ok_repetitions for row in target_rows),
                 mean_wall_time_s=None if not wall_times else mean(wall_times),
                 median_wall_time_s=None if not wall_times else median(wall_times),
+                mean_core_time_s=None if not core_times else mean(core_times),
+                median_core_time_s=None if not core_times else median(core_times),
             )
         )
     return tuple(summary_rows)
@@ -424,8 +441,11 @@ def _write_summary_csv(
         "n_invalid",
         "repetitions",
         "ok_repetitions",
+        "mean_average_degree",
         "mean_wall_time_s",
         "median_wall_time_s",
+        "mean_core_time_s",
+        "median_core_time_s",
     ]
     with Path(path).open("w", encoding="utf-8", newline="") as outfile:
         writer = csv.DictWriter(outfile, fieldnames=fieldnames)
@@ -446,6 +466,16 @@ def _build_summary_row(
         for item in rows
         for wall_time in item.measurement_wall_times
     ]
+    core_times = [
+        core_time
+        for item in rows
+        for core_time in item.measurement_core_times
+    ]
+    average_degrees = [
+        item.average_degree
+        for item in rows
+        if item.average_degree is not None
+    ]
     row.update(
         {
             "n_instances": len(rows),
@@ -454,8 +484,11 @@ def _build_summary_row(
             "n_invalid": statuses.get("invalid", 0),
             "repetitions": sum(item.repetitions for item in rows),
             "ok_repetitions": sum(item.ok_repetitions for item in rows),
+            "mean_average_degree": None if not average_degrees else mean(average_degrees),
             "mean_wall_time_s": None if not wall_times else mean(wall_times),
             "median_wall_time_s": None if not wall_times else median(wall_times),
+            "mean_core_time_s": None if not core_times else mean(core_times),
+            "median_core_time_s": None if not core_times else median(core_times),
         }
     )
     return row
@@ -507,6 +540,20 @@ def _optional_bool(value: Any) -> Optional[bool]:
     return bool(value)
 
 
+def _average_degree_from_row(row: Mapping[str, Any]) -> Optional[float]:
+    explicit = row.get("average_degree")
+    if explicit is not None:
+        return float(explicit)
+    n_vertices = row.get("n")
+    n_edges = row.get("m")
+    if n_vertices is None or n_edges is None:
+        return None
+    n_value = int(n_vertices)
+    if n_value == 0:
+        return 0.0
+    return 2.0 * int(n_edges) / n_value
+
+
 def _measurement_wall_times(row: Mapping[str, Any]) -> tuple[float, ...]:
     measurements = row.get("measurements")
     if isinstance(measurements, list):
@@ -524,4 +571,24 @@ def _measurement_wall_times(row: Mapping[str, Any]) -> tuple[float, ...]:
     legacy_wall_time_s = row.get("wall_time_s")
     if legacy_wall_time_s is not None:
         return (float(legacy_wall_time_s),)
+    return ()
+
+
+def _measurement_core_times(row: Mapping[str, Any]) -> tuple[float, ...]:
+    measurements = row.get("measurements")
+    if isinstance(measurements, list):
+        return tuple(
+            float(item["core_time_s"])
+            for item in measurements
+            if isinstance(item, Mapping)
+            and item.get("status") == "ok"
+            and item.get("core_time_s") is not None
+        )
+    mean_core_time_s = row.get("mean_core_time_s")
+    if mean_core_time_s is not None:
+        repetitions = int(row.get("ok_repetitions", row.get("repetitions", 1)))
+        return tuple(float(mean_core_time_s) for _ in range(repetitions))
+    legacy_core_time_s = row.get("core_time_s")
+    if legacy_core_time_s is not None:
+        return (float(legacy_core_time_s),)
     return ()

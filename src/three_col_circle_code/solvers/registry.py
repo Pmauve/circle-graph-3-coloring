@@ -1,8 +1,11 @@
+from pathlib import Path
 from typing import Any, Mapping, Optional, Sequence
 
 import networkx as nx
 
 from three_col_circle_code.instances.model import InstanceRecord
+from three_col_circle_code.instances.io import load_instance
+from three_col_circle_code.instances.validate import validate_instance
 from three_col_circle_code.solvers.common import SolverConfig, SolverResult
 from three_col_circle_code.solvers.sat import (
     SAT_BASELINE_SOLVER,
@@ -18,6 +21,7 @@ from three_col_circle_code.solvers.sosa.solver import (
 from three_col_circle_code.solvers.zykovcolor import (
     ZYKOVCOLOR_SOLVER,
     solve_zykovcolor,
+    solve_zykovcolor_path,
 )
 
 
@@ -82,6 +86,33 @@ def run_solver(
     raise ValueError(
         f"unsupported solver {config.solver!r}; expected one of {available_solver_names()}"
     )
+
+
+def run_solver_from_path(
+    instance_path: Path,
+    config: SolverConfig,
+    *,
+    validate_instance_artifact: bool = False,
+) -> SolverResult:
+    """Dispatch one solver invocation from a benchmark instance artifact path."""
+    if validate_instance_artifact:
+        record = load_instance(instance_path, validate=True)
+        report = validate_instance(record.graph, metadata=record.metadata.to_dict())
+        if not report.ok:
+            errors = [{"code": issue.code, "message": issue.message} for issue in report.errors]
+            raise ValueError(f"instance artifact did not validate: {errors}")
+    elif config.solver != ZYKOVCOLOR_SOLVER:
+        record = load_instance(instance_path, validate=False)
+    else:
+        record = None
+
+    if config.solver == ZYKOVCOLOR_SOLVER:
+        if config.backend is not None:
+            raise ValueError("ZykovColor solver does not support backends")
+        return solve_zykovcolor_path(instance_path, params=config.params)
+    if record is None:
+        record = load_instance(instance_path, validate=False)
+    return run_solver(record, config)
 
 
 def _parse_solver_spec(spec: str) -> tuple[str, Optional[str]]:

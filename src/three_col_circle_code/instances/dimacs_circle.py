@@ -9,6 +9,7 @@ import networkx as nx
 from three_col_circle_code.instances.catalog import discover_instances
 from three_col_circle_code.instances.io import load_instance
 from three_col_circle_code.instances.model import (
+    INSTANCE_FORMAT_VERSION,
     InstanceFormatError,
     InstanceMetadata,
     InstanceRecord,
@@ -63,32 +64,69 @@ def write_dimacs_circle(
 
 def read_dimacs_circle(path: Union[str, Path]) -> InstanceRecord:
     """Read a DIMACS circle instance and validate graph/circle consistency."""
+    return _read_dimacs_circle(path, validate=True)
+
+
+def read_dimacs_circle_unvalidated(path: Union[str, Path]) -> InstanceRecord:
+    """Read a DIMACS circle instance with syntax checks but no full graph validation."""
+    return _read_dimacs_circle(path, validate=False)
+
+
+def _read_dimacs_circle(path: Union[str, Path], *, validate: bool) -> InstanceRecord:
     input_path = Path(path)
-    n_vertices, declared_edges, edges, order = _parse_dimacs_circle(input_path)
+    n_vertices, declared_edges, edges, order, parsed_metadata = _parse_dimacs_circle(input_path)
     if order is None:
         raise InstanceFormatError("DIMACS file is missing a circle representation block")
 
     graph = _graph_from_dimacs_circle(n_vertices, edges, order)
-    metadata = InstanceMetadata(
-        instance_id=input_path.stem,
-        family="dimacs-circle",
-        seed=None,
-        generator="dimacs_circle_import",
-        n=graph.number_of_nodes(),
-        m=graph.number_of_edges(),
-        bucket=bucket_for_n(graph.number_of_nodes()),
-        source="imported",
-        created_at=datetime.now(UTC).isoformat(),
+    metadata = _metadata_from_dimacs_comments(
+        parsed_metadata,
+        path=input_path,
+        graph=graph,
     )
     if declared_edges != graph.number_of_edges():
         raise InstanceFormatError(
             f"problem line declares {declared_edges} edge(s), but {graph.number_of_edges()} were read"
         )
-    report = validate_instance(graph, metadata=metadata.to_dict())
-    if not report.ok:
-        errors = [{"code": issue.code, "message": issue.message} for issue in report.errors]
-        raise InstanceFormatError(f"DIMACS circle instance did not validate: {errors}")
+    _validate_metadata_comments(
+        parsed_metadata,
+        n_vertices=n_vertices,
+        declared_edges=declared_edges,
+        metadata=metadata,
+    )
+    if validate:
+        report = validate_instance(graph, metadata=metadata.to_dict())
+        if not report.ok:
+            errors = [{"code": issue.code, "message": issue.message} for issue in report.errors]
+            raise InstanceFormatError(f"DIMACS circle instance did not validate: {errors}")
     return InstanceRecord(metadata=metadata, graph=graph)
+
+
+def _metadata_from_dimacs_comments(
+    parsed_metadata: dict[str, str],
+    *,
+    path: Path,
+    graph: nx.Graph,
+) -> InstanceMetadata:
+    return InstanceMetadata(
+        instance_id=parsed_metadata.get("instance_id", path.stem),
+        family=parsed_metadata.get("family", "dimacs-circle"),
+        seed=_parse_optional_metadata_int(parsed_metadata.get("seed")),
+        generator=parsed_metadata.get("generator", "dimacs_circle_import"),
+        n=_parse_metadata_int(parsed_metadata.get("n"), default=graph.number_of_nodes()),
+        m=_parse_metadata_int(parsed_metadata.get("m"), default=graph.number_of_edges()),
+        num_colors=_parse_metadata_int(parsed_metadata.get("num_colors"), default=3),
+        bucket=bucket_for_n(graph.number_of_nodes()),
+        source=parsed_metadata.get("source", "imported"),
+        created_at=parsed_metadata.get("created_at", datetime.now(UTC).isoformat()),
+        generation_time_seconds=_parse_optional_metadata_float(
+            parsed_metadata.get("generation_time_seconds")
+        ),
+        max_attempts_per_node=_parse_optional_metadata_int(
+            parsed_metadata.get("max_attempts_per_node")
+        ),
+        average_degree=_parse_optional_metadata_float(parsed_metadata.get("average_degree")),
+    )
 
 
 def export_dimacs_circle_tree(
@@ -153,11 +191,14 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     return 0
 
 
-def _parse_dimacs_circle(path: Path) -> tuple[int, int, list[tuple[int, int]], Optional[list[int]]]:
+def _parse_dimacs_circle(
+    path: Path,
+) -> tuple[int, int, list[tuple[int, int]], Optional[list[int]], dict[str, str]]:
     n_vertices: Optional[int] = None
     declared_edges: Optional[int] = None
     edges: list[tuple[int, int]] = []
     order: list[int] = []
+    metadata: dict[str, str] = {}
     in_circle_block = False
     saw_circle_block = False
 
@@ -187,6 +228,8 @@ def _parse_dimacs_circle(path: Path) -> tuple[int, int, list[tuple[int, int]], O
                             f"unsupported circle representation directive at line {line_number}: {line}"
                         )
                     order.extend(_parse_ints(parts[1:], line_number=line_number))
+                else:
+                    _capture_metadata_comment(parts[1:], metadata)
                 continue
             if tag == "p":
                 if len(parts) != 4 or parts[1] not in {"edge", "col"}:
@@ -212,7 +255,7 @@ def _parse_dimacs_circle(path: Path) -> tuple[int, int, list[tuple[int, int]], O
         raise InstanceFormatError("circle representation block is missing END")
     if n_vertices is None or declared_edges is None:
         raise InstanceFormatError("DIMACS file is missing a problem line")
-    return n_vertices, declared_edges, edges, order if saw_circle_block else None
+    return n_vertices, declared_edges, edges, order if saw_circle_block else None, metadata
 
 
 def _circle_comment_action(parts: list[str]) -> Optional[str]:
@@ -223,7 +266,30 @@ def _circle_comment_action(parts: list[str]) -> Optional[str]:
     return parts[2]
 
 
+def _capture_metadata_comment(parts: list[str], metadata: dict[str, str]) -> None:
+    key_lengths = {
+        ("format", "version"): "format_version",
+        ("instance", "id"): "instance_id",
+        ("average", "degree"): "average_degree",
+        ("num", "colors"): "num_colors",
+        ("created", "at"): "created_at",
+        ("generation", "time", "seconds"): "generation_time_seconds",
+        ("max", "attempts", "per", "node"): "max_attempts_per_node",
+        ("family",): "family",
+        ("seed",): "seed",
+        ("n",): "n",
+        ("m",): "m",
+        ("source",): "source",
+        ("generator",): "generator",
+    }
+    for prefix, key in key_lengths.items():
+        if tuple(parts[: len(prefix)]) == prefix and len(parts) > len(prefix):
+            metadata[key] = " ".join(parts[len(prefix) :])
+            return
+
+
 def _write_metadata_comments(outfile: object, metadata: InstanceMetadata) -> None:
+    outfile.write(f"c format version {INSTANCE_FORMAT_VERSION}\n")
     outfile.write(f"c instance id {metadata.instance_id}\n")
     outfile.write(f"c family {metadata.family}\n")
     outfile.write(f"c seed {_format_optional_value(metadata.seed)}\n")
@@ -244,6 +310,59 @@ def _write_metadata_comments(outfile: object, metadata: InstanceMetadata) -> Non
 
 def _format_optional_value(value: object) -> str:
     return _METADATA_NONE if value is None else str(value)
+
+
+def _parse_metadata_int(value: Optional[str], *, default: int) -> int:
+    if value is None or value == _METADATA_NONE:
+        return default
+    try:
+        return int(value)
+    except ValueError as exc:
+        raise InstanceFormatError(f"invalid integer metadata value {value!r}") from exc
+
+
+def _parse_optional_metadata_int(value: Optional[str]) -> Optional[int]:
+    if value is None or value == _METADATA_NONE:
+        return None
+    return _parse_metadata_int(value, default=0)
+
+
+def _parse_optional_metadata_float(value: Optional[str]) -> Optional[float]:
+    if value is None or value == _METADATA_NONE:
+        return None
+    try:
+        return float(value)
+    except ValueError as exc:
+        raise InstanceFormatError(f"invalid float metadata value {value!r}") from exc
+
+
+def _validate_metadata_comments(
+    parsed_metadata: dict[str, str],
+    *,
+    n_vertices: int,
+    declared_edges: int,
+    metadata: InstanceMetadata,
+) -> None:
+    format_version = parsed_metadata.get("format_version")
+    if format_version is not None and format_version != str(INSTANCE_FORMAT_VERSION):
+        raise InstanceFormatError(f"unsupported DIMACS circle format version {format_version!r}")
+    if metadata.n != n_vertices:
+        raise InstanceFormatError(
+            f"metadata n={metadata.n} does not match problem line n={n_vertices}"
+        )
+    if metadata.m != declared_edges:
+        raise InstanceFormatError(
+            f"metadata m={metadata.m} does not match problem line m={declared_edges}"
+        )
+    if metadata.average_degree is not None:
+        expected = _average_degree(n_vertices, declared_edges)
+        if abs(metadata.average_degree - expected) > 1e-9:
+            raise InstanceFormatError(
+                "metadata average degree={} does not match expected {}".format(
+                    metadata.average_degree,
+                    _format_float(expected),
+                )
+            )
 
 
 def _average_degree(n_vertices: int, n_edges: int) -> float:

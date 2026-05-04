@@ -84,7 +84,7 @@ benchmark_run --spec path/to/spec.json
 ```
 
 A minimal tracked example spec lives at `eval/sample_specs/sosa-smoke.json`.
-The benchmark runner reuses matching files from `eval/instances/` and generates missing instances.
+The benchmark runner reuses matching `.col` DIMACS-circle files from `eval/instances/` and generates missing instances directly as `.col`.
 Because the run directory is derived from the spec filename stem, running that file writes to `eval/runs/sosa-smoke/`.
 
 ```bash

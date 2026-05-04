@@ -48,7 +48,7 @@ def resolve_existing_instance_path(
     instance_pool_root: Path,
     request: InstanceRequest,
 ) -> tuple[Optional[Path], Optional[str]]:
-    flat_instance_path = Path(instance_pool_root) / f"{request.instance_id}.json"
+    flat_instance_path = Path(instance_pool_root) / f"{request.instance_id}.col"
     if flat_instance_path.exists():
         return flat_instance_path, "flat"
 
@@ -70,7 +70,7 @@ def expected_instance_path(
         Path(instance_pool_root)
         / request.family
         / bucket_for_n(request.n)
-        / f"{request.instance_id}.json"
+        / f"{request.instance_id}.col"
     )
 
 

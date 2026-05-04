@@ -30,8 +30,10 @@ _MARKER_SYMBOLS = (
 )
 
 
-def runtime_vs_size_figure(data: BenchmarkReportData) -> go.Figure:
+def runtime_vs_size_figure(data: BenchmarkReportData, *, metric: str = "wall") -> go.Figure:
     """Build a runtime-vs-size scatter plot for timed result rows."""
+    if metric not in {"wall", "core"}:
+        raise ValueError("metric must be 'wall' or 'core'")
     figure = go.Figure()
     families = sorted({row.family or "unknown" for row in data.rows})
     family_symbols = {
@@ -41,7 +43,7 @@ def runtime_vs_size_figure(data: BenchmarkReportData) -> go.Figure:
     grouped: dict[str, list[ReportRow]] = defaultdict(list)
     variant_labels: dict[str, str] = {}
     for row in data.rows:
-        if row.mean_wall_time_s is None or row.n is None:
+        if _row_metric_value(row, metric) is None or row.n is None:
             continue
         variant_key = solver_variant_key(row.solver_target, row.solver_params)
         grouped[variant_key].append(row)
@@ -57,7 +59,7 @@ def runtime_vs_size_figure(data: BenchmarkReportData) -> go.Figure:
         solver_rows = tuple(
             sorted(
                 grouped[variant_key],
-                key=lambda row: (row.n, row.instance_id, row.mean_wall_time_s),
+                key=lambda row: (row.n, row.instance_id, _row_metric_value(row, metric)),
             )
         )
         trace_rows_by_variant.append(solver_rows)
@@ -66,7 +68,7 @@ def runtime_vs_size_figure(data: BenchmarkReportData) -> go.Figure:
         figure.add_trace(
             go.Scatter(
                 x=[row.n for row in solver_rows],
-                y=[row.mean_wall_time_s for row in solver_rows],
+                y=[_row_metric_value(row, metric) for row in solver_rows],
                 mode="markers",
                 name=variant_label,
                 marker={
@@ -76,7 +78,7 @@ def runtime_vs_size_figure(data: BenchmarkReportData) -> go.Figure:
                     "line": {"color": "#ffffff", "width": 0.8},
                 },
                 customdata=[_row_hover_data(row) for row in solver_rows],
-                hovertemplate=_runtime_scatter_hovertemplate(),
+                hovertemplate=_runtime_scatter_hovertemplate(metric),
             )
         )
 
@@ -89,7 +91,7 @@ def runtime_vs_size_figure(data: BenchmarkReportData) -> go.Figure:
                 "xanchor": "right",
                 "y": 1.16,
                 "yanchor": "top",
-                "buttons": _family_filter_buttons(trace_rows_by_variant, families, family_symbols),
+                "buttons": _family_filter_buttons(trace_rows_by_variant, families, family_symbols, metric),
             },
             {
                 "type": "buttons",
@@ -124,7 +126,7 @@ def runtime_vs_size_figure(data: BenchmarkReportData) -> go.Figure:
     )
     figure.update_layout(
         xaxis_title="n",
-        yaxis_title="mean_wall_time_s",
+        yaxis_title=f"mean_{metric}_time_s",
         legend={
             "orientation": "h",
             "x": 0.0,
@@ -157,12 +159,13 @@ def _row_hover_data(row: ReportRow) -> list[object]:
         row.family,
         row.n,
         row.m,
+        row.average_degree,
         row.is_colorable,
         row.status,
     ]
 
 
-def _runtime_scatter_hovertemplate() -> str:
+def _runtime_scatter_hovertemplate(metric: str) -> str:
     return (
         "instance_id=%{customdata[0]}<br>"
         "solver_target=%{customdata[1]}<br>"
@@ -171,9 +174,10 @@ def _runtime_scatter_hovertemplate() -> str:
         "family=%{customdata[4]}<br>"
         "n=%{customdata[5]}<br>"
         "m=%{customdata[6]}<br>"
-        "mean_wall_time_s=%{y:.6f}<br>"
-        "is_colorable=%{customdata[7]}<br>"
-        "status=%{customdata[8]}<extra></extra>"
+        "average_degree=%{customdata[7]:.4f}<br>"
+        f"mean_{metric}_time_s=%{{y:.6f}}<br>"
+        "is_colorable=%{customdata[8]}<br>"
+        "status=%{customdata[9]}<extra></extra>"
     )
 
 
@@ -181,6 +185,7 @@ def _family_filter_buttons(
     trace_rows_by_variant: list[tuple[ReportRow, ...]],
     families: list[str],
     family_symbols: dict[str, str],
+    metric: str,
 ) -> list[dict[str, object]]:
     buttons = [
         _family_filter_button(
@@ -188,6 +193,7 @@ def _family_filter_buttons(
             family=None,
             trace_rows_by_variant=trace_rows_by_variant,
             family_symbols=family_symbols,
+            metric=metric,
         )
     ]
     buttons.extend(
@@ -196,6 +202,7 @@ def _family_filter_buttons(
             family=family,
             trace_rows_by_variant=trace_rows_by_variant,
             family_symbols=family_symbols,
+            metric=metric,
         )
         for family in families
     )
@@ -208,6 +215,7 @@ def _family_filter_button(
     family: Optional[str],
     trace_rows_by_variant: list[tuple[ReportRow, ...]],
     family_symbols: dict[str, str],
+    metric: str,
 ) -> dict[str, object]:
     filtered_rows = [
         tuple(
@@ -223,7 +231,7 @@ def _family_filter_button(
         "args": [
             {
                 "x": [[row.n for row in rows] for rows in filtered_rows],
-                "y": [[row.mean_wall_time_s for row in rows] for rows in filtered_rows],
+                "y": [[_row_metric_value(row, metric) for row in rows] for rows in filtered_rows],
                 "customdata": [[_row_hover_data(row) for row in rows] for rows in filtered_rows],
                 "marker.symbol": [
                     [family_symbols[row.family or "unknown"] for row in rows]
@@ -253,3 +261,9 @@ def _render_solver_params(params: dict[str, Any]) -> str:
     if not params:
         return "{}"
     return json.dumps(params, sort_keys=True)
+
+
+def _row_metric_value(row: ReportRow, metric: str) -> Optional[float]:
+    if metric == "core":
+        return row.mean_core_time_s
+    return row.mean_wall_time_s

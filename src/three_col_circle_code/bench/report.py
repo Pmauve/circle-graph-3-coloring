@@ -11,7 +11,8 @@ def build_benchmark_report(run_dir: Path, output_path: Optional[Path] = None) ->
     report_data = load_benchmark_report_data(run_dir)
     rendered_html = render_report_html(
         data=report_data,
-        runtime_vs_size_figure=runtime_vs_size_figure(report_data),
+        runtime_vs_size_wall_figure=runtime_vs_size_figure(report_data, metric="wall"),
+        runtime_vs_size_core_figure=runtime_vs_size_figure(report_data, metric="core"),
     )
     resolved_output_path = Path(output_path) if output_path is not None else Path(run_dir) / "report.html"
     resolved_output_path.parent.mkdir(parents=True, exist_ok=True)

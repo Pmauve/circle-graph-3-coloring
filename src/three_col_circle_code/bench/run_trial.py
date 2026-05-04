@@ -21,7 +21,7 @@ from three_col_circle_code.bench.records import (
 from three_col_circle_code.instances.io import load_instance
 from three_col_circle_code.instances.model import InstanceFormatError
 from three_col_circle_code.solvers.common import SolverConfig
-from three_col_circle_code.solvers.registry import run_solver
+from three_col_circle_code.solvers.registry import run_solver_from_path as run_solver
 
 
 @dataclass(frozen=True)
@@ -40,6 +40,7 @@ def run_trial(
     index: int,
     work_root: Optional[Path] = None,
     force: bool = False,
+    validate_instance_artifact: bool = False,
 ) -> Path:
     """Run one planned solver trial and write its isolated result file."""
     context = _load_trial_context(plan_dir=plan_dir, index=index, work_root=work_root)
@@ -55,7 +56,7 @@ def run_trial(
         trial=trial_row,
     )
     try:
-        record = load_instance(trial_row.instance_path)
+        record = load_instance(trial_row.instance_path, validate=validate_instance_artifact)
     except (InstanceFormatError, json.JSONDecodeError, OSError) as exc:
         result = _build_invalid_result_record(
             trial=trial_row,
@@ -74,11 +75,15 @@ def run_trial(
     warmup_measurements, _warmup_details = _run_measurements(
         record=record,
         solver_config=solver_config,
+        instance_path=trial_row.instance_path,
+        validate_instance_artifact=validate_instance_artifact,
         repetitions=trial_row.warmup_repetitions,
     )
     measurements, measurement_details = _run_measurements(
         record=record,
         solver_config=solver_config,
+        instance_path=trial_row.instance_path,
+        validate_instance_artifact=validate_instance_artifact,
         repetitions=trial_row.repetitions,
     )
     result = _build_repeated_result_record(
@@ -104,6 +109,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     parser.add_argument("--index", type=int, required=True)
     parser.add_argument("--work-root", type=Path, default=None)
     parser.add_argument("--force", action="store_true")
+    parser.add_argument("--validate-instance", action="store_true")
     args = parser.parse_args(list(argv) if argv is not None else None)
 
     try:
@@ -112,6 +118,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
             index=args.index,
             work_root=args.work_root,
             force=args.force,
+            validate_instance_artifact=args.validate_instance,
         )
     except ValueError as exc:
         print(f"benchmark trial failed: {exc}", file=sys.stderr)
@@ -200,6 +207,9 @@ def _build_invalid_result_record(*, trial: Any, started_at: str, error: Exceptio
             "ok_repetitions": 0,
             "mean_wall_time_s": None,
             "median_wall_time_s": None,
+            "mean_core_time_s": None,
+            "median_core_time_s": None,
+            "average_degree": None,
             "warmup_measurements": [],
             "measurements": [],
             "environment": collect_environment_metadata(),
@@ -211,19 +221,26 @@ def _run_measurements(
     *,
     record: Any,
     solver_config: SolverConfig,
+    instance_path: Path,
+    validate_instance_artifact: bool,
     repetitions: int,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Run the solver repeatedly and return compact measurement rows."""
     measurements: list[dict[str, Any]] = []
     last_details: dict[str, Any] = {}
     for repetition in range(1, repetitions + 1):
-        solve_result = run_solver(record, solver_config)
+        solve_result = run_solver(
+            instance_path,
+            solver_config,
+            validate_instance_artifact=validate_instance_artifact,
+        )
         last_details = dict(solve_result.details)
         measurements.append(
             {
                 "repetition": repetition,
                 "status": solve_result.status,
                 "wall_time_s": solve_result.wall_time_s,
+                "core_time_s": solve_result.core_time_s,
                 "is_colorable": solve_result.is_colorable,
                 "error": solve_result.error,
             }
@@ -251,6 +268,11 @@ def _build_repeated_result_record(
         for item in ok_measurements
         if item.get("wall_time_s") is not None
     ]
+    core_times = [
+        float(item["core_time_s"])
+        for item in ok_measurements
+        if item.get("core_time_s") is not None
+    ]
     answer_values = {
         item.get("is_colorable")
         for item in ok_measurements
@@ -273,6 +295,7 @@ def _build_repeated_result_record(
         "bucket": record.metadata.bucket,
         "n": record.metadata.n,
         "m": record.metadata.m,
+        "average_degree": _average_degree(record.metadata.n, record.metadata.m),
         "seed": record.metadata.seed,
         "num_colors": record.metadata.num_colors,
         "source": record.metadata.source,
@@ -287,6 +310,8 @@ def _build_repeated_result_record(
         "ok_repetitions": len(ok_measurements),
         "mean_wall_time_s": None if not wall_times else mean(wall_times),
         "median_wall_time_s": None if not wall_times else median(wall_times),
+        "mean_core_time_s": None if not core_times else mean(core_times),
+        "median_core_time_s": None if not core_times else median(core_times),
         "is_colorable": next(iter(answer_values)) if len(answer_values) == 1 else None,
         "validation_ok": validation_ok,
         "validation_errors": validation_errors,
@@ -311,6 +336,12 @@ def _write_result(path: Path, result: dict[str, Any]) -> None:
 def _now() -> str:
     """Return the current UTC timestamp in ISO format."""
     return datetime.now(UTC).isoformat()
+
+
+def _average_degree(n_vertices: int, n_edges: int) -> float:
+    if n_vertices == 0:
+        return 0.0
+    return 2.0 * n_edges / n_vertices
 
 
 if __name__ == "__main__":

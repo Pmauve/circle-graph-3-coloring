@@ -59,6 +59,7 @@ def generate_instance(
         created_at=datetime.now(UTC).isoformat(),
         generation_time_seconds=generation_time_seconds,
         max_attempts_per_node=max_attempts_per_node,
+        average_degree=_average_degree(graph.number_of_nodes(), graph.number_of_edges()),
     )
     return InstanceRecord(metadata=metadata, graph=graph)
 
@@ -101,7 +102,7 @@ def instance_output_path(record: InstanceRecord, output_dir: Path) -> Path:
         Path(output_dir)
         / record.metadata.family
         / record.metadata.bucket
-        / f"{record.metadata.instance_id}.json"
+        / f"{record.metadata.instance_id}.col"
     )
 
 
@@ -113,7 +114,9 @@ def write_instance_to_path(record: InstanceRecord, path: Path, *, atomic: bool =
         return instance_path
 
     instance_path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = instance_path.with_name(f".{instance_path.name}.tmp.{os.getpid()}")
+    tmp_path = instance_path.with_name(
+        f".{instance_path.stem}.tmp.{os.getpid()}{instance_path.suffix}"
+    )
     try:
         save_instance(record, tmp_path)
         loaded = load_instance(tmp_path)
@@ -171,6 +174,12 @@ def _to_canonical_graph(graph: nx.Graph) -> nx.Graph:
 
 def _instance_id(*, family: str, n: int, seed: int, num_colors: int) -> str:
     return f"{family}-k{num_colors:02d}-n{n:04d}-seed{seed}"
+
+
+def _average_degree(n_vertices: int, n_edges: int) -> float:
+    if n_vertices == 0:
+        return 0.0
+    return 2.0 * n_edges / n_vertices
 
 
 def _validate_generation_request(*, family: str, n: int, max_attempts_per_node: int, num_colors: int) -> None:

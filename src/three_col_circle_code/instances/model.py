@@ -32,6 +32,7 @@ class InstanceMetadata:
     num_colors: int = 3
     generation_time_seconds: Optional[float] = None
     max_attempts_per_node: Optional[int] = None
+    average_degree: Optional[float] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """Return metadata as a plain dictionary for JSON serialization."""
@@ -75,6 +76,11 @@ class InstanceMetadata:
                 None
                 if data.get("max_attempts_per_node") is None
                 else int(data["max_attempts_per_node"])
+            ),
+            average_degree=(
+                None
+                if data.get("average_degree") is None
+                else float(data["average_degree"])
             ),
         )
 

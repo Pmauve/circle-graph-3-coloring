@@ -51,6 +51,7 @@ class SolverResult:
     m_edges: int
     details: dict[str, Any] = field(default_factory=dict)
     error: Optional[str] = None
+    core_time_s: Optional[float] = None
 
 
 def solver_target(solver: str, backend: Optional[str] = None) -> str:

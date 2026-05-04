@@ -19,15 +19,32 @@ from three_col_circle_code.instances.model import (
 )
 
 
-def load_instance(path: Union[str, Path]) -> InstanceRecord:
+def load_instance(path: Union[str, Path], *, validate: bool = True) -> InstanceRecord:
     """Load a canonical or legacy instance file into an InstanceRecord."""
+    instance_path = Path(path)
+    if instance_path.suffix == ".col":
+        from three_col_circle_code.instances.dimacs_circle import (
+            read_dimacs_circle,
+            read_dimacs_circle_unvalidated,
+        )
+
+        if validate:
+            return read_dimacs_circle(instance_path)
+        return read_dimacs_circle_unvalidated(instance_path)
     metadata, graph = load_instance_envelope(path)
     return InstanceRecord(metadata=InstanceMetadata.from_mapping(metadata), graph=graph)
 
 
-def load_instance_envelope(path: Union[str, Path]) -> Tuple[Dict[str, Any], nx.Graph]:
+def load_instance_envelope(
+    path: Union[str, Path],
+    *,
+    validate: bool = True,
+) -> Tuple[Dict[str, Any], nx.Graph]:
     """Load an instance file and return metadata and graph separately."""
     instance_path = Path(path)
+    if instance_path.suffix == ".col":
+        record = load_instance(instance_path, validate=validate)
+        return deepcopy(record.metadata.to_dict()), record.graph
     with instance_path.open(encoding="utf-8") as infile:
         payload = json.load(infile)
 
@@ -58,6 +75,18 @@ def save_instance(
 ) -> None:
     """Write a canonical instance envelope to disk."""
     instance_path = Path(path)
+    if instance_path.suffix == ".col":
+        from three_col_circle_code.instances.dimacs_circle import write_dimacs_circle
+
+        graph, normalized_metadata = _coerce_record_or_graph(record_or_graph, metadata)
+        write_dimacs_circle(
+            InstanceRecord(
+                metadata=InstanceMetadata.from_mapping(normalized_metadata),
+                graph=graph,
+            ),
+            instance_path,
+        )
+        return
     graph, normalized_metadata = _coerce_record_or_graph(record_or_graph, metadata)
     payload = {
         "format_version": INSTANCE_FORMAT_VERSION,
@@ -95,6 +124,10 @@ def _normalized_metadata_for_graph(
     instance_metadata = _coerce_metadata(metadata).to_dict()
     instance_metadata["n"] = graph.number_of_nodes()
     instance_metadata["m"] = graph.number_of_edges()
+    instance_metadata["average_degree"] = _average_degree(
+        graph.number_of_nodes(),
+        graph.number_of_edges(),
+    )
     return instance_metadata
 
 
@@ -123,6 +156,12 @@ def _build_legacy_metadata(path: Path, graph: nx.Graph) -> InstanceMetadata:
 def _infer_legacy_family(path: Path) -> str:
     """Guess the legacy family tag from the file path components."""
     return infer_legacy_family_from_parts(path.parts) or "legacy"
+
+
+def _average_degree(n_vertices: int, n_edges: int) -> float:
+    if n_vertices == 0:
+        return 0.0
+    return 2.0 * n_edges / n_vertices
 
 
 def _coerce_record_or_graph(

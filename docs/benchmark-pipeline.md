@@ -20,6 +20,10 @@ benchmark_run --spec eval/sample_specs/pipeline-smoke.json --jobs 4
 
 This plans the run, generates missing instances, runs all trials, merges results, writes summaries, and builds `report.html`.
 
+Benchmark instances are canonical `.col` DIMACS-circle files. The planner
+reuses matching `.col` files from the spec's `instance_pool_root` and generation
+writes missing instances directly as `.col`.
+
 Set instance-side `num_colors` in an `instances` block when generating `k > 3` instances. Solver `params.num_colors` stays independent, so the same generated instance can still be tested with different solver palettes.
 
 ## Cluster
@@ -55,6 +59,10 @@ benchmark_run_trial \
   --index "$TASK_INDEX"
 ```
 
+Trials trust the validation result produced by the instance task. For an
+isolated debug run, add `--validate-instance` to re-run full instance validation
+before invoking the solver.
+
 After all trials finished, merge once:
 
 ```bash
@@ -79,6 +87,12 @@ eval/runs/<run-id>/report.html
 ```
 
 Instances themselves live in the spec's `instance_pool_root`, not in the work directory.
+
+Trial result rows record both `wall_time_s` and `core_time_s`. Wall time is the
+default report metric and includes parsing, subprocess overhead, and solver
+execution. Core time is the solver-specific hard-problem time after benchmark
+instance parsing. Reports include a wall/core toggle and Plotly hover text
+includes `average_degree = 2m / n`.
 
 ## Notes
 

@@ -1,9 +1,10 @@
 # ZykovColor Integration
 
 ZykovColor is used as an external native solver. The Python benchmark target
-`zykovcolor` writes the instance to a temporary DIMACS-circle file, runs the
-ZykovColor executable, parses the final result line, and stores the answer in
-the normal benchmark result format.
+`zykovcolor` receives the planned `.col` DIMACS-circle file path, runs the
+ZykovColor executable on that file, parses the final result line, and stores the
+answer in the normal benchmark result format. In-memory ad-hoc calls still write
+a temporary `.col` file.
 
 The upstream source is not vendored into this repository. It is fetched at a
 pinned commit by:

@@ -107,7 +107,7 @@ class BenchRunnerTests(unittest.TestCase):
             tmp_root = Path(tmpdir)
             instance_pool_root = tmp_root / "instances"
             _write_instance(
-                instance_pool_root / "rc" / "s" / "rc-k03-n0002-seed1.json",
+                instance_pool_root / "rc" / "s" / "rc-k03-n0002-seed1.col",
                 instance_id="rc-k03-n0002-seed1",
                 family="rc",
                 seed=1,
