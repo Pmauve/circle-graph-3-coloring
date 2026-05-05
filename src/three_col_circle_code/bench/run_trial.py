@@ -47,7 +47,9 @@ def run_trial(
     trial_row = context.trial
     result_path = trial_result_path(context.work_root, index)
     if result_path.exists() and not force:
-        return result_path
+        existing = json.loads(result_path.read_text(encoding="utf-8"))
+        if _existing_result_matches_plan(existing, trial=trial_row):
+            return result_path
 
     started_at = _now()
     validation_ok, validation_errors = _load_cached_instance_validation(
@@ -323,6 +325,23 @@ def _build_repeated_result_record(
         "finished_at": _now(),
         "environment": environment,
     }
+
+
+def _existing_result_matches_plan(result: dict[str, Any], *, trial: Any) -> bool:
+    """Return whether an isolated trial result still belongs to the current plan row."""
+    return (
+        result.get("index") == trial.index
+        and result.get("instance_id") == trial.instance_id
+        and str(result.get("instance_path")) == str(trial.instance_path)
+        and result.get("num_colors") == trial.num_colors
+        and result.get("solver_target") == trial.solver_target
+        and result.get("solver") == trial.solver
+        and result.get("backend") == trial.backend
+        and result.get("solver_label") == trial.solver_label
+        and dict(result.get("solver_params", {})) == dict(trial.solver_params)
+        and result.get("repetitions") == trial.repetitions
+        and result.get("warmup_repetitions") == trial.warmup_repetitions
+    )
 
 
 def _write_result(path: Path, result: dict[str, Any]) -> None:

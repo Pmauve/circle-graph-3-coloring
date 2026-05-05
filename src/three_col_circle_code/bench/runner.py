@@ -2,6 +2,7 @@ import argparse
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import json
 from pathlib import Path
+import shutil
 import sys
 from typing import Callable, Iterable, Optional, TextIO
 
@@ -51,9 +52,9 @@ def run_benchmark(
 
     _emit_progress(progress_stream, f"Plan directory: {plan_dir}")
     _emit_progress(progress_stream, f"Work directory: {resolved_work_root}")
-    _emit_progress(progress_stream, f"Generating {len(instance_rows)} instance(s) with jobs={jobs}")
+    _emit_progress(progress_stream, f"Preparing {len(instance_rows)} instance(s) with jobs={jobs}")
     _run_phase(
-        phase="instance generation",
+        phase="instance preparation",
         rows=instance_rows,
         jobs=jobs,
         worker=_run_instance_generation_job,
@@ -64,6 +65,12 @@ def run_benchmark(
     _ensure_instance_generation_succeeded(
         work_root=resolved_work_root,
         rows=instance_rows,
+    )
+    for line in _instance_preparation_details(work_root=resolved_work_root, rows=instance_rows):
+        _emit_progress(progress_stream, line)
+    _emit_progress(
+        progress_stream,
+        _instance_preparation_summary(work_root=resolved_work_root, rows=instance_rows),
     )
 
     _emit_progress(progress_stream, f"Running {len(trial_rows)} trial(s) with jobs={jobs}")
@@ -86,6 +93,12 @@ def run_benchmark(
     )
     _emit_progress(progress_stream, f"Results: {run_dir / RESULTS_FILENAME}")
     _emit_progress(progress_stream, f"Report: {run_dir / 'report.html'}")
+    if not allow_missing:
+        _cleanup_successful_work_dirs(
+            plan_dir=plan_dir,
+            work_root=resolved_work_root,
+            progress_stream=progress_stream,
+        )
     return run_dir
 
 
@@ -186,6 +199,62 @@ def _ensure_instance_generation_succeeded(
             failures.append(f"{row.index}: {status}{suffix}")
     if failures:
         raise ValueError("instance generation did not complete successfully: " + "; ".join(failures))
+
+
+def _instance_preparation_summary(*, work_root: Path, rows: tuple[InstancePlanRow, ...]) -> str:
+    """Build a user-facing summary for generated vs reused benchmark instances."""
+    generated = 0
+    reused = 0
+    invalid = 0
+    errors = 0
+    for row in rows:
+        result_path = instance_result_path(work_root, row.index)
+        if not result_path.exists():
+            errors += 1
+            continue
+        result = json.loads(result_path.read_text(encoding="utf-8"))
+        status = str(result.get("status"))
+        if status == "skipped" and result.get("generated") is False:
+            reused += 1
+        elif status == "ok" and result.get("generated") is True:
+            generated += 1
+        elif status == "invalid":
+            invalid += 1
+        elif status == "error":
+            errors += 1
+    return (
+        "Instance preparation summary: "
+        f"reused existing={reused}, generated new={generated}, invalid={invalid}, errors={errors}"
+    )
+
+
+def _instance_preparation_details(*, work_root: Path, rows: tuple[InstancePlanRow, ...]) -> tuple[str, ...]:
+    """Build per-instance preparation lines for generated vs reused benchmark instances."""
+    lines: list[str] = []
+    for row in rows:
+        result_path = instance_result_path(work_root, row.index)
+        if not result_path.exists():
+            lines.append(f"instance preparation: missing-result {row.instance_id} -> {row.instance_path}")
+            continue
+        result = json.loads(result_path.read_text(encoding="utf-8"))
+        status = str(result.get("status"))
+        generated = result.get("generated")
+        if status == "skipped" and generated is False:
+            action = "reused"
+        elif status == "ok" and generated is True:
+            action = "generated"
+        else:
+            action = status
+        lines.append(f"instance preparation: {action} {row.instance_id} -> {row.instance_path}")
+    return tuple(lines)
+
+
+def _cleanup_successful_work_dirs(*, plan_dir: Path, work_root: Path, progress_stream: TextIO | None) -> None:
+    """Remove isolated plan/work artifacts after a complete successful benchmark run."""
+    for path in (work_root, plan_dir):
+        if path.exists():
+            shutil.rmtree(path)
+            _emit_progress(progress_stream, f"Cleaned benchmark temporary directory: {path}")
 
 
 def _emit_progress(progress_stream: TextIO | None, message: str) -> None:

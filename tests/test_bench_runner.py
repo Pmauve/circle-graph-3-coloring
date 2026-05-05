@@ -88,16 +88,19 @@ class BenchRunnerTests(unittest.TestCase):
         self.assertEqual(result["solver"], SAT_BASELINE_SOLVER)
         self.assertEqual(result["backend"], "legacy-pysmt-msat")
         self.assertTrue(result["validation_ok"])
-        self.assertTrue(has_instance_plan)
-        self.assertTrue(has_trial_plan)
-        self.assertTrue(has_instance_result)
-        self.assertTrue(has_trial_result)
+        self.assertFalse(has_instance_plan)
+        self.assertFalse(has_trial_plan)
+        self.assertFalse(has_instance_result)
+        self.assertFalse(has_trial_result)
         self.assertTrue(has_summary_by_n)
         self.assertTrue(has_summary_by_bucket)
         self.assertTrue(has_summary_overall)
         self.assertTrue(has_report)
         self.assertIn("Planning benchmark from", progress_output)
-        self.assertIn("Generating 1 instance(s) with jobs=1", progress_output)
+        self.assertIn("Preparing 1 instance(s) with jobs=1", progress_output)
+        self.assertIn("instance preparation: generated rc-k03-n0002-seed1", progress_output)
+        self.assertIn("Instance preparation summary: reused existing=0, generated new=1", progress_output)
+        self.assertIn("Cleaned benchmark temporary directory", progress_output)
         self.assertIn("Running 1 trial(s) with jobs=1", progress_output)
         self.assertIn("Merging trial outputs", progress_output)
         run_solver.assert_called_once()
@@ -127,24 +130,22 @@ class BenchRunnerTests(unittest.TestCase):
                 "three_col_circle_code.bench.run_trial.run_solver",
                 return_value=_fake_solver_result(backend="pysat-cadical", wall_time_s=0.1),
             ):
+                progress = io.StringIO()
                 run_dir = run_benchmark(
                     output_root=tmp_root / "runs",
                     spec_path=spec_path,
                     plan_root=tmp_root / "plans",
                     work_root=tmp_root / "work",
+                    progress_stream=progress,
                 )
-
-            instance_result = json.loads(
-                (tmp_root / "work" / "reuse-pool" / "instances" / "000001" / "result.json").read_text(
-                    encoding="utf-8"
-                )
-            )
+                progress_output = progress.getvalue()
 
         self.assertEqual(run_dir.name, "reuse-pool")
-        self.assertEqual(instance_result["status"], "skipped")
+        self.assertIn("instance preparation: reused rc-k03-n0002-seed1", progress_output)
+        self.assertIn("reused existing=1, generated new=0", progress_output)
         generate_instance_mock.assert_not_called()
 
-    def test_run_benchmark_is_resumable_from_isolated_outputs(self) -> None:
+    def test_run_benchmark_cleans_isolated_outputs_after_success(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_root = Path(tmpdir)
             spec_path = _write_spec(
@@ -178,7 +179,9 @@ class BenchRunnerTests(unittest.TestCase):
 
         self.assertEqual(first_run_dir, second_run_dir)
         self.assertEqual(generate_instance_mock.call_count, 1)
-        self.assertEqual(run_solver_mock.call_count, 1)
+        self.assertEqual(run_solver_mock.call_count, 2)
+        self.assertFalse((tmp_root / "plans" / "resume-run").exists())
+        self.assertFalse((tmp_root / "work" / "resume-run").exists())
 
     def test_run_benchmark_stops_before_trials_when_instance_generation_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -12,6 +12,7 @@ class BaselineSolveResult:
     backend: str
     n_vertices: int
     m_edges: int
+    elapsed_time_source: str
 
 
 def solve_3color_baseline(graph, backend=PYSAT_CADICAL):
@@ -41,4 +42,5 @@ def _solve_legacy_pysmt_msat(graph):
         backend=LEGACY_PYSMT_MSAT,
         n_vertices=len(graph.nodes),
         m_edges=len(graph.edges),
+        elapsed_time_source="mathsat_solve_timer",
     )

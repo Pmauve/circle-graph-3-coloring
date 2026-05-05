@@ -158,13 +158,62 @@ class BenchRunTrialTests(unittest.TestCase):
             save_instance(_build_record(instance_id="rc-n0002-seed1", family="rc", seed=1), instance_path)
             result_path = trial_result_path(work_root, 1)
             result_path.parent.mkdir(parents=True)
-            result_path.write_text('{"status": "ok"}', encoding="utf-8")
+            result_path.write_text(
+                json.dumps(
+                    {
+                        "index": 1,
+                        "status": "ok",
+                        "instance_id": "rc-n0002-seed1",
+                        "instance_path": str(instance_path),
+                        "num_colors": 3,
+                        "solver_target": "sosa-3-col-exact",
+                        "solver": "sosa-3-col-exact",
+                        "backend": None,
+                        "solver_label": "SOSA exact",
+                        "solver_params": {"base_case_n": 8},
+                        "repetitions": 1,
+                        "warmup_repetitions": 0,
+                    }
+                ),
+                encoding="utf-8",
+            )
 
             with patch("three_col_circle_code.bench.run_trial.run_solver") as run_solver:
                 returned = run_trial(plan_dir=plan_dir, index=1)
 
         self.assertEqual(returned, result_path)
         run_solver.assert_not_called()
+
+    def test_run_trial_reruns_stale_existing_result(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            plan_dir, work_root, instance_path = _write_plan(tmp_root)
+            save_instance(_build_record(instance_id="rc-n0002-seed1", family="rc", seed=1), instance_path)
+            result_path = trial_result_path(work_root, 1)
+            result_path.parent.mkdir(parents=True)
+            result_path.write_text(
+                json.dumps(
+                    {
+                        "index": 1,
+                        "status": "ok",
+                        "instance_id": "old-instance",
+                        "instance_path": str(instance_path),
+                        "solver_target": "sosa-3-col-exact",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with patch(
+                "three_col_circle_code.bench.run_trial.run_solver",
+                return_value=_fake_solver_result(),
+            ) as run_solver:
+                run_trial(plan_dir=plan_dir, index=1)
+
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(result["instance_id"], "rc-n0002-seed1")
+        run_solver.assert_called_once()
 
     def test_run_trial_force_reruns_existing_result(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

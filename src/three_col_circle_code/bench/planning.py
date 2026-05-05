@@ -61,6 +61,11 @@ def resolve_existing_instance_path(
         )
         if nested_instance_path.exists():
             return nested_instance_path, f"nested-{id_kind}"
+
+        family_root = Path(instance_pool_root) / request.family
+        for candidate_path in sorted(family_root.glob(f"*/{instance_id}.col")):
+            if candidate_path.exists():
+                return candidate_path, f"nested-any-bucket-{id_kind}"
     return None, None
 
 

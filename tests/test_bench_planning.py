@@ -73,6 +73,27 @@ class BenchPlanningTests(unittest.TestCase):
         self.assertEqual(path, canonical_path)
         self.assertEqual(resolution, "nested-canonical")
 
+    def test_resolve_existing_instance_path_finds_legacy_name_in_any_bucket(self) -> None:
+        with _temporary_run_dir() as instance_root:
+            run_spec = normalize_run_spec(
+                {
+                    "instance_pool_root": str(instance_root),
+                    "instances": [{"family": "rc", "n_values": [400], "seeds": [1]}],
+                    "solvers": [{"target": "sosa-3-col-exact"}],
+                }
+            )
+            legacy_path = instance_root / "rc" / "s" / "rc-n0400-seed1.col"
+            legacy_path.parent.mkdir(parents=True)
+            legacy_path.write_text("", encoding="utf-8")
+
+            path, resolution = resolve_existing_instance_path(
+                instance_pool_root=instance_root,
+                request=run_spec.instance_requests[0],
+            )
+
+        self.assertEqual(path, legacy_path)
+        self.assertEqual(resolution, "nested-any-bucket-legacy")
+
     def test_prepare_run_directory_rejects_same_run_id_with_different_spec(self) -> None:
         with self.assertRaisesRegex(ValueError, "different benchmark spec"):
             with _temporary_run_dir() as output_root:

@@ -55,10 +55,13 @@ def solve_sat_solver(
         backend=result.backend,
         status=SOLVER_STATUS_OK,
         wall_time_s=wall_time_s,
-        core_time_s=wall_time_s,
+        core_time_s=result.elapsed_time,
         is_colorable=result.is_sat,
         n_vertices=result.n_vertices,
         m_edges=result.m_edges,
-        details={"requested_params": requested_params, "core_time_source": "sat_internal"},
+        details={
+            "requested_params": requested_params,
+            "core_time_source": result.elapsed_time_source,
+        },
         error=None,
     )

@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from time import perf_counter
 
 from three_col_circle_code.sat.baseline import PYSAT_CADICAL, PYSAT_KISSAT404
 
@@ -114,16 +113,15 @@ def solve_reduced_list_coloring_cnf(
         allowed_color_masks=allowed_color_masks,
         num_colors=num_colors,
     )
-    return _solve_pysat_cnf(clauses=cnf.clauses, backend=backend)
+    is_sat, _elapsed_time = _solve_pysat_cnf(clauses=cnf.clauses, backend=backend)
+    return is_sat
 
 
 def solve_pysat_cadical(graph):
     from three_col_circle_code.sat.baseline import BaselineSolveResult
 
     cnf = build_reduced_cnf(graph)
-    start = perf_counter()
-    is_sat = _solve_pysat_cnf(clauses=cnf.clauses, backend=PYSAT_CADICAL)
-    elapsed_time = perf_counter() - start
+    is_sat, elapsed_time = _solve_pysat_cnf(clauses=cnf.clauses, backend=PYSAT_CADICAL)
 
     return BaselineSolveResult(
         is_sat=is_sat,
@@ -131,6 +129,7 @@ def solve_pysat_cadical(graph):
         backend=PYSAT_CADICAL,
         n_vertices=len(graph.nodes),
         m_edges=len(graph.edges),
+        elapsed_time_source="pysat_solver_time",
     )
 
 
@@ -138,9 +137,7 @@ def solve_pysat_kissat404(graph):
     from three_col_circle_code.sat.baseline import BaselineSolveResult
 
     cnf = build_reduced_cnf(graph)
-    start = perf_counter()
-    is_sat = _solve_pysat_cnf(clauses=cnf.clauses, backend=PYSAT_KISSAT404)
-    elapsed_time = perf_counter() - start
+    is_sat, elapsed_time = _solve_pysat_cnf(clauses=cnf.clauses, backend=PYSAT_KISSAT404)
 
     return BaselineSolveResult(
         is_sat=is_sat,
@@ -148,12 +145,13 @@ def solve_pysat_kissat404(graph):
         backend=PYSAT_KISSAT404,
         n_vertices=len(graph.nodes),
         m_edges=len(graph.edges),
+        elapsed_time_source="pysat_solver_time",
     )
 
 
-def _solve_pysat_cnf(*, clauses: list[list[int]], backend: str) -> bool:
+def _solve_pysat_cnf(*, clauses: list[list[int]], backend: str) -> tuple[bool, float]:
     if any(not clause for clause in clauses):
-        return False
+        return False, 0.0
 
     if backend == PYSAT_CADICAL:
         try:
@@ -164,8 +162,9 @@ def _solve_pysat_cnf(*, clauses: list[list[int]], backend: str) -> bool:
             ) from exc
 
         try:
-            with Solver(name=PYSAT_CADICAL_SOLVER_NAME, bootstrap_with=clauses) as solver:
-                return solver.solve()
+            with Solver(name=PYSAT_CADICAL_SOLVER_NAME, bootstrap_with=clauses, use_timer=True) as solver:
+                is_sat = solver.solve()
+                return is_sat, _solver_time_s(solver)
         except NoSuchSolverError as exc:
             raise RuntimeError(
                 f"PySAT solver '{PYSAT_CADICAL_SOLVER_NAME}' is unavailable"
@@ -179,10 +178,19 @@ def _solve_pysat_cnf(*, clauses: list[list[int]], backend: str) -> bool:
                 "python-sat with Kissat404 support is required for the PySAT + Kissat 4.0.4 baseline"
             ) from exc
 
-        with Kissat404(bootstrap_with=clauses) as solver:
-            return solver.solve()
+        with Kissat404(bootstrap_with=clauses, use_timer=True) as solver:
+            is_sat = solver.solve()
+            return is_sat, _solver_time_s(solver)
 
     raise ValueError(
         f"unsupported PySAT backend '{backend}', expected one of "
         f"'{PYSAT_CADICAL}', '{PYSAT_KISSAT404}'"
     )
+
+
+def _solver_time_s(solver: object) -> float:
+    """Return the PySAT solver-reported elapsed time for the last solve call."""
+    try:
+        return float(solver.time())
+    except (AttributeError, TypeError, ValueError):
+        return 0.0

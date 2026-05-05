@@ -30,7 +30,10 @@ def run_instance_generation(
     result_path = instance_result_path(resolved_work_root, index)
     if result_path.exists() and not force:
         existing = json.loads(result_path.read_text(encoding="utf-8"))
-        if existing.get("status") in {"ok", "skipped"}:
+        if existing.get("status") in {"ok", "skipped"} and _existing_result_matches_plan(
+            existing,
+            instance_row=instance_row,
+        ):
             return result_path
 
     started_at = _now()
@@ -177,6 +180,15 @@ def _build_result(
         "environment": environment,
         "error": error,
     }
+
+
+def _existing_result_matches_plan(result: dict[str, Any], *, instance_row: Any) -> bool:
+    """Return whether an isolated instance result still belongs to the current plan row."""
+    return (
+        result.get("index") == instance_row.index
+        and result.get("instance_id") == instance_row.instance_id
+        and str(result.get("instance_path")) == str(instance_row.instance_path)
+    )
 
 
 def _write_result(path: Path, result: dict[str, Any]) -> None:

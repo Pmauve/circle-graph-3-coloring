@@ -36,6 +36,7 @@ class SatSolverTests(unittest.TestCase):
             backend=PYSAT_CADICAL,
             n_vertices=2,
             m_edges=1,
+            elapsed_time_source="pysat_solver_time",
         )
 
         with patch(
@@ -53,6 +54,8 @@ class SatSolverTests(unittest.TestCase):
         self.assertEqual(result.status, SOLVER_STATUS_OK)
         self.assertTrue(result.is_colorable)
         self.assertAlmostEqual(result.wall_time_s, 0.4)
+        self.assertEqual(result.core_time_s, 0.25)
+        self.assertEqual(result.details["core_time_source"], "pysat_solver_time")
         self.assertEqual(result.details["requested_params"], {"seed": 1})
         self.assertIsNone(result.error)
 

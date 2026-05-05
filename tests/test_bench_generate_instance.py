@@ -140,13 +140,53 @@ class BenchGenerateInstanceTests(unittest.TestCase):
             plan_dir, work_root = _write_plan(tmp_root, instance_path=instance_path)
             result_path = instance_result_path(work_root, 1)
             result_path.parent.mkdir(parents=True)
-            result_path.write_text('{"status": "ok"}', encoding="utf-8")
+            result_path.write_text(
+                json.dumps(
+                    {
+                        "index": 1,
+                        "status": "ok",
+                        "instance_id": "rc-k03-n0002-seed1",
+                        "instance_path": str(instance_path),
+                    }
+                ),
+                encoding="utf-8",
+            )
 
             with patch("three_col_circle_code.bench.generate_instance.generate_instance") as generate:
                 returned = run_instance_generation(plan_dir=plan_dir, index=1)
 
         self.assertEqual(returned, result_path)
         generate.assert_not_called()
+
+    def test_run_instance_generation_reruns_stale_completed_result(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            instance_path = tmp_root / "instances" / "rc" / "s" / "rc-k03-n0002-seed1.json"
+            plan_dir, work_root = _write_plan(tmp_root, instance_path=instance_path)
+            result_path = instance_result_path(work_root, 1)
+            result_path.parent.mkdir(parents=True)
+            result_path.write_text(
+                json.dumps(
+                    {
+                        "index": 1,
+                        "status": "ok",
+                        "instance_id": "old-instance",
+                        "instance_path": str(instance_path),
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with patch(
+                "three_col_circle_code.bench.generate_instance.generate_instance",
+                return_value=_build_record(instance_id="rc-k03-n0002-seed1", family="rc", seed=1),
+            ) as generate:
+                run_instance_generation(plan_dir=plan_dir, index=1)
+
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(result["instance_id"], "rc-k03-n0002-seed1")
+        generate.assert_called_once()
 
     def test_run_instance_generation_rejects_missing_index(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

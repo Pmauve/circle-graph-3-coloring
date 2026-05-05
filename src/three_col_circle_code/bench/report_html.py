@@ -107,8 +107,11 @@ _TEMPLATE = """
         background: var(--accent);
         color: #ffffff;
       }
-      .metric-core {
-        display: none;
+      .plot-title {
+        margin: 10px 0 4px;
+        color: var(--muted);
+        font-size: 0.95rem;
+        font-weight: 600;
       }
       @media (max-width: 720px) {
         body { padding: 16px; }
@@ -154,12 +157,10 @@ _TEMPLATE = """
         <div class="section-header">
         <h2>Runtime vs Size</h2>
         </div>
-        <div class="metric-toggle" aria-label="Runtime metric">
-          <button type="button" class="active" data-runtime-metric="wall">Wall time</button>
-          <button type="button" data-runtime-metric="core">Core time</button>
-        </div>
-        <div class="plot-wrap metric-wall">{{ runtime_vs_size_wall_html | safe }}</div>
-        <div class="plot-wrap metric-core">{{ runtime_vs_size_core_html | safe }}</div>
+        <h3 class="plot-title">Wall Time</h3>
+        <div class="plot-wrap">{{ runtime_vs_size_wall_html | safe }}</div>
+        <h3 class="plot-title">Core Time</h3>
+        <div class="plot-wrap">{{ runtime_vs_size_core_html | safe }}</div>
       </section>
 
       <section class="section">
@@ -176,8 +177,10 @@ _TEMPLATE = """
               <th>invalid</th>
               <th>Measured</th>
               <th>ok Measurements</th>
-              <th>Mean Runtime</th>
-              <th>Median Runtime</th>
+              <th>Mean Wall</th>
+              <th>Median Wall</th>
+              <th>Mean Core</th>
+              <th>Median Core</th>
             </tr>
           </thead>
           <tbody>
@@ -189,14 +192,10 @@ _TEMPLATE = """
               <td>{{ row.n_invalid }}</td>
               <td>{{ row.repetitions }}</td>
               <td>{{ row.ok_repetitions }}</td>
-              <td>
-                <span class="metric-wall">{{ "%.6f"|format(row.mean_wall_time_s) if row.mean_wall_time_s is not none else "n/a" }}</span>
-                <span class="metric-core">{{ "%.6f"|format(row.mean_core_time_s) if row.mean_core_time_s is not none else "n/a" }}</span>
-              </td>
-              <td>
-                <span class="metric-wall">{{ "%.6f"|format(row.median_wall_time_s) if row.median_wall_time_s is not none else "n/a" }}</span>
-                <span class="metric-core">{{ "%.6f"|format(row.median_core_time_s) if row.median_core_time_s is not none else "n/a" }}</span>
-              </td>
+              <td>{{ "%.6f"|format(row.mean_wall_time_s) if row.mean_wall_time_s is not none else "n/a" }}</td>
+              <td>{{ "%.6f"|format(row.median_wall_time_s) if row.median_wall_time_s is not none else "n/a" }}</td>
+              <td>{{ "%.6f"|format(row.mean_core_time_s) if row.mean_core_time_s is not none else "n/a" }}</td>
+              <td>{{ "%.6f"|format(row.median_core_time_s) if row.median_core_time_s is not none else "n/a" }}</td>
             </tr>
             {% endfor %}
           </tbody>
@@ -240,24 +239,6 @@ _TEMPLATE = """
         {% endif %}
       </section>
     </main>
-    <script>
-      const metricButtons = document.querySelectorAll("[data-runtime-metric]");
-      function setRuntimeMetric(metric) {
-        document.querySelectorAll(".metric-wall").forEach((node) => {
-          node.style.display = metric === "wall" ? "" : "none";
-        });
-        document.querySelectorAll(".metric-core").forEach((node) => {
-          node.style.display = metric === "core" ? "" : "none";
-        });
-        metricButtons.forEach((button) => {
-          button.classList.toggle("active", button.dataset.runtimeMetric === metric);
-        });
-      }
-      metricButtons.forEach((button) => {
-        button.addEventListener("click", () => setRuntimeMetric(button.dataset.runtimeMetric));
-      });
-      setRuntimeMetric("wall");
-    </script>
   </body>
 </html>
 """

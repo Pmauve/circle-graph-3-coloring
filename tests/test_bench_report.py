@@ -226,6 +226,8 @@ class BenchReportHtmlTests(unittest.TestCase):
 
         self.assertIn("Headline Stats", html)
         self.assertIn("Runtime vs Size", html)
+        self.assertIn("Wall Time", html)
+        self.assertIn("Core Time", html)
         self.assertIn("Solver Summary", html)
         self.assertIn("Disagreements", html)
         self.assertIn("Plotly.newPlot", html)
@@ -240,6 +242,7 @@ class BenchReportHtmlTests(unittest.TestCase):
         self.assertIn("solver_params", html)
         self.assertIn("scrollZoom", html)
         self.assertIn("displayModeBar", html)
+        self.assertNotIn("data-runtime-metric", html)
 
     def test_solver_target_color_is_deterministic(self) -> None:
         self.assertEqual(
