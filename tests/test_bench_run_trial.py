@@ -270,6 +270,50 @@ class BenchRunTrialTests(unittest.TestCase):
         self.assertEqual(result["validation_errors"], [])
         validate_instance.assert_not_called()
 
+    def test_run_trial_does_not_load_graph_for_zykovcolor_path_solver(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            plan_dir, _work_root, instance_path = _write_plan(
+                tmp_root,
+                instance_id="rc-k03-n5000-seed1",
+                solver="zykovcolor",
+                solver_target="zykovcolor",
+                solver_label="ZykovColor",
+            )
+            instance_path.parent.mkdir(parents=True, exist_ok=True)
+            instance_path.write_text(
+                "\n".join(
+                    [
+                        "c instance id rc-k03-n5000-seed1",
+                        "c family rc",
+                        "c seed 1",
+                        "c n 5000",
+                        "c m 10",
+                        "c num colors 3",
+                        "c source generated",
+                        "p edge 5000 10",
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            with patch("three_col_circle_code.bench.run_trial.load_instance") as load_instance, patch(
+                "three_col_circle_code.bench.run_trial.run_solver",
+                return_value=_fake_solver_result(),
+            ) as run_solver:
+                result_path = run_trial(plan_dir=plan_dir, index=1)
+
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+
+        load_instance.assert_not_called()
+        run_solver.assert_called_once()
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["solver_target"], "zykovcolor")
+        self.assertEqual(result["n"], 5000)
+        self.assertEqual(result["m"], 10)
+        self.assertEqual(result["average_degree"], 0.004)
+
     def test_cli_prints_result_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_root = Path(tmpdir)
@@ -292,6 +336,9 @@ def _write_plan(
     warmup_repetitions: int = 0,
     instance_id: str = "rc-n0002-seed1",
     family: str = "rc",
+    solver: str = "sosa-3-col-exact",
+    solver_target: str = "sosa-3-col-exact",
+    solver_label: str = "SOSA exact",
 ) -> tuple[Path, Path, Path]:
     plan_dir = tmp_root / "plans" / "smoke"
     work_root = tmp_root / "work" / "smoke"
@@ -314,11 +361,11 @@ def _write_plan(
             family=family,
             n=2,
             seed=1,
-            solver="sosa-3-col-exact",
+            solver=solver,
             backend=None,
-            solver_target="sosa-3-col-exact",
+            solver_target=solver_target,
             solver_params={"base_case_n": 8},
-            solver_label="SOSA exact",
+            solver_label=solver_label,
             repetitions=repetitions,
             warmup_repetitions=warmup_repetitions,
         ),
