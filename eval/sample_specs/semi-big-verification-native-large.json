@@ -5,23 +5,45 @@
   "instances": [
     {
       "family": "rc_fast",
-      "n_values": [10000, 16000],
-      "seeds": [42]
+      "n_values": [
+        10000,
+        16000
+      ],
+      "seeds": [
+        42
+      ]
     },
     {
       "family": "rcy_fast",
-      "n_values": [5000, 10000],
-      "seeds": [42]
+      "n_values": [
+        5000,
+        10000
+      ],
+      "seeds": [
+        42
+      ]
     },
     {
       "family": "rccy_full_sweep_weighted_active",
-      "n_values": [4000, 10000, 12000],
-      "seeds": [42]
+      "n_values": [
+        4000,
+        10000,
+        12000
+      ],
+      "seeds": [
+        42
+      ]
     },
     {
       "family": "rccy_tuned",
-      "n_values": [10000, 100000, 170000],
-      "seeds": [42]
+      "n_values": [
+        10000,
+        100000,
+        170000
+      ],
+      "seeds": [
+        42
+      ]
     }
   ],
   "solvers": [
@@ -47,7 +69,8 @@
       "params": {
         "mode": "single-k",
         "decision_num_colors": 3,
-        "timeout_s": 3600
+        "timeout_s": 3600,
+        "configuration": "assignment"
       }
     }
   ]

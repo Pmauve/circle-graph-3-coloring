@@ -46,24 +46,56 @@ class ZykovColorSolverTests(unittest.TestCase):
     def test_parse_total_stats_time(self) -> None:
         self.assertEqual(_parse_core_time("c Stats: Time ┌ Total: 0s 10ms\n"), 0.01)
 
+    def test_parse_result_time_preferred_over_total_stats_time(self) -> None:
+        self.assertEqual(
+            _parse_core_time("Result: Unsatisfiable for 3 colors at 9s 436ms\nc Stats: Time ┌ Total: 0s 136ms\n"),
+            9.436,
+        )
+
     def test_solve_zykovcolor_runs_external_executable(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             executable = _write_fake_solver(
                 Path(tmpdir),
-                stdout="IncSatGC computed chromatic number of 3\\n",
+                stdout=(
+                    "c Options : Encoding                = Assignment Encoding\n"
+                    "c Options : Strategy                = Single K\n"
+                    "IncSatGC computed SAT for k = 3\n"
+                ),
             )
             result = solve_zykovcolor(
                 _sample_record(),
                 params={"executable": str(executable), "mode": "single-k", "decision_num_colors": 3},
             )
 
-        self.assertEqual(result.status, SOLVER_STATUS_OK)
+        self.assertEqual(result.status, SOLVER_STATUS_OK, result.error)
         self.assertTrue(result.is_colorable)
-        self.assertEqual(result.details["chromatic_number"], 3)
+        self.assertEqual(result.details["zykovcolor_mode"], "single_k")
+        self.assertEqual(result.details["effective_strategy"], "Single K")
+        self.assertEqual(result.details["effective_encoding"], "Assignment Encoding")
         self.assertEqual(result.details["returncode"], 0)
+        self.assertIn("--encoding", result.details["command"])
         self.assertIn("--strategy", result.details["command"])
         self.assertIn("2", result.details["command"])
         self.assertIn("--num-colors", result.details["command"])
+        self.assertNotIn("--zykov-color", result.details["command"])
+
+    def test_solve_zykovcolor_rejects_overridden_single_k_strategy(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            executable = _write_fake_solver(
+                Path(tmpdir),
+                stdout=(
+                    "c Options : Encoding                = Zykov Encoding Propagator\n"
+                    "c Options : Strategy                = Bottom-Up\n"
+                    "IncSatGC computed chromatic number of 4\n"
+                ),
+            )
+            result = solve_zykovcolor(
+                _sample_record(),
+                params={"executable": str(executable), "mode": "single-k", "decision_num_colors": 3},
+            )
+
+        self.assertEqual(result.status, SOLVER_STATUS_ERROR)
+        self.assertIn("effective strategy", str(result.error))
 
     def test_solve_zykovcolor_reports_parse_errors(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

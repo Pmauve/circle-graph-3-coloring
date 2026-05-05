@@ -20,14 +20,17 @@ from three_col_circle_code.solvers.common import (
 
 ZYKOVCOLOR_SOLVER = "zykovcolor"
 DEFAULT_DECISION_NUM_COLORS = 3
-DEFAULT_CONFIGURATION = "zykov-color"
+DEFAULT_CONFIGURATION = "assignment"
 DEFAULT_TIMEOUT_S = 3600.0
 ZYKOVCOLOR_BIN_ENV = "ZYKOVCOLOR_BIN"
 
 _CHROMATIC_RE = re.compile(r"IncSatGC computed chromatic number of\s+(\d+)")
 _SINGLE_K_RE = re.compile(r"IncSatGC computed\s+(SAT|UNSAT)\s+for k\s*=\s*(\d+)")
 _STATS_TOTAL_TIME_RE = re.compile(r"Stats:\s+Time\s+.*?Total:\s*(\d+)s\s+(\d+)ms")
+_RESULT_TIME_RE = re.compile(r"Result:.*?\bat\s+(\d+)s\s+(\d+)ms")
 _DECIMAL_TOTAL_TIME_RE = re.compile(r"total time\D+([0-9]+(?:\.[0-9]+)?)", re.IGNORECASE)
+_EFFECTIVE_ENCODING_RE = re.compile(r"Options\s+:\s+Encoding\s+=\s+(.+)")
+_EFFECTIVE_STRATEGY_RE = re.compile(r"Options\s+:\s+Strategy\s+=\s+(.+)")
 
 
 def solve_zykovcolor(
@@ -111,9 +114,16 @@ def _run_zykovcolor_on_path(
     decision_num_colors = int(requested_params.get("decision_num_colors", DEFAULT_DECISION_NUM_COLORS))
     timeout_s = float(requested_params.get("timeout_s", DEFAULT_TIMEOUT_S))
     configuration = str(requested_params.get("configuration", DEFAULT_CONFIGURATION))
-    mode_args = _mode_args(requested_params.get("mode"), decision_num_colors=decision_num_colors)
+    mode = _normalize_mode(requested_params.get("mode"))
+    solver_args = _solver_args(requested_params.get("solver", "cadical"))
+    mode_args = _mode_args(
+        mode,
+        configuration=configuration,
+        decision_num_colors=decision_num_colors,
+        solver_args=solver_args,
+    )
     extra_args = _normalize_extra_args(requested_params.get("extra_args", ()))
-    command = [executable, str(dimacs_path), f"--{configuration}", *mode_args, *extra_args]
+    command = [executable, str(dimacs_path), *mode_args, *extra_args]
 
     try:
         started_at = perf_counter()
@@ -145,6 +155,7 @@ def _run_zykovcolor_on_path(
         )
 
     core_time_s = _parse_core_time(completed.stdout)
+    effective_options = _parse_effective_options(completed.stdout)
     details: dict[str, Any] = {
         "requested_params": requested_params,
         "command": command,
@@ -152,13 +163,29 @@ def _run_zykovcolor_on_path(
         "stdout_tail": _tail(completed.stdout),
         "stderr_tail": _tail(completed.stderr),
         "decision_num_colors": decision_num_colors,
+        "configuration": configuration,
+        "requested_mode": mode,
+        "effective_encoding": effective_options.get("encoding"),
+        "effective_strategy": effective_options.get("strategy"),
         "core_time_source": "zykovcolor_reported" if core_time_s is not None else "missing",
     }
+    validation_error = _effective_option_error(
+        mode=mode,
+        effective_options=effective_options,
+    )
     if completed.returncode != 0:
         return _error_result(
             record=record,
             requested_params=requested_params,
             error=f"ZykovColor exited with code {completed.returncode}",
+            wall_time_s=wall_time_s,
+            details=details,
+        )
+    if validation_error is not None:
+        return _error_result(
+            record=record,
+            requested_params=requested_params,
+            error=validation_error,
             wall_time_s=wall_time_s,
             details=details,
         )
@@ -235,11 +262,66 @@ def _normalize_extra_args(value: Any) -> list[str]:
     return [str(item) for item in value]
 
 
-def _mode_args(value: Any, *, decision_num_colors: int) -> list[str]:
-    if value is None or value == "chromatic-number":
-        return []
+def _normalize_mode(value: Any) -> str:
+    if value is None:
+        return "chromatic-number"
+    normalized = str(value)
+    if normalized in {"chromatic-number", "chromatic_number"}:
+        return "chromatic-number"
+    if normalized in {"single-k", "single_k"}:
+        return "single-k"
+    raise ValueError("ZykovColor params.mode must be 'chromatic-number' or 'single-k'")
+
+
+def _solver_args(value: Any) -> list[str]:
+    normalized = str(value).lower()
+    if normalized in {"cadical", "cadical195", "1"}:
+        return ["--solver", "1"]
+    if normalized in {"glucose", "0"}:
+        return ["--solver", "0"]
+    raise ValueError("ZykovColor params.solver must be 'cadical' or 'glucose'")
+
+
+def _mode_args(
+    value: str,
+    *,
+    configuration: str,
+    decision_num_colors: int,
+    solver_args: list[str],
+) -> list[str]:
+    normalized_configuration = configuration.replace("_", "-")
+    if value == "chromatic-number":
+        if normalized_configuration in {"zykov-color", "assignment", "partial-order"}:
+            return [f"--{normalized_configuration}"]
+        raise ValueError(
+            "ZykovColor params.configuration must be 'zykov-color', 'assignment', or 'partial-order'"
+        )
     if value in {"single-k", "single_k"}:
-        return ["--strategy", "2", "--num-colors", str(decision_num_colors)]
+        common = ["--strategy", "2", "--num-colors", str(decision_num_colors), *solver_args]
+        if normalized_configuration == "assignment":
+            return ["--encoding", "0", *common, "--assignment-amo"]
+        if normalized_configuration == "partial-order":
+            return [
+                "--encoding",
+                "4",
+                *common,
+                "--reduce-graph",
+                "--use-clique",
+                "--mycielski-bound",
+            ]
+        if normalized_configuration == "zykov-color":
+            return [
+                "--encoding",
+                "5",
+                *common,
+                "--reduce-graph",
+                "--use-clique",
+                "--mycielski-bound",
+                "--dominated-decisions",
+            ]
+        raise ValueError(
+            "ZykovColor params.configuration must be 'assignment', 'partial-order', or 'zykov-color'"
+        )
     raise ValueError("ZykovColor params.mode must be 'chromatic-number' or 'single-k'")
 
 
@@ -275,6 +357,10 @@ def _tail(value: Optional[str], *, max_chars: int = 4000) -> str:
 
 
 def _parse_core_time(stdout: str) -> Optional[float]:
+    result_matches = _RESULT_TIME_RE.findall(stdout)
+    if result_matches:
+        seconds, milliseconds = result_matches[-1]
+        return int(seconds) + int(milliseconds) / 1000.0
     stats_match = _STATS_TOTAL_TIME_RE.search(stdout)
     if stats_match is not None:
         seconds = int(stats_match.group(1))
@@ -284,3 +370,23 @@ def _parse_core_time(stdout: str) -> Optional[float]:
     if decimal_match is None:
         return None
     return float(decimal_match.group(1))
+
+
+def _parse_effective_options(stdout: str) -> dict[str, str]:
+    options: dict[str, str] = {}
+    encoding_match = _EFFECTIVE_ENCODING_RE.search(stdout)
+    if encoding_match is not None:
+        options["encoding"] = encoding_match.group(1).strip()
+    strategy_match = _EFFECTIVE_STRATEGY_RE.search(stdout)
+    if strategy_match is not None:
+        options["strategy"] = strategy_match.group(1).strip()
+    return options
+
+
+def _effective_option_error(*, mode: str, effective_options: dict[str, str]) -> Optional[str]:
+    if mode == "single-k" and effective_options.get("strategy") not in {None, "Single K"}:
+        return (
+            "ZykovColor effective strategy does not match requested single-k mode "
+            f"(got {effective_options.get('strategy')!r})"
+        )
+    return None
