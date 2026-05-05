@@ -18,7 +18,7 @@ from three_col_circle_code.instances.model import (
 from three_col_circle_code.instances.validate import validate_instance
 
 
-DEFAULT_ORDER_WRAP = 64
+DEFAULT_ORDER_WRAP = 32
 _CIRCLE_PREFIX = ("ircle", "representation")
 _METADATA_NONE = "none"
 
@@ -49,7 +49,7 @@ def write_dimacs_circle(
 
     output_path = Path(path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    with output_path.open("w", encoding="utf-8") as outfile:
+    with output_path.open("w", encoding="utf-8", newline="\n") as outfile:
         _write_metadata_comments(outfile, record.metadata)
         outfile.write("c ircle representation START\n")
         for index in range(0, len(order), wrap):

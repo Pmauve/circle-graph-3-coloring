@@ -47,6 +47,20 @@ class DimacsCircleTests(unittest.TestCase):
         self.assertIn("e 1 2\n", text)
         self.assertIn("e 3 4\n", text)
 
+    def test_write_dimacs_circle_defaults_to_clisat_friendly_bytes(self) -> None:
+        record = _noncrossing_record(40)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "sample.col"
+            write_dimacs_circle(record, path)
+            data = path.read_bytes()
+            text = data.decode("utf-8")
+
+        self.assertNotIn(b"\r\n", data)
+        circle_lines = _circle_order_lines(text)
+        self.assertGreater(len(circle_lines), 2)
+        self.assertTrue(all(len(line.split()) <= 32 for line in circle_lines))
+
     def test_read_dimacs_circle_reconstructs_graph_from_wrapped_order(self) -> None:
         text = "\n".join(
             [
@@ -229,6 +243,31 @@ def _sample_record() -> InstanceRecord:
         created_at="2026-05-04T00:00:00Z",
     )
     return InstanceRecord(metadata=metadata, graph=graph)
+
+
+def _noncrossing_record(n: int) -> InstanceRecord:
+    graph = nx.Graph()
+    for node in range(n):
+        graph.add_node(node, label=node, l=2 * node, r=2 * node + 1)
+    metadata = InstanceMetadata(
+        instance_id=f"noncrossing-{n}",
+        family="noncrossing",
+        seed=1,
+        generator="test",
+        n=n,
+        m=0,
+        bucket="s",
+        source="generated",
+        created_at="2026-05-04T00:00:00Z",
+    )
+    return InstanceRecord(metadata=metadata, graph=graph)
+
+
+def _circle_order_lines(text: str) -> list[str]:
+    lines = text.splitlines()
+    start = lines.index("c ircle representation START") + 1
+    end = lines.index("c ircle representation END")
+    return [line.removeprefix("c ") for line in lines[start:end]]
 
 
 if __name__ == "__main__":
