@@ -1,0 +1,54 @@
+{
+  "instance_pool_root": "eval/instances",
+  "repetitions": 3,
+  "warmup_repetitions": 1,
+  "instances": [
+    {
+      "family": "rc_fast",
+      "n_values": [10000, 16000],
+      "seeds": [42]
+    },
+    {
+      "family": "rcy_fast",
+      "n_values": [5000, 10000],
+      "seeds": [42]
+    },
+    {
+      "family": "rccy_full_sweep_weighted_active",
+      "n_values": [4000, 10000, 12000],
+      "seeds": [42]
+    },
+    {
+      "family": "rccy_tuned",
+      "n_values": [10000, 100000, 170000],
+      "seeds": [42]
+    }
+  ],
+  "solvers": [
+    {
+      "target": "sosa-3-col-native",
+      "label": "SOSA native bt base 8",
+      "params": {
+        "base_case_n": 8,
+        "timeout_s": 3600
+      }
+    },
+    {
+      "target": "sosa-3-col-native",
+      "label": "SOSA native bt base 128",
+      "params": {
+        "base_case_n": 128,
+        "timeout_s": 3600
+      }
+    },
+    {
+      "target": "zykovcolor",
+      "label": "ZykovColor k=3",
+      "params": {
+        "mode": "single-k",
+        "decision_num_colors": 3,
+        "timeout_s": 3600
+      }
+    }
+  ]
+}

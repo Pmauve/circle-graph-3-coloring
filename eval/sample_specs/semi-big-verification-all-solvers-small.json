@@ -1,0 +1,89 @@
+{
+  "instance_pool_root": "eval/instances",
+  "repetitions": 3,
+  "warmup_repetitions": 1,
+  "instances": [
+    {
+      "family": "rc_fast",
+      "n_values": [200, 1000],
+      "seeds": [42]
+    },
+    {
+      "family": "rcy_fast",
+      "n_values": [200, 1000],
+      "seeds": [42]
+    },
+    {
+      "family": "rccy_full_sweep_weighted_active",
+      "n_values": [200, 1000],
+      "seeds": [42]
+    },
+    {
+      "family": "rccy_tuned",
+      "n_values": [200, 1000],
+      "seeds": [42]
+    }
+  ],
+  "solvers": [
+    {
+      "target": "sat-baseline:legacy-pysmt-msat",
+      "label": "SAT MathSAT",
+      "params": {}
+    },
+    {
+      "target": "sat-baseline:pysat-cadical",
+      "label": "SAT CaDiCaL",
+      "params": {}
+    },
+    {
+      "target": "sat-baseline:pysat-kissat404",
+      "label": "SAT Kissat 4.0.4",
+      "params": {}
+    },
+    {
+      "target": "sosa-3-col-exact",
+      "label": "SOSA Python bt base 8",
+      "params": {
+        "base_case_n": 8,
+        "base_case_algorithm": "backtracking",
+        "num_colors": 3,
+        "produce_witness": false
+      }
+    },
+    {
+      "target": "sosa-3-col-exact",
+      "label": "SOSA Python bt base 128",
+      "params": {
+        "base_case_n": 128,
+        "base_case_algorithm": "backtracking",
+        "num_colors": 3,
+        "produce_witness": false
+      }
+    },
+    {
+      "target": "sosa-3-col-native",
+      "label": "SOSA native bt base 8",
+      "params": {
+        "base_case_n": 8,
+        "timeout_s": 3600
+      }
+    },
+    {
+      "target": "sosa-3-col-native",
+      "label": "SOSA native bt base 128",
+      "params": {
+        "base_case_n": 128,
+        "timeout_s": 3600
+      }
+    },
+    {
+      "target": "zykovcolor",
+      "label": "ZykovColor k=3",
+      "params": {
+        "mode": "single-k",
+        "decision_num_colors": 3,
+        "timeout_s": 3600
+      }
+    }
+  ]
+}
