@@ -1,0 +1,41 @@
+{
+  "instance_pool_root": "eval/instances",
+  "repetitions": 1,
+  "warmup_repetitions": 0,
+  "instances": [
+    {
+      "family": "rc",
+      "n_values": [500],
+      "seeds": [2]
+    }
+  ],
+  "solvers": [
+    {
+      "target": "sat-baseline:pysat-cadical",
+      "label": "SAT CaDiCaL smoke",
+      "params": {}
+    },
+    {
+      "target": "sosa-3-col-exact",
+      "label": "SOSA exact smoke",
+      "params": {
+        "base_case_n": 8,
+        "base_case_algorithm": "backtracking",
+        "num_colors": 3,
+        "produce_witness": false
+      }
+    },
+    {
+      "target": "zykovcolor",
+      "label": "ZykovColor single-k smoke",
+      "params": {
+        "configuration": "custom",
+        "mode": "single-k",
+        "decision_num_colors": 3,
+        "solver": "cadical",
+        "extra_args": ["-e", "5"],
+        "timeout_s": 3600
+      }
+    }
+  ]
+}

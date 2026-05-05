@@ -97,6 +97,36 @@ class ZykovColorSolverTests(unittest.TestCase):
         self.assertEqual(result.status, SOLVER_STATUS_ERROR)
         self.assertIn("effective strategy", str(result.error))
 
+    def test_solve_zykovcolor_custom_single_k_uses_explicit_args(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            executable = _write_fake_solver(
+                Path(tmpdir),
+                stdout=(
+                    "c Options : Encoding                = Zykov Encoding Propagator\n"
+                    "c Options : Strategy                = Single K\n"
+                    "IncSatGC computed UNSAT for k = 3\n"
+                ),
+            )
+            result = solve_zykovcolor(
+                _sample_record(),
+                params={
+                    "executable": str(executable),
+                    "configuration": "custom",
+                    "mode": "single-k",
+                    "decision_num_colors": 3,
+                    "solver": "cadical",
+                    "extra_args": ["-e", "5"],
+                },
+            )
+
+        command = result.details["command"]
+        self.assertEqual(result.status, SOLVER_STATUS_OK, result.error)
+        self.assertFalse(result.is_colorable)
+        self.assertNotIn("--zykov-color", command)
+        self.assertNotIn("--assignment", command)
+        self.assertNotIn("--custom", command)
+        self.assertEqual(command[-8:], ["--strategy", "2", "--num-colors", "3", "--solver", "1", "-e", "5"])
+
     def test_solve_zykovcolor_reports_parse_errors(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             executable = _write_fake_solver(Path(tmpdir), stdout="no result here\\n")

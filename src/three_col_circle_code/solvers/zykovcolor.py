@@ -291,10 +291,12 @@ def _mode_args(
 ) -> list[str]:
     normalized_configuration = configuration.replace("_", "-")
     if value == "chromatic-number":
+        if normalized_configuration == "custom":
+            return solver_args
         if normalized_configuration in {"zykov-color", "assignment", "partial-order"}:
             return [f"--{normalized_configuration}"]
         raise ValueError(
-            "ZykovColor params.configuration must be 'zykov-color', 'assignment', or 'partial-order'"
+            "ZykovColor params.configuration must be 'zykov-color', 'assignment', 'partial-order', or 'custom'"
         )
     if value in {"single-k", "single_k"}:
         common = ["--strategy", "2", "--num-colors", str(decision_num_colors), *solver_args]
@@ -319,8 +321,10 @@ def _mode_args(
                 "--mycielski-bound",
                 "--dominated-decisions",
             ]
+        if normalized_configuration == "custom":
+            return common
         raise ValueError(
-            "ZykovColor params.configuration must be 'assignment', 'partial-order', or 'zykov-color'"
+            "ZykovColor params.configuration must be 'assignment', 'partial-order', 'zykov-color', or 'custom'"
         )
     raise ValueError("ZykovColor params.mode must be 'chromatic-number' or 'single-k'")
 
