@@ -1,0 +1,7 @@
+[package]
+name = "sat_native"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+circle_core = { path = "../circle_core" }

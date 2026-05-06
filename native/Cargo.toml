@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "circle_core",
+    "sat_native",
     "sosa_native",
 ]
 resolver = "2"

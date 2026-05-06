@@ -1,0 +1,165 @@
+use std::path::Path;
+
+use circle_core::error::SosaError;
+
+use crate::encode::encode_dimacs_edge_file;
+use crate::external::solve_with_stdin;
+use crate::{SatConfig, SatStatus, SatSummary};
+
+pub fn solve_dimacs_edge_file(path: &Path, config: SatConfig) -> Result<SatSummary, SosaError> {
+    if config.backend != "dimacs-pipe" {
+        return Err(SosaError::Input(format!(
+            "unsupported SAT backend {:?}, expected \"dimacs-pipe\"",
+            config.backend
+        )));
+    }
+
+    let encoded = encode_dimacs_edge_file(path)?;
+    let output = solve_with_stdin(&config.solver_bin, &encoded.dimacs, config.timeout_s)?;
+    Ok(SatSummary {
+        status: output.status,
+        parse_encode_time_s: encoded.encode_time_s,
+        solve_time_s: output.solve_time_s,
+        core_time_s: encoded.encode_time_s + output.solve_time_s,
+        error: None,
+    })
+}
+
+pub fn status_to_output(status: SatStatus) -> &'static str {
+    match status {
+        SatStatus::Colorable => "COLORABLE",
+        SatStatus::NotColorable => "NOT_COLORABLE",
+        SatStatus::Unknown => "UNKNOWN",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use super::*;
+
+    #[test]
+    fn maps_status_to_native_output_tokens() {
+        assert_eq!(status_to_output(SatStatus::Colorable), "COLORABLE");
+        assert_eq!(status_to_output(SatStatus::NotColorable), "NOT_COLORABLE");
+        assert_eq!(status_to_output(SatStatus::Unknown), "UNKNOWN");
+    }
+
+    #[test]
+    fn solves_colorable_instance_with_fake_pipe_solver() {
+        let instance = write_temp_file(
+            "colorable",
+            "\
+p edge 2 1
+e 1 2
+",
+        );
+        let solver = write_fake_solver("sat", "s SATISFIABLE");
+        let summary = solve_dimacs_edge_file(
+            &instance,
+            SatConfig {
+                backend: "dimacs-pipe".to_string(),
+                solver_bin: solver.to_string_lossy().to_string(),
+                timeout_s: Some(5),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(summary.status, SatStatus::Colorable);
+        assert!(summary.core_time_s >= summary.solve_time_s);
+        let _ = fs::remove_file(instance);
+        let _ = fs::remove_file(solver);
+    }
+
+    #[test]
+    fn solves_uncolorable_instance_with_fake_pipe_solver() {
+        let instance = write_temp_file(
+            "uncolorable",
+            "\
+p edge 4 6
+e 1 2
+e 1 3
+e 1 4
+e 2 3
+e 2 4
+e 3 4
+",
+        );
+        let solver = write_fake_solver("unsat", "s UNSATISFIABLE");
+        let summary = solve_dimacs_edge_file(
+            &instance,
+            SatConfig {
+                backend: "dimacs-pipe".to_string(),
+                solver_bin: solver.to_string_lossy().to_string(),
+                timeout_s: Some(5),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(summary.status, SatStatus::NotColorable);
+        let _ = fs::remove_file(instance);
+        let _ = fs::remove_file(solver);
+    }
+
+    #[test]
+    fn rejects_unknown_backend() {
+        let instance = write_temp_file("unknown-backend", "p edge 1 0\n");
+        let error = solve_dimacs_edge_file(
+            &instance,
+            SatConfig {
+                backend: "other".to_string(),
+                solver_bin: "unused".to_string(),
+                timeout_s: None,
+            },
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("unsupported SAT backend"));
+        let _ = fs::remove_file(instance);
+    }
+
+    fn write_temp_file(label: &str, content: &str) -> PathBuf {
+        let mut path = std::env::temp_dir();
+        path.push(format!("sat-native-{label}-{}.col", unique_suffix()));
+        fs::write(&path, content).unwrap();
+        path
+    }
+
+    fn write_fake_solver(label: &str, output_line: &str) -> PathBuf {
+        let mut path = std::env::temp_dir();
+        #[cfg(windows)]
+        {
+            path.push(format!("sat-native-fake-{label}-{}.cmd", unique_suffix()));
+            fs::write(
+                &path,
+                format!("@echo off\r\nmore > nul\r\necho {output_line}\r\n"),
+            )
+            .unwrap();
+        }
+        #[cfg(not(windows))]
+        {
+            use std::os::unix::fs::PermissionsExt;
+
+            path.push(format!("sat-native-fake-{label}-{}", unique_suffix()));
+            fs::write(
+                &path,
+                format!("#!/bin/sh\ncat >/dev/null\nprintf '%s\\n' '{output_line}'\n"),
+            )
+            .unwrap();
+            let mut permissions = fs::metadata(&path).unwrap().permissions();
+            permissions.set_mode(0o755);
+            fs::set_permissions(&path, permissions).unwrap();
+        }
+        path
+    }
+
+    fn unique_suffix() -> u128 {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    }
+}
