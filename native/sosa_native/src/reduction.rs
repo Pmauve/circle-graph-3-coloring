@@ -1,9 +1,9 @@
-use crate::bitset::BitSet;
-use crate::colors::{singleton_color, ColorMask};
-use crate::error::SosaError;
-use crate::instance::CircleInstance;
-use crate::partition::CirclePartition;
 use crate::stats::Stats;
+use circle_core::bitset::BitSet;
+use circle_core::colors::{singleton_color, ColorMask};
+use circle_core::error::SosaError;
+use circle_core::instance::CircleInstance;
+use circle_core::partition::CirclePartition;
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum ReductionOutcome {
@@ -80,7 +80,7 @@ fn run_rr_queue(instance: &CircleInstance, state: &mut ReductionState, stats: &m
         let Some(color) = singleton_color(state.allowed[vertex as usize]) else {
             continue;
         };
-        let color_bit = crate::colors::color_bit(color);
+        let color_bit = circle_core::colors::color_bit(color);
         state.active_vertices.clear(vertex as usize);
         state.deleted_count += 1;
         stats.rr_steps += 1;
@@ -130,9 +130,9 @@ impl ReductionState {
 
 #[cfg(test)]
 mod tests {
-    use crate::colors::{ALL_COLORS, BLUE, GREEN, RED};
-    use crate::dimacs::parse_dimacs_circle;
-    use crate::instance::CircleInstance;
+    use circle_core::colors::{ALL_COLORS, BLUE, GREEN, RED};
+    use circle_core::dimacs_circle::parse_dimacs_circle;
+    use circle_core::instance::CircleInstance;
 
     use super::*;
 

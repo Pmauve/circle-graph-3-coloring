@@ -1,6 +1,6 @@
-use crate::colors::{color_bit, color_count, iter_colors};
-use crate::instance::CircleInstance;
 use crate::stats::Stats;
+use circle_core::colors::{color_bit, color_count, iter_colors};
+use circle_core::instance::CircleInstance;
 
 pub fn solve_base_case(instance: &CircleInstance, stats: &mut Stats) -> bool {
     stats.base_case_calls += 1;
@@ -71,8 +71,8 @@ fn saturation_degree(instance: &CircleInstance, assigned: &[u8], vertex: usize) 
 
 #[cfg(test)]
 mod tests {
-    use crate::colors::{BLUE, GREEN, RED};
-    use crate::dimacs::parse_dimacs_circle;
+    use circle_core::colors::{BLUE, GREEN, RED};
+    use circle_core::dimacs_circle::parse_dimacs_circle;
 
     use super::*;
 

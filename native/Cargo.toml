@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "circle_core",
+    "sosa_native",
+]
+resolver = "2"

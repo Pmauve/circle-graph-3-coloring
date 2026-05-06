@@ -1,7 +1,7 @@
-use crate::bitset::BitSet;
-use crate::error::SosaError;
-use crate::instance::CircleInstance;
-use crate::partition::{ArcName, CirclePartition};
+use circle_core::bitset::BitSet;
+use circle_core::error::SosaError;
+use circle_core::instance::CircleInstance;
+use circle_core::partition::{ArcName, CirclePartition};
 
 pub fn count_endpoints_in_arc(
     instance: &CircleInstance,
@@ -90,8 +90,8 @@ pub fn advance_boundary_inside_arc(
 
 #[cfg(test)]
 mod tests {
-    use crate::dimacs::parse_dimacs_circle;
-    use crate::partition::ArcName::{B, L, R, T};
+    use circle_core::dimacs_circle::parse_dimacs_circle;
+    use circle_core::partition::ArcName::{B, L, R, T};
 
     use super::*;
 

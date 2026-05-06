@@ -1,15 +1,15 @@
 use std::collections::HashSet;
 
-use crate::bitset::BitSet;
-use crate::colors::{ColorMask, BLUE, GREEN, RED};
-use crate::error::SosaError;
-use crate::instance::CircleInstance;
-use crate::partition::CirclePartition;
 use crate::reduction::{
     reduce_exhaustively, reduce_exhaustively_with_partition, PartitionedReductionOutcome,
     ReductionOutcome,
 };
 use crate::stats::Stats;
+use circle_core::bitset::BitSet;
+use circle_core::colors::{ColorMask, BLUE, GREEN, RED};
+use circle_core::error::SosaError;
+use circle_core::instance::CircleInstance;
+use circle_core::partition::CirclePartition;
 
 const COLOR_BRANCH_ORDER: [ColorMask; 3] = [RED, GREEN, BLUE];
 
@@ -231,7 +231,7 @@ fn contains_internal_edge(instance: &CircleInstance, vertices: &BitSet) -> bool 
 
 #[cfg(test)]
 mod tests {
-    use crate::dimacs::parse_dimacs_circle;
+    use circle_core::dimacs_circle::parse_dimacs_circle;
 
     use super::*;
 

@@ -1,13 +1,13 @@
 use std::collections::HashSet;
 
 use crate::arc_ops::{advance_boundary_inside_arc, chords_between_arcs, count_endpoints_in_arc};
-use crate::bitset::BitSet;
-use crate::error::SosaError;
-use crate::instance::CircleInstance;
 use crate::lemma_36::{visit_lemma_36_family_with_partition, EliminatedSet};
 use crate::lemma_37::{visit_lemma_37_family, SemiSeparatedInstance};
-use crate::partition::{ArcName, CirclePartition};
 use crate::stats::Stats;
+use circle_core::bitset::BitSet;
+use circle_core::error::SosaError;
+use circle_core::instance::CircleInstance;
+use circle_core::partition::{ArcName, CirclePartition};
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct FullySeparatedInstance {
@@ -312,7 +312,7 @@ fn partition_after_split_branch(
 
 #[cfg(test)]
 mod tests {
-    use crate::dimacs::parse_dimacs_circle;
+    use circle_core::dimacs_circle::parse_dimacs_circle;
 
     use super::*;
 

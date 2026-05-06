@@ -3,14 +3,14 @@ use std::time::Instant;
 
 use crate::arc_ops::restrict_instance_to_arc;
 use crate::base_case::solve_base_case;
-use crate::dimacs::read_dimacs_circle;
-use crate::error::SosaError;
-use crate::instance::CircleInstance;
 use crate::lemma_38::{visit_lemma_33_family, FullySeparatedInstance};
-use crate::partition::ArcName;
 use crate::reduction::{reduce_exhaustively, ReductionOutcome};
 use crate::stats::Stats;
 use crate::{SolveConfig, SolveStatus, SolveSummary};
+use circle_core::dimacs_circle::read_dimacs_circle;
+use circle_core::error::SosaError;
+use circle_core::instance::CircleInstance;
+use circle_core::partition::ArcName;
 
 pub fn solve_dimacs_circle_file(
     path: &Path,

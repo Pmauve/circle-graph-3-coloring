@@ -1,7 +1,7 @@
 use std::env;
 use std::path::PathBuf;
 
-use sosa_native::error::SosaError;
+use circle_core::error::SosaError;
 use sosa_native::{solve_dimacs_circle_file, SolveConfig, SolveStatus, SolveSummary};
 
 fn main() {

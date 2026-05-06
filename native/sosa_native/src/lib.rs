@@ -1,14 +1,8 @@
 pub mod arc_ops;
 pub mod base_case;
-pub mod bitset;
-pub mod colors;
-pub mod dimacs;
-pub mod error;
-pub mod instance;
 pub mod lemma_36;
 pub mod lemma_37;
 pub mod lemma_38;
-pub mod partition;
 pub mod reduction;
 pub mod solver;
 pub mod stats;

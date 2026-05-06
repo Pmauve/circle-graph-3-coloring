@@ -1,11 +1,11 @@
 use std::collections::HashSet;
 
 use crate::arc_ops::chords_between_arcs;
-use crate::error::SosaError;
-use crate::instance::CircleInstance;
 use crate::lemma_36::visit_lemma_36_family_with_partition;
-use crate::partition::{ArcName, CirclePartition};
 use crate::stats::Stats;
+use circle_core::error::SosaError;
+use circle_core::instance::CircleInstance;
+use circle_core::partition::{ArcName, CirclePartition};
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct SemiSeparatedInstance {
@@ -120,7 +120,7 @@ fn advance_boundary(
 
 #[cfg(test)]
 mod tests {
-    use crate::dimacs::parse_dimacs_circle;
+    use circle_core::dimacs_circle::parse_dimacs_circle;
 
     use super::*;
 

@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use crate::bitset::BitSet;
 use crate::colors::{ColorMask, ALL_COLORS};
-use crate::dimacs::DimacsCircle;
+use crate::dimacs_circle::DimacsCircle;
 use crate::error::SosaError;
 use crate::partition::CirclePartition;
 
@@ -395,7 +395,7 @@ fn build_csr(n: usize, edges: &[(u32, u32)]) -> Result<(Vec<u32>, Vec<u32>), Sos
 
 #[cfg(test)]
 mod tests {
-    use crate::dimacs::parse_dimacs_circle;
+    use crate::dimacs_circle::parse_dimacs_circle;
 
     use super::*;
 

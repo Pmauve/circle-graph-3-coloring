@@ -3,5 +3,12 @@
 version = 4
 
 [[package]]
+name = "circle_core"
+version = "0.1.0"
+
+[[package]]
 name = "sosa_native"
 version = "0.1.0"
+dependencies = [
+ "circle_core",
+]
