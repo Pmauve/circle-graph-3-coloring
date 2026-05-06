@@ -16,6 +16,7 @@ from three_col_circle_code.solvers.registry import (
     run_solver_from_path,
 )
 from three_col_circle_code.solvers.sat import SAT_BASELINE_SOLVER
+from three_col_circle_code.solvers.sat_native import SAT_3_COL_NATIVE_SOLVER
 from three_col_circle_code.solvers.sosa import (
     SOSA_3_COL_EXACT_SOLVER,
     SOSA_K_COL_HEURISTIC_SOLVER,
@@ -31,6 +32,7 @@ class SolverRegistryTests(unittest.TestCase):
             available_solver_names(),
             (
                 SAT_BASELINE_SOLVER,
+                SAT_3_COL_NATIVE_SOLVER,
                 SOSA_3_COL_EXACT_SOLVER,
                 SOSA_K_COL_HEURISTIC_SOLVER,
                 SOSA_3_COL_NATIVE_SOLVER,
@@ -173,6 +175,40 @@ class SolverRegistryTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "requires a file path"):
             run_solver(graph, config)
+
+    def test_run_solver_rejects_native_sat_without_path(self) -> None:
+        graph = nx.path_graph(2)
+        config = SolverConfig(solver=SAT_3_COL_NATIVE_SOLVER)
+
+        with self.assertRaisesRegex(ValueError, "requires a file path"):
+            run_solver(graph, config)
+
+    def test_run_solver_from_path_dispatches_to_native_sat_solver(self) -> None:
+        path = Path("instance.col")
+        config = SolverConfig(
+            solver=SAT_3_COL_NATIVE_SOLVER,
+            params={"solver_bin": "kissat"},
+        )
+        fake_result = SolverResult(
+            solver=SAT_3_COL_NATIVE_SOLVER,
+            backend=None,
+            status=SOLVER_STATUS_OK,
+            wall_time_s=0.1,
+            is_colorable=True,
+            n_vertices=2,
+            m_edges=1,
+            details={},
+            error=None,
+        )
+
+        with patch(
+            "three_col_circle_code.solvers.registry.solve_sat_3_col_native_from_path",
+            return_value=fake_result,
+        ) as solve:
+            result = run_solver_from_path(path, config)
+
+        solve.assert_called_once_with(path, params={"solver_bin": "kissat"})
+        self.assertIs(result, fake_result)
 
     def test_run_solver_from_path_dispatches_to_native_sosa_solver(self) -> None:
         path = Path("instance.col")

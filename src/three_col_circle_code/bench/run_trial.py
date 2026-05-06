@@ -22,6 +22,7 @@ from three_col_circle_code.instances.io import load_instance
 from three_col_circle_code.instances.model import InstanceFormatError, InstanceMetadata, bucket_for_n
 from three_col_circle_code.solvers.common import SolverConfig
 from three_col_circle_code.solvers.registry import run_solver_from_path as run_solver
+from three_col_circle_code.solvers.sat_native import SAT_3_COL_NATIVE_SOLVER
 from three_col_circle_code.solvers.sosa.native import SOSA_3_COL_NATIVE_SOLVER
 from three_col_circle_code.solvers.zykovcolor import ZYKOVCOLOR_SOLVER
 
@@ -357,7 +358,7 @@ def _existing_result_matches_plan(result: dict[str, Any], *, trial: Any) -> bool
 
 
 def _uses_path_without_python_graph(solver_config: SolverConfig) -> bool:
-    return solver_config.solver in {SOSA_3_COL_NATIVE_SOLVER, ZYKOVCOLOR_SOLVER}
+    return solver_config.solver in {SAT_3_COL_NATIVE_SOLVER, SOSA_3_COL_NATIVE_SOLVER, ZYKOVCOLOR_SOLVER}
 
 
 def _load_path_solver_metadata(trial: Any) -> InstanceMetadata:
@@ -400,7 +401,7 @@ def _read_dimacs_header(path: Path) -> tuple[dict[str, str], int, int]:
                         comments[key] = " ".join(parts[len(key_parts) :])
                 continue
             fields = line.split()
-            if len(fields) == 4 and fields[0] == "p" and fields[1] == "edge":
+            if len(fields) == 4 and fields[0] == "p" and fields[1] in {"edge", "col"}:
                 return comments, int(fields[2]), int(fields[3])
             raise InstanceFormatError(f"unexpected DIMACS header line in {path}: {line!r}")
     raise InstanceFormatError(f"missing DIMACS problem line in {path}")

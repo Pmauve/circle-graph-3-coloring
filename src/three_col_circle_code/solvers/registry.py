@@ -12,6 +12,10 @@ from three_col_circle_code.solvers.sat import (
     available_sat_solver_backends,
     solve_sat_solver,
 )
+from three_col_circle_code.solvers.sat_native import (
+    SAT_3_COL_NATIVE_SOLVER,
+    solve_sat_3_col_native_from_path,
+)
 from three_col_circle_code.solvers.sosa.solver import (
     SOSA_3_COL_EXACT_SOLVER,
     SOSA_K_COL_HEURISTIC_SOLVER,
@@ -33,6 +37,7 @@ def available_solver_names() -> tuple[str, ...]:
     """Return the registered solver families."""
     return (
         SAT_BASELINE_SOLVER,
+        SAT_3_COL_NATIVE_SOLVER,
         SOSA_3_COL_EXACT_SOLVER,
         SOSA_K_COL_HEURISTIC_SOLVER,
         SOSA_3_COL_NATIVE_SOLVER,
@@ -76,6 +81,8 @@ def run_solver(
             backend=config.backend or available_sat_solver_backends()[0],
             params=config.params,
         )
+    if config.solver == SAT_3_COL_NATIVE_SOLVER:
+        raise ValueError("native SAT solver requires a file path; use run_solver_from_path")
     if config.solver == SOSA_3_COL_EXACT_SOLVER:
         if config.backend is not None:
             raise ValueError("SOSA solver does not support backends")
@@ -108,11 +115,15 @@ def run_solver_from_path(
         if not report.ok:
             errors = [{"code": issue.code, "message": issue.message} for issue in report.errors]
             raise ValueError(f"instance artifact did not validate: {errors}")
-    elif config.solver not in (SOSA_3_COL_NATIVE_SOLVER, ZYKOVCOLOR_SOLVER):
+    elif config.solver not in (SAT_3_COL_NATIVE_SOLVER, SOSA_3_COL_NATIVE_SOLVER, ZYKOVCOLOR_SOLVER):
         record = load_instance(instance_path, validate=False)
     else:
         record = None
 
+    if config.solver == SAT_3_COL_NATIVE_SOLVER:
+        if config.backend is not None:
+            raise ValueError("native SAT solver does not support registry backends")
+        return solve_sat_3_col_native_from_path(instance_path, params=config.params)
     if config.solver == SOSA_3_COL_NATIVE_SOLVER:
         if config.backend is not None:
             raise ValueError("SOSA solver does not support backends")
@@ -145,6 +156,7 @@ def _validate_solver_config(*, solver: str, backend: Optional[str]) -> None:
     if solver in (
         SOSA_3_COL_EXACT_SOLVER,
         SOSA_K_COL_HEURISTIC_SOLVER,
+        SAT_3_COL_NATIVE_SOLVER,
         SOSA_3_COL_NATIVE_SOLVER,
         ZYKOVCOLOR_SOLVER,
     ):
