@@ -57,6 +57,26 @@ class ZykovColorSolverTests(unittest.TestCase):
 
         self.assertEqual(parsed, (True, {"zykovcolor_mode": "single_k", "k": 3, "raw_answer": "SAT"}))
 
+    def test_parse_preprocessing_chromatic_output_before_contradictory_single_k_footer(self) -> None:
+        parsed = parse_zykovcolor_output(
+            textwrap.dedent(
+                """
+                c Found lb 5 and ub 5 at 0s 186ms and 7.32 mb memory.
+                Result: Chromatic number of 5 was determined in pre-processing.
+                c Stats: Instance is UNSAT for K = 3
+                IncSatGC computed SAT for k = 3
+                """
+            ),
+            decision_num_colors=3,
+        )
+
+        self.assertEqual(parsed, (False, {"zykovcolor_mode": "chromatic_number", "chromatic_number": 5}))
+
+    def test_parse_instance_k_stats_output(self) -> None:
+        parsed = parse_zykovcolor_output("c Stats: Instance is UNSAT for K = 3\n")
+
+        self.assertEqual(parsed, (False, {"zykovcolor_mode": "single_k", "k": 3, "raw_answer": "UNSAT"}))
+
     def test_parse_total_stats_time(self) -> None:
         self.assertEqual(_parse_core_time("c Stats: Time ┌ Total: 0s 10ms\n"), 0.01)
 

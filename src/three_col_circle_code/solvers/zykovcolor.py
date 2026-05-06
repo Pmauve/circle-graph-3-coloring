@@ -26,6 +26,8 @@ DEFAULT_TIMEOUT_S = 3600.0
 ZYKOVCOLOR_BIN_ENV = "ZYKOVCOLOR_BIN"
 
 _CHROMATIC_RE = re.compile(r"IncSatGC computed chromatic number of\s+(\d+)")
+_PREPROCESS_CHROMATIC_RE = re.compile(r"Result:\s+Chromatic number of\s+(\d+)\s+was determined", re.IGNORECASE)
+_INSTANCE_K_RE = re.compile(r"Instance is\s+(SAT|UNSAT)\s+for K\s*=\s*(\d+)", re.IGNORECASE)
 _SINGLE_K_RE = re.compile(r"IncSatGC computed\s+(SAT|UNSAT)\s+for k\s*=\s*(\d+)")
 _RESULT_TIME_RE = re.compile(r"Result:.*?\bat\s+(\d+)s\s+(\d+)ms")
 _REPORTED_TIME_LABELS = {
@@ -96,20 +98,26 @@ def parse_zykovcolor_output(
     *,
     decision_num_colors: int = DEFAULT_DECISION_NUM_COLORS,
 ) -> Optional[tuple[bool, dict[str, Any]]]:
-    """Parse the final ZykovColor result line into a decision answer."""
-    single_k_match = _SINGLE_K_RE.search(stdout)
-    if single_k_match:
-        status = single_k_match.group(1)
-        k = int(single_k_match.group(2))
-        return status == "SAT", {"zykovcolor_mode": "single_k", "k": k, "raw_answer": status}
-
-    chromatic_match = _CHROMATIC_RE.search(stdout)
+    """Parse ZykovColor output into a decision answer."""
+    chromatic_match = _PREPROCESS_CHROMATIC_RE.search(stdout) or _CHROMATIC_RE.search(stdout)
     if chromatic_match:
         chromatic_number = int(chromatic_match.group(1))
         return chromatic_number <= decision_num_colors, {
             "zykovcolor_mode": "chromatic_number",
             "chromatic_number": chromatic_number,
         }
+
+    instance_k_match = _INSTANCE_K_RE.search(stdout)
+    if instance_k_match:
+        status = instance_k_match.group(1).upper()
+        k = int(instance_k_match.group(2))
+        return status == "SAT", {"zykovcolor_mode": "single_k", "k": k, "raw_answer": status}
+
+    single_k_match = _SINGLE_K_RE.search(stdout)
+    if single_k_match:
+        status = single_k_match.group(1)
+        k = int(single_k_match.group(2))
+        return status == "SAT", {"zykovcolor_mode": "single_k", "k": k, "raw_answer": status}
     return None
 
 
