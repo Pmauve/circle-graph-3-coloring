@@ -17,6 +17,7 @@ class InstanceRequest:
     n: int
     seed: int
     num_colors: int
+    sequence_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -148,8 +149,9 @@ def _normalize_solver_block(block: Any) -> dict[str, Any]:
 def _expand_instance_requests(instance_blocks: Sequence[Mapping[str, Any]]) -> tuple[InstanceRequest, ...]:
     requests: list[InstanceRequest] = []
     seen_instance_ids: set[str] = set()
-    for block in instance_blocks:
-        n_values = list(block["n_values"]) if "n_values" in block else _expand_n_range(block["n"])
+    for block_index, block in enumerate(instance_blocks, start=1):
+        from_range = "n" in block
+        n_values = list(block["n_values"]) if not from_range else _expand_n_range(block["n"])
         for n_value in n_values:
             for seed_value in block["seeds"]:
                 instance_id = instance_id_for_request(
@@ -158,6 +160,12 @@ def _expand_instance_requests(instance_blocks: Sequence[Mapping[str, Any]]) -> t
                     seed=seed_value,
                     num_colors=block["num_colors"],
                 )
+                sequence_id = None
+                if from_range:
+                    sequence_id = (
+                        f"block{block_index}:"
+                        f"{block['family']}:k{block['num_colors']:02d}:seed{seed_value}"
+                    )
                 if instance_id in seen_instance_ids:
                     raise ValueError(f"benchmark run spec contains duplicate instance request {instance_id!r}")
                 seen_instance_ids.add(instance_id)
@@ -168,6 +176,7 @@ def _expand_instance_requests(instance_blocks: Sequence[Mapping[str, Any]]) -> t
                         n=n_value,
                         seed=seed_value,
                         num_colors=block["num_colors"],
+                        sequence_id=sequence_id,
                     )
                 )
     return tuple(sorted(requests, key=lambda item: (item.family, item.num_colors, item.n, item.seed)))

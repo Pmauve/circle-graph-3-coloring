@@ -104,6 +104,7 @@ def _build_instance_plan_rows(run_spec: RunSpec) -> tuple[InstancePlanRow, ...]:
                 seed=request.seed,
                 num_colors=request.num_colors,
                 instance_path=instance_path,
+                sequence_id=request.sequence_id,
             )
         )
     return tuple(rows)

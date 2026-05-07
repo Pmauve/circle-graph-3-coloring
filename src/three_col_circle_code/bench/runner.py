@@ -6,7 +6,12 @@ import shutil
 import sys
 from typing import Callable, Iterable, Optional, TextIO
 
-from three_col_circle_code.bench.generate_instance import run_instance_generation
+from three_col_circle_code.bench.generate_instance import (
+    planned_instance_sequence_count,
+    planned_instance_sequence_indices,
+    run_instance_generation,
+    run_instance_sequence_generation,
+)
 from three_col_circle_code.bench.merge import merge_benchmark_results
 from three_col_circle_code.bench.plan import DEFAULT_PLAN_ROOT, DEFAULT_WORK_ROOT, create_benchmark_plan
 from three_col_circle_code.bench.plan_io import (
@@ -53,9 +58,22 @@ def run_benchmark(
     _emit_progress(progress_stream, f"Plan directory: {plan_dir}")
     _emit_progress(progress_stream, f"Work directory: {resolved_work_root}")
     _emit_progress(progress_stream, f"Preparing {len(instance_rows)} instance(s) with jobs={jobs}")
+    sequence_count = planned_instance_sequence_count(plan_dir)
+    sequenced_indices = planned_instance_sequence_indices(plan_dir)
+    if sequence_count:
+        _run_index_phase(
+            phase="instance sequence preparation",
+            indices=tuple(range(1, sequence_count + 1)),
+            jobs=jobs,
+            worker=_run_instance_sequence_generation_job,
+            plan_dir=plan_dir,
+            force=force,
+            progress_stream=progress_stream,
+        )
+    remaining_instance_rows = tuple(row for row in instance_rows if row.index not in sequenced_indices)
     _run_phase(
         phase="instance preparation",
-        rows=instance_rows,
+        rows=remaining_instance_rows,
         jobs=jobs,
         worker=_run_instance_generation_job,
         plan_dir=plan_dir,
@@ -169,9 +187,49 @@ def _run_phase(
             _emit_progress(progress_stream, f"{phase}: completed {completed}/{len(rows)}")
 
 
+def _run_index_phase(
+    *,
+    phase: str,
+    indices: tuple[int, ...],
+    jobs: int,
+    worker: Callable[[Path, int, bool], object],
+    plan_dir: Path,
+    force: bool,
+    progress_stream: TextIO | None,
+) -> None:
+    """Run one pipeline phase over synthetic 1-based task indices."""
+    if not indices:
+        return
+    if jobs == 1:
+        for completed, index in enumerate(indices, start=1):
+            worker(plan_dir, index, force)
+            _emit_progress(progress_stream, f"{phase}: completed {completed}/{len(indices)}")
+        return
+
+    with ProcessPoolExecutor(max_workers=jobs) as executor:
+        futures = {
+            executor.submit(worker, plan_dir, index, force): index
+            for index in indices
+        }
+        completed = 0
+        for future in as_completed(futures):
+            index = futures[future]
+            try:
+                future.result()
+            except Exception as exc:
+                raise ValueError(f"{phase} failed for index {index}: {exc}") from exc
+            completed += 1
+            _emit_progress(progress_stream, f"{phase}: completed {completed}/{len(indices)}")
+
+
 def _run_instance_generation_job(plan_dir: Path, index: int, force: bool) -> Path:
     """Run one planned instance generation row for the local orchestrator."""
     return run_instance_generation(plan_dir=plan_dir, index=index, force=force)
+
+
+def _run_instance_sequence_generation_job(plan_dir: Path, index: int, force: bool) -> list[Path]:
+    """Run one planned instance generation sequence for the local orchestrator."""
+    return run_instance_sequence_generation(plan_dir=plan_dir, index=index, force=force)
 
 
 def _run_trial_job(plan_dir: Path, index: int, force: bool) -> Path:

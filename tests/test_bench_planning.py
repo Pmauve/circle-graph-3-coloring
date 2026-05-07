@@ -29,6 +29,29 @@ class BenchPlanningTests(unittest.TestCase):
 
         self.assertEqual(path, Path("eval/instances/rc/s/rc-k03-n0002-seed1.col"))
 
+    def test_n_range_marks_requests_as_sequence(self) -> None:
+        run_spec = normalize_run_spec(
+            {
+                "instance_pool_root": "eval/instances",
+                "instances": [{"family": "rc", "n": {"start": 100, "stop": 300, "step": 100}, "seeds": [1]}],
+                "solvers": [{"target": "sosa-3-col-exact"}],
+            }
+        )
+
+        self.assertEqual(len(run_spec.instance_requests), 3)
+        self.assertTrue(all(request.sequence_id is not None for request in run_spec.instance_requests))
+
+    def test_n_values_do_not_mark_requests_as_sequence(self) -> None:
+        run_spec = normalize_run_spec(
+            {
+                "instance_pool_root": "eval/instances",
+                "instances": [{"family": "rc", "n_values": [100, 200, 300], "seeds": [1]}],
+                "solvers": [{"target": "sosa-3-col-exact"}],
+            }
+        )
+
+        self.assertTrue(all(request.sequence_id is None for request in run_spec.instance_requests))
+
     def test_resolve_existing_instance_path_finds_legacy_nested_name(self) -> None:
         with _temporary_run_dir() as instance_root:
             run_spec = normalize_run_spec(

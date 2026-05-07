@@ -46,8 +46,11 @@ class BenchRunnerTests(unittest.TestCase):
             progress = io.StringIO()
 
             with patch(
-                "three_col_circle_code.bench.generate_instance.generate_instance",
-                return_value=_build_record(instance_id="rc-k03-n0002-seed1", family="rc", seed=1),
+                "three_col_circle_code.bench.generate_instance.generate_col_with_native",
+                side_effect=_write_native_generated_instance,
+            ), patch(
+                "three_col_circle_code.bench.generate_instance.ensure_validated_sidecar",
+                return_value=None,
             ), patch(
                 "three_col_circle_code.bench.run_trial.run_solver",
                 return_value=_fake_solver_result(backend="legacy-pysmt-msat", wall_time_s=0.25),
@@ -125,8 +128,11 @@ class BenchRunnerTests(unittest.TestCase):
             )
 
             with patch(
-                "three_col_circle_code.bench.generate_instance.generate_instance",
+                "three_col_circle_code.bench.generate_instance.generate_col_with_native",
             ) as generate_instance_mock, patch(
+                "three_col_circle_code.bench.generate_instance.ensure_validated_sidecar",
+                return_value=None,
+            ), patch(
                 "three_col_circle_code.bench.run_trial.run_solver",
                 return_value=_fake_solver_result(backend="pysat-cadical", wall_time_s=0.1),
             ):
@@ -158,9 +164,12 @@ class BenchRunnerTests(unittest.TestCase):
             )
 
             with patch(
-                "three_col_circle_code.bench.generate_instance.generate_instance",
-                return_value=_build_record(instance_id="rc-k03-n0002-seed1", family="rc", seed=1),
+                "three_col_circle_code.bench.generate_instance.generate_col_with_native",
+                side_effect=_write_native_generated_instance,
             ) as generate_instance_mock, patch(
+                "three_col_circle_code.bench.generate_instance.ensure_validated_sidecar",
+                return_value=None,
+            ), patch(
                 "three_col_circle_code.bench.run_trial.run_solver",
                 return_value=_fake_solver_result(backend="pysat-cadical", wall_time_s=0.1),
             ) as run_solver_mock:
@@ -302,8 +311,11 @@ class BenchRunnerTests(unittest.TestCase):
             )
 
             with patch(
-                "three_col_circle_code.bench.generate_instance.generate_instance",
-                return_value=_build_record(instance_id="rc-k03-n0002-seed1", family="rc", seed=1),
+                "three_col_circle_code.bench.generate_instance.generate_col_with_native",
+                side_effect=_write_native_generated_instance,
+            ), patch(
+                "three_col_circle_code.bench.generate_instance.ensure_validated_sidecar",
+                return_value=None,
             ), patch(
                 "three_col_circle_code.bench.run_trial.run_solver",
                 return_value=_fake_solver_result(backend="pysat-cadical", wall_time_s=0.1),
@@ -331,6 +343,11 @@ class BenchRunnerTests(unittest.TestCase):
 def _write_instance(path: Path, *, instance_id: str, family: str, seed: int) -> Path:
     save_instance(_build_record(instance_id=instance_id, family=family, seed=seed), path)
     return path
+
+
+def _write_native_generated_instance(*, instance_path: Path, family: str, n: int, seed: int, **_kwargs) -> None:
+    instance_id = f"{family}-k03-n{n:04d}-seed{seed}"
+    save_instance(_build_record(instance_id=instance_id, family=family, seed=seed, n=n), instance_path)
 
 
 def _build_record(*, instance_id: str, family: str, seed: int, n: int = 2) -> InstanceRecord:

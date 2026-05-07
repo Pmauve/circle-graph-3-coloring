@@ -52,10 +52,8 @@ class NativeSatSolverTests(unittest.TestCase):
                 args=[],
                 returncode=0,
                 stdout=(
-                    "s COLORABLE\n"
-                    "t parse_encode_time_s 0.010\n"
-                    "t solve_time_s 0.020\n"
-                    "t core_time_s 0.030\n"
+                    '{"status":"ok","solver_status":"COLORABLE",'
+                    '"parse_encode_time_s":0.010,"solve_time_s":0.020,"core_time_s":0.030}\n'
                 ),
                 stderr="",
             )

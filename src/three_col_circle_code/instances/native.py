@@ -68,6 +68,120 @@ def inspect_col_with_native(instance_path: Path) -> NativeInstanceSummary:
     return _run_native_instance_command("inspect", Path(instance_path))
 
 
+def generate_col_with_native(
+    *,
+    instance_path: Path,
+    family: str,
+    n: int,
+    seed: int,
+    num_colors: int = 3,
+    max_attempts_per_node: int = 10_000,
+) -> NativeInstanceSummary:
+    """Generate a DIMACS-circle instance through the native CLI."""
+    binary = os.environ.get(THREE_COL_NATIVE_BIN_ENV)
+    if not binary:
+        raise NativeInstanceError(f"{THREE_COL_NATIVE_BIN_ENV} is required for native instance generation")
+    path = Path(instance_path)
+    try:
+        completed = subprocess.run(
+            [
+                binary,
+                "instance",
+                "generate",
+                "--family",
+                family,
+                "--n",
+                str(n),
+                "--seed",
+                str(seed),
+                "--num-colors",
+                str(num_colors),
+                "--max-attempts-per-node",
+                str(max_attempts_per_node),
+                "--output",
+                str(path),
+            ],
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+    except OSError as exc:
+        raise NativeInstanceError(f"failed to start {binary!r}: {exc}") from exc
+
+    payload = _parse_native_json(completed.stdout)
+    if completed.returncode != 0:
+        message = str(payload.get("error") or completed.stderr or completed.stdout or "native generation failed")
+        raise NativeInstanceError(message)
+    if payload.get("status") != "ok":
+        raise NativeInstanceError(f"unexpected native generation status {payload.get('status')!r}")
+    return NativeInstanceSummary(
+        instance_id=_optional_str(payload.get("instance_id")),
+        family=_optional_str(payload.get("family")),
+        n=int(payload["n"]),
+        m=int(payload["m"]),
+        num_colors=None if payload.get("num_colors") is None else int(payload["num_colors"]),
+    )
+
+
+def generate_col_sequence_with_native(
+    *,
+    output_dir: Path,
+    family: str,
+    start_n: int,
+    stop_n: int,
+    step_n: int,
+    seed: int,
+    num_colors: int = 3,
+    max_attempts_per_node: int = 10_000,
+) -> list[Path]:
+    """Generate a sequence of DIMACS-circle instances through the native CLI."""
+    binary = os.environ.get(THREE_COL_NATIVE_BIN_ENV)
+    if not binary:
+        raise NativeInstanceError(f"{THREE_COL_NATIVE_BIN_ENV} is required for native instance generation")
+    try:
+        completed = subprocess.run(
+            [
+                binary,
+                "instance",
+                "generate-sequence",
+                "--family",
+                family,
+                "--start-n",
+                str(start_n),
+                "--stop-n",
+                str(stop_n),
+                "--step-n",
+                str(step_n),
+                "--seed",
+                str(seed),
+                "--num-colors",
+                str(num_colors),
+                "--max-attempts-per-node",
+                str(max_attempts_per_node),
+                "--output-dir",
+                str(output_dir),
+            ],
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+    except OSError as exc:
+        raise NativeInstanceError(f"failed to start {binary!r}: {exc}") from exc
+
+    payload = _parse_native_json(completed.stdout)
+    if completed.returncode != 0:
+        message = str(payload.get("error") or completed.stderr or completed.stdout or "native sequence generation failed")
+        raise NativeInstanceError(message)
+    if payload.get("status") != "ok":
+        raise NativeInstanceError(f"unexpected native sequence status {payload.get('status')!r}")
+    paths = payload.get("paths")
+    if not isinstance(paths, list):
+        raise NativeInstanceError("native sequence command did not return a paths list")
+    return [Path(str(path)) for path in paths]
+
+
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with Path(path).open("rb") as infile:

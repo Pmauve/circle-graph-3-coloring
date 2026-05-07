@@ -111,6 +111,7 @@ def build_run_manifest(
                 "n": request.n,
                 "seed": request.seed,
                 "num_colors": request.num_colors,
+                "sequence_id": request.sequence_id,
             }
             for request in run_spec.instance_requests
         ],

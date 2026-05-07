@@ -19,6 +19,7 @@ class InstancePlanRow:
     seed: int
     instance_path: Path
     num_colors: int = 3
+    sequence_id: Optional[str] = None
 
     @classmethod
     def from_mapping(cls, row: Mapping[str, Any]) -> "InstancePlanRow":
@@ -32,6 +33,7 @@ class InstancePlanRow:
             seed=int(row["seed"]),
             num_colors=int(row.get("num_colors", 3)),
             instance_path=Path(str(row["instance_path"])),
+            sequence_id=None if row.get("sequence_id") is None else str(row["sequence_id"]),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -44,6 +46,7 @@ class InstancePlanRow:
             "seed": self.seed,
             "num_colors": self.num_colors,
             "instance_path": str(self.instance_path),
+            "sequence_id": self.sequence_id,
         }
 
 

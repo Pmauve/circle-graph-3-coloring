@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import json
 import subprocess
 from collections.abc import Mapping
 from pathlib import Path
@@ -214,6 +215,26 @@ def _resolve_native_binary() -> Optional[str]:
 def _parse_native_stdout(
     stdout: str,
 ) -> tuple[Optional[str], dict[str, float], Optional[str]]:
+    stripped = stdout.strip()
+    if stripped.startswith("{"):
+        try:
+            payload = json.loads(stripped.splitlines()[0])
+        except json.JSONDecodeError as exc:
+            return None, {}, f"invalid native SAT JSON output: {exc}"
+        if not isinstance(payload, dict):
+            return None, {}, "native SAT JSON output is not an object"
+        solver_status = payload.get("solver_status")
+        if solver_status is None:
+            return None, {}, "native SAT JSON output is missing solver_status"
+        timings = {}
+        for key in ("parse_encode_time_s", "solve_time_s", "core_time_s"):
+            if key in payload:
+                try:
+                    timings[key] = float(payload[key])
+                except (TypeError, ValueError):
+                    return str(solver_status), timings, f"invalid native SAT {key} value {payload[key]!r}"
+        return str(solver_status), timings, None
+
     status: Optional[str] = None
     timings: dict[str, float] = {}
     timing_keys = {

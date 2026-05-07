@@ -9,7 +9,12 @@ import networkx as nx
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from three_col_circle_code.bench.generate_instance import main, run_instance_generation
+from three_col_circle_code.bench.generate_instance import (
+    main,
+    run_instance_generation,
+    run_instance_sequence_generation,
+    sequence_main,
+)
 from three_col_circle_code.bench.plan_io import (
     InstancePlanRow,
     instance_result_path,
@@ -119,6 +124,43 @@ class BenchGenerateInstanceTests(unittest.TestCase):
         self.assertTrue(result["validation_ok"])
         validate.assert_called_once_with(instance_path)
         load_instance.assert_not_called()
+        generate.assert_not_called()
+
+    def test_run_instance_generation_generates_missing_col_with_native(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            instance_path = tmp_root / "instances" / "rc_fast" / "s" / "rc_fast-k03-n0002-seed1.col"
+            plan_dir, _work_root = _write_plan(
+                tmp_root,
+                instance_path=instance_path,
+                instance_id="rc_fast-k03-n0002-seed1",
+                family="rc_fast",
+            )
+
+            with patch(
+                "three_col_circle_code.bench.generate_instance.generate_col_with_native",
+                return_value=None,
+            ) as native_generate, patch(
+                "three_col_circle_code.bench.generate_instance.ensure_validated_sidecar",
+                return_value=None,
+            ) as validate, patch(
+                "three_col_circle_code.bench.generate_instance.generate_instance"
+            ) as generate:
+                result_path = run_instance_generation(plan_dir=plan_dir, index=1)
+
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(result["status"], "ok")
+        self.assertTrue(result["generated"])
+        self.assertTrue(result["validation_ok"])
+        native_generate.assert_called_once_with(
+            instance_path=instance_path,
+            family="rc_fast",
+            n=2,
+            seed=1,
+            num_colors=3,
+        )
+        validate.assert_called_once_with(instance_path, force=True)
         generate.assert_not_called()
 
     def test_run_instance_generation_marks_invalid_existing_col(self) -> None:
@@ -262,6 +304,85 @@ class BenchGenerateInstanceTests(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertTrue(instance_exists)
 
+    def test_run_instance_sequence_generation_generates_group(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            rows = []
+            for index, n in enumerate((100, 200, 300), start=1):
+                instance_id = f"rcy_fast-k03-n{n:04d}-seed1"
+                rows.append(
+                    InstancePlanRow(
+                        index=index,
+                        instance_id=instance_id,
+                        family="rcy_fast",
+                        n=n,
+                        seed=1,
+                        num_colors=3,
+                        sequence_id="seq-1",
+                        instance_path=tmp_root / "instances" / "rcy_fast" / "s" / f"{instance_id}.col",
+                    )
+                )
+            plan_dir, work_root = _write_custom_plan(tmp_root, tuple(rows))
+
+            with patch(
+                "three_col_circle_code.bench.generate_instance.generate_col_sequence_with_native",
+                return_value=[],
+            ) as native_sequence, patch(
+                "three_col_circle_code.bench.generate_instance.ensure_validated_sidecar",
+                return_value=None,
+            ) as validate, patch(
+                "three_col_circle_code.bench.generate_instance.collect_environment_metadata",
+                return_value={"hostname": "worker-1"},
+            ):
+                result_paths = run_instance_sequence_generation(plan_dir=plan_dir, index=1)
+
+            results = [json.loads(path.read_text(encoding="utf-8")) for path in result_paths]
+
+        self.assertEqual(result_paths, [instance_result_path(work_root, index) for index in (1, 2, 3)])
+        self.assertTrue(all(result["status"] == "ok" for result in results))
+        self.assertTrue(all(result["generated"] for result in results))
+        native_sequence.assert_called_once_with(
+            output_dir=tmp_root / "instances",
+            family="rcy_fast",
+            start_n=100,
+            stop_n=300,
+            step_n=100,
+            seed=1,
+            num_colors=3,
+        )
+        self.assertEqual(validate.call_count, 3)
+
+    def test_sequence_cli_prints_result_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            rows = []
+            for index, n in enumerate((100, 200), start=1):
+                instance_id = f"rc-k03-n{n:04d}-seed1"
+                rows.append(
+                    InstancePlanRow(
+                        index=index,
+                        instance_id=instance_id,
+                        family="rc",
+                        n=n,
+                        seed=1,
+                        num_colors=3,
+                        sequence_id="seq-1",
+                        instance_path=tmp_root / "instances" / "rc" / "s" / f"{instance_id}.col",
+                    )
+                )
+            plan_dir, _work_root = _write_custom_plan(tmp_root, tuple(rows))
+
+            with patch(
+                "three_col_circle_code.bench.generate_instance.generate_col_sequence_with_native",
+                return_value=[],
+            ), patch(
+                "three_col_circle_code.bench.generate_instance.ensure_validated_sidecar",
+                return_value=None,
+            ):
+                exit_code = sequence_main(["--plan-dir", str(plan_dir), "--index", "1"])
+
+        self.assertEqual(exit_code, 0)
+
 
 def _write_plan(
     tmp_root: Path,
@@ -294,6 +415,23 @@ def _write_plan(
             "created_at": "2026-04-29T00:00:00+00:00",
             "work_root": work_root,
             "n_instances": 1,
+            "n_trials": 0,
+        },
+    )
+    return plan_dir, work_root
+
+
+def _write_custom_plan(tmp_root: Path, rows: tuple[InstancePlanRow, ...]) -> tuple[Path, Path]:
+    plan_dir = tmp_root / "plans" / "smoke"
+    work_root = tmp_root / "work" / "smoke"
+    write_instance_plan(plan_dir, rows)
+    write_plan_manifest(
+        plan_dir,
+        {
+            "run_id": "smoke",
+            "created_at": "2026-04-29T00:00:00+00:00",
+            "work_root": work_root,
+            "n_instances": len(rows),
             "n_trials": 0,
         },
     )

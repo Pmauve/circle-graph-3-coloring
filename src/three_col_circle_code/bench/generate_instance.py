@@ -18,6 +18,8 @@ from three_col_circle_code.instances.native import (
     NativeInstanceError,
     NativeInstanceInvalid,
     ensure_validated_sidecar,
+    generate_col_with_native,
+    generate_col_sequence_with_native,
 )
 from three_col_circle_code.instances.validate import validate_instance
 
@@ -48,16 +50,28 @@ def run_instance_generation(
         if existing_info is None:
             existing_info = _load_valid_existing_instance(instance_row.instance_path)
         if existing_info is None:
-            record = generate_instance(
-                family=instance_row.family,
-                n=instance_row.n,
-                seed=instance_row.seed,
-                num_colors=instance_row.num_colors,
-            )
-            write_instance_to_path(record, instance_row.instance_path, atomic=True)
+            if Path(instance_row.instance_path).suffix == ".col":
+                generate_col_with_native(
+                    instance_path=instance_row.instance_path,
+                    family=instance_row.family,
+                    n=instance_row.n,
+                    seed=instance_row.seed,
+                    num_colors=instance_row.num_colors,
+                )
+                ensure_validated_sidecar(Path(instance_row.instance_path), force=True)
+                validation_errors = []
+                validation_ok = True
+            else:
+                record = generate_instance(
+                    family=instance_row.family,
+                    n=instance_row.n,
+                    seed=instance_row.seed,
+                    num_colors=instance_row.num_colors,
+                )
+                write_instance_to_path(record, instance_row.instance_path, atomic=True)
+                loaded_record = load_instance(instance_row.instance_path)
+                validation_ok, validation_errors = _validate_record(loaded_record)
             generated = True
-            loaded_record = load_instance(instance_row.instance_path)
-            validation_ok, validation_errors = _validate_record(loaded_record)
         else:
             validation_errors = existing_info
             validation_ok = True
@@ -106,6 +120,95 @@ def run_instance_generation(
     return result_path
 
 
+def run_instance_sequence_generation(
+    *,
+    plan_dir: Path,
+    index: int,
+    work_root: Optional[Path] = None,
+    force: bool = False,
+) -> list[Path]:
+    """Generate one grouped native instance sequence and write per-instance result files."""
+    rows = load_instance_plan(plan_dir)
+    groups = _native_sequence_groups(rows)
+    if index < 1 or index > len(groups):
+        raise ValueError(f"instance sequence plan does not contain index {index}")
+    group = groups[index - 1]
+    resolved_work_root = _resolve_work_root(plan_dir=plan_dir, work_root=work_root)
+    if (
+        not force
+        and all(instance_result_path(resolved_work_root, row.index).exists() for row in group)
+        and all(_existing_result_matches_plan(
+            json.loads(instance_result_path(resolved_work_root, row.index).read_text(encoding="utf-8")),
+            instance_row=row,
+        ) for row in group)
+    ):
+        return [instance_result_path(resolved_work_root, row.index) for row in group]
+
+    started_at = _now()
+    result_paths: list[Path] = []
+    try:
+        first = group[0]
+        start_n, stop_n, step_n = _sequence_bounds(group)
+        generate_col_sequence_with_native(
+            output_dir=_instance_pool_root_from_path(first.instance_path, first.family),
+            family=first.family,
+            start_n=start_n,
+            stop_n=stop_n,
+            step_n=step_n,
+            seed=first.seed,
+            num_colors=first.num_colors,
+        )
+        for row in group:
+            ensure_validated_sidecar(row.instance_path, force=True)
+            result = _build_result(
+                index=row.index,
+                status="ok",
+                instance_id=row.instance_id,
+                instance_path=row.instance_path,
+                generated=True,
+                validation_ok=True,
+                validation_errors=[],
+                started_at=started_at,
+                error=None,
+                environment=collect_environment_metadata(),
+            )
+            result_path = instance_result_path(resolved_work_root, row.index)
+            _write_result(result_path, result)
+            result_paths.append(result_path)
+    except Exception as exc:
+        for row in group:
+            result = _build_result(
+                index=row.index,
+                status="error",
+                instance_id=row.instance_id,
+                instance_path=row.instance_path,
+                generated=False,
+                validation_ok=False,
+                validation_errors=[],
+                started_at=started_at,
+                error=str(exc),
+                environment=collect_environment_metadata(),
+            )
+            result_path = instance_result_path(resolved_work_root, row.index)
+            _write_result(result_path, result)
+            result_paths.append(result_path)
+    return result_paths
+
+
+def planned_instance_sequence_count(plan_dir: Path) -> int:
+    """Return how many spec-declared native instance sequences are in a plan."""
+    return len(_native_sequence_groups(load_instance_plan(plan_dir)))
+
+
+def planned_instance_sequence_indices(plan_dir: Path) -> set[int]:
+    """Return instance row indices covered by spec-declared native sequences."""
+    return {
+        row.index
+        for group in _native_sequence_groups(load_instance_plan(plan_dir))
+        for row in group
+    }
+
+
 def main(argv: Optional[Iterable[str]] = None) -> int:
     """Run one benchmark instance generation plan row from the command line."""
     parser = argparse.ArgumentParser(description="Run one benchmark instance generation plan row.")
@@ -126,6 +229,30 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         print(f"benchmark instance generation failed: {exc}", file=sys.stderr)
         return 2
     print(result_path)
+    return 0
+
+
+def sequence_main(argv: Optional[Iterable[str]] = None) -> int:
+    """Run one grouped benchmark instance generation sequence from the command line."""
+    parser = argparse.ArgumentParser(description="Run one benchmark instance generation sequence.")
+    parser.add_argument("--plan-dir", type=Path, required=True)
+    parser.add_argument("--index", type=int, required=True)
+    parser.add_argument("--work-root", type=Path, default=None)
+    parser.add_argument("--force", action="store_true")
+    args = parser.parse_args(list(argv) if argv is not None else None)
+
+    try:
+        result_paths = run_instance_sequence_generation(
+            plan_dir=args.plan_dir,
+            index=args.index,
+            work_root=args.work_root,
+            force=args.force,
+        )
+    except ValueError as exc:
+        print(f"benchmark instance sequence generation failed: {exc}", file=sys.stderr)
+        return 2
+    for path in result_paths:
+        print(path)
     return 0
 
 
@@ -232,6 +359,51 @@ def _write_result(path: Path, result: dict[str, Any]) -> None:
 def _now() -> str:
     """Return the current UTC timestamp in ISO format."""
     return datetime.now(UTC).isoformat()
+
+
+def _native_sequence_groups(rows: tuple[Any, ...]) -> list[tuple[Any, ...]]:
+    """Group native .col instance rows by one growable trajectory."""
+    candidates = [
+        row
+        for row in rows
+        if Path(row.instance_path).suffix == ".col" and getattr(row, "sequence_id", None) is not None
+    ]
+    grouped: dict[str, list[Any]] = {}
+    for row in candidates:
+        grouped.setdefault(str(row.sequence_id), []).append(row)
+    groups: list[tuple[Any, ...]] = []
+    for group_rows in grouped.values():
+        ordered = tuple(sorted(group_rows, key=lambda row: row.n))
+        if len(ordered) < 2:
+            groups.append(ordered)
+            continue
+        _sequence_bounds(ordered)
+        groups.append(ordered)
+    return sorted(groups, key=lambda group: min(row.index for row in group))
+
+
+def _sequence_bounds(rows: tuple[Any, ...]) -> tuple[int, int, int]:
+    n_values = [row.n for row in rows]
+    if len(n_values) == 1:
+        return n_values[0], n_values[0], 1
+    step = n_values[1] - n_values[0]
+    if step < 1:
+        raise ValueError("sequence n values must be strictly increasing")
+    expected = list(range(n_values[0], n_values[-1] + 1, step))
+    if n_values != expected:
+        raise ValueError(f"sequence n values must form an arithmetic range; got {n_values}")
+    return n_values[0], n_values[-1], step
+
+
+def _instance_pool_root_from_path(instance_path: Path, family: str) -> Path:
+    parts = list(Path(instance_path).parts)
+    try:
+        family_index = len(parts) - 1 - parts[::-1].index(family)
+    except ValueError as exc:
+        raise ValueError(f"cannot infer instance pool root from {instance_path}") from exc
+    if family_index == 0:
+        raise ValueError(f"cannot infer instance pool root from {instance_path}")
+    return Path(*parts[:family_index])
 
 
 if __name__ == "__main__":
