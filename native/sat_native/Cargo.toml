@@ -6,3 +6,7 @@ edition = "2021"
 [dependencies]
 cadical = "0.1.16"
 circle_core = { path = "../circle_core" }
+
+[target.'cfg(unix)'.dependencies]
+rustsat = { version = "0.7.5", default-features = false }
+rustsat-kissat = { version = "0.7.5", default-features = false, features = ["quiet", "v4-0-4"] }

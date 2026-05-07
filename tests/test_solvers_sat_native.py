@@ -81,7 +81,12 @@ class NativeSatSolverTests(unittest.TestCase):
         self.assertIn("kissat", command)
         self.assertEqual(run.call_args.kwargs["timeout"], 42.0)
 
-    def test_cadical_ffi_backend_does_not_require_solver_bin(self) -> None:
+    def test_ffi_backends_do_not_require_solver_bin(self) -> None:
+        for backend in ("cadical-ffi", "kissat-ffi"):
+            with self.subTest(backend=backend):
+                self._assert_ffi_backend_does_not_require_solver_bin(backend)
+
+    def _assert_ffi_backend_does_not_require_solver_bin(self, backend: str) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             binary = Path(tmpdir) / "three_col_native"
             binary.write_text("", encoding="utf-8")
@@ -101,14 +106,14 @@ class NativeSatSolverTests(unittest.TestCase):
             ) as run:
                 result = solve_sat_3_col_native_from_path(
                     path,
-                    params={"backend": "cadical-ffi", "timeout_s": 12},
+                    params={"backend": backend, "timeout_s": 12},
                 )
 
         self.assertEqual(result.status, SOLVER_STATUS_OK)
         self.assertTrue(result.is_colorable)
         self.assertEqual(result.core_time_s, 0.02)
         command = run.call_args.args[0]
-        self.assertIn("cadical-ffi", command)
+        self.assertIn(backend, command)
         self.assertNotIn("--solver-bin", command)
         self.assertNotIn("solver_bin", result.details)
 

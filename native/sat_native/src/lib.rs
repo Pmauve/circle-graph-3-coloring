@@ -2,6 +2,7 @@ pub mod cadical_ffi;
 pub mod cnf;
 pub mod encode;
 pub mod external;
+pub mod kissat_ffi;
 pub mod solver;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
