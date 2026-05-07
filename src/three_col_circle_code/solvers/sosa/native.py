@@ -156,7 +156,8 @@ def _run_native_binary(
         )
     wall_time_s = perf_counter() - started_at
 
-    status_line, core_time_s, parse_error = _parse_native_stdout(completed.stdout)
+    status_line, timings, parse_error = _parse_native_stdout(completed.stdout)
+    core_time_s = timings.get("core_time_s")
     details.update(
         {
             "command": command,
@@ -165,6 +166,7 @@ def _run_native_binary(
             "stderr_tail": _tail(completed.stderr),
         }
     )
+    details.update(timings)
     if core_time_s is not None:
         details["core_time_source"] = "sosa_native_reported"
 
@@ -288,23 +290,28 @@ class _native_input_path:
             self._tempdir.cleanup()
 
 
-def _parse_native_stdout(stdout: str) -> tuple[Optional[str], Optional[float], Optional[str]]:
+def _parse_native_stdout(stdout: str) -> tuple[Optional[str], dict[str, float], Optional[str]]:
     status: Optional[str] = None
-    core_time_s: Optional[float] = None
+    timings: dict[str, float] = {}
     for raw_line in stdout.splitlines():
         parts = raw_line.strip().split()
         if not parts:
             continue
         if parts[:1] == ["s"] and len(parts) == 2:
             status = parts[1]
-        elif parts[:2] == ["t", "core_time_s"] and len(parts) == 3:
+        elif parts[:1] == ["t"] and len(parts) == 3 and parts[1] in {
+            "core_time_s",
+            "parse_time_s",
+            "build_time_s",
+            "solve_time_s",
+        }:
             try:
-                core_time_s = float(parts[2])
+                timings[parts[1]] = float(parts[2])
             except ValueError:
-                return status, None, f"invalid native SOSA core_time_s value {parts[2]!r}"
+                return status, timings, f"invalid native SOSA {parts[1]} value {parts[2]!r}"
     if status is None:
-        return None, core_time_s, "native SOSA output is missing status line"
-    return status, core_time_s, None
+        return None, timings, "native SOSA output is missing status line"
+    return status, timings, None
 
 
 def _read_problem_size(instance_path: str | Path) -> tuple[int, int]:

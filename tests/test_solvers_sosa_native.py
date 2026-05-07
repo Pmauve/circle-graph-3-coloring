@@ -41,7 +41,13 @@ class NativeSosaSolverTests(unittest.TestCase):
             completed = CompletedProcess(
                 args=[],
                 returncode=0,
-                stdout="s COLORABLE\nt core_time_s 0.123\n",
+                stdout=(
+                    "s COLORABLE\n"
+                    "t core_time_s 0.123\n"
+                    "t parse_time_s 0.010\n"
+                    "t build_time_s 0.020\n"
+                    "t solve_time_s 0.123\n"
+                ),
                 stderr="",
             )
             with patch.dict(os.environ, {"SOSA_NATIVE_BIN": str(binary)}), patch(
@@ -60,6 +66,9 @@ class NativeSosaSolverTests(unittest.TestCase):
         self.assertEqual(result.status, SOLVER_STATUS_OK)
         self.assertTrue(result.is_colorable)
         self.assertEqual(result.core_time_s, 0.123)
+        self.assertEqual(result.details["parse_time_s"], 0.01)
+        self.assertEqual(result.details["build_time_s"], 0.02)
+        self.assertEqual(result.details["solve_time_s"], 0.123)
         command = run.call_args.args[0]
         self.assertEqual(command[:2], [str(binary), "solve"])
         self.assertIn("--base-case-n", command)

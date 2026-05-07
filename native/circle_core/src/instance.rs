@@ -1,8 +1,12 @@
 use std::collections::HashSet;
+use std::fs::File;
+use std::io::BufReader;
+use std::path::Path;
 
 use crate::bitset::BitSet;
 use crate::colors::{ColorMask, ALL_COLORS};
-use crate::dimacs_circle::DimacsCircle;
+use crate::dimacs_circle::{DimacsCircle, DimacsCircleGeometry};
+use crate::dimacs_edge::stream_dimacs_edges;
 use crate::error::SosaError;
 use crate::partition::CirclePartition;
 
@@ -26,32 +30,7 @@ impl CircleInstance {
         dimacs: DimacsCircle,
         validate_crossings: bool,
     ) -> Result<Self, SosaError> {
-        let n = dimacs.n;
-        let endpoint_count = 2 * n;
-        let mut endpoint_at = Vec::with_capacity(endpoint_count);
-        let mut left = vec![u32::MAX; n];
-        let mut right = vec![u32::MAX; n];
-
-        for (position, &dimacs_id) in dimacs.circle_order.iter().enumerate() {
-            let vertex = dimacs_id - 1;
-            endpoint_at.push(vertex);
-            let slot = &mut left[vertex as usize];
-            if *slot == u32::MAX {
-                *slot = position as u32;
-            } else {
-                right[vertex as usize] = position as u32;
-            }
-        }
-
-        for vertex in 0..n {
-            if left[vertex] == u32::MAX || right[vertex] == u32::MAX {
-                return Err(SosaError::Input(format!(
-                    "vertex {} does not have exactly two endpoints",
-                    vertex + 1
-                )));
-            }
-        }
-
+        let (endpoint_at, left, right) = build_endpoint_geometry(dimacs.n, &dimacs.circle_order)?;
         let mut edges = Vec::with_capacity(dimacs.edges.len());
         let mut seen = HashSet::with_capacity(dimacs.edges.len());
         for (u_dimacs, v_dimacs) in dimacs.edges {
@@ -72,13 +51,72 @@ impl CircleInstance {
         }
         edges.sort_unstable();
 
-        let instance = Self::from_parts(n, endpoint_at, left, right, &edges, vec![ALL_COLORS; n])?;
+        let instance = Self::from_parts(
+            dimacs.n,
+            endpoint_at,
+            left,
+            right,
+            &edges,
+            vec![ALL_COLORS; dimacs.n],
+        )?;
         if validate_crossings {
             instance.validate_edge_crossings(&edges)?;
         }
         Ok(instance)
     }
 
+    pub fn from_dimacs_geometry_and_edge_file(
+        geometry: DimacsCircleGeometry,
+        path: &Path,
+    ) -> Result<Self, SosaError> {
+        let (endpoint_at, left, right) =
+            build_endpoint_geometry(geometry.n, &geometry.circle_order)?;
+        let (adj_offsets, adj) = build_csr_from_dimacs_edge_file(path, geometry.n)?;
+
+        Ok(Self {
+            n: geometry.n,
+            endpoint_at,
+            left,
+            right,
+            adj_offsets,
+            adj,
+            allowed: vec![ALL_COLORS; geometry.n],
+        })
+    }
+}
+
+fn build_endpoint_geometry(
+    n: usize,
+    circle_order: &[u32],
+) -> Result<(Vec<u32>, Vec<u32>, Vec<u32>), SosaError> {
+    let endpoint_count = 2 * n;
+    let mut endpoint_at = Vec::with_capacity(endpoint_count);
+    let mut left = vec![u32::MAX; n];
+    let mut right = vec![u32::MAX; n];
+
+    for (position, &dimacs_id) in circle_order.iter().enumerate() {
+        let vertex = dimacs_id - 1;
+        endpoint_at.push(vertex);
+        let slot = &mut left[vertex as usize];
+        if *slot == u32::MAX {
+            *slot = position as u32;
+        } else {
+            right[vertex as usize] = position as u32;
+        }
+    }
+
+    for vertex in 0..n {
+        if left[vertex] == u32::MAX || right[vertex] == u32::MAX {
+            return Err(SosaError::Input(format!(
+                "vertex {} does not have exactly two endpoints",
+                vertex + 1
+            )));
+        }
+    }
+    Ok((endpoint_at, left, right))
+}
+
+impl CircleInstance {
     pub fn from_parts(
         n: usize,
         endpoint_at: Vec<u32>,
@@ -384,6 +422,64 @@ fn build_csr(n: usize, edges: &[(u32, u32)]) -> Result<(Vec<u32>, Vec<u32>), Sos
         let end = adj_offsets[vertex + 1] as usize;
         adj[start..end].sort_unstable();
     }
+    Ok((adj_offsets, adj))
+}
+
+fn build_csr_from_dimacs_edge_file(
+    path: &Path,
+    expected_n: usize,
+) -> Result<(Vec<u32>, Vec<u32>), SosaError> {
+    let mut degree = vec![0usize; expected_n];
+    stream_dimacs_edges(
+        BufReader::new(File::open(path)?),
+        |problem| {
+            if problem.n != expected_n {
+                return Err(SosaError::Input(format!(
+                    "problem line vertex count {} changed while building CSR; expected {expected_n}",
+                    problem.n
+                )));
+            }
+            Ok(())
+        },
+        |u, v| {
+            degree[u - 1] += 1;
+            degree[v - 1] += 1;
+            Ok(())
+        },
+    )?;
+
+    let mut adj_offsets = Vec::with_capacity(expected_n + 1);
+    adj_offsets.push(0);
+    for count in degree {
+        let next = *adj_offsets.last().unwrap() as usize + count;
+        let next = u32::try_from(next)
+            .map_err(|_| SosaError::Input("adjacency does not fit into u32 offsets".to_string()))?;
+        adj_offsets.push(next);
+    }
+
+    let mut cursor = adj_offsets[..expected_n].to_vec();
+    let mut adj = vec![0u32; *adj_offsets.last().unwrap() as usize];
+    stream_dimacs_edges(
+        BufReader::new(File::open(path)?),
+        |_problem| Ok(()),
+        |u, v| {
+            let u = u - 1;
+            let v = v - 1;
+            let v_u32 = u32::try_from(v)
+                .map_err(|_| SosaError::Input("edge endpoint does not fit into u32".to_string()))?;
+            let u_u32 = u32::try_from(u)
+                .map_err(|_| SosaError::Input("edge endpoint does not fit into u32".to_string()))?;
+
+            let u_index = cursor[u] as usize;
+            adj[u_index] = v_u32;
+            cursor[u] += 1;
+            let v_index = cursor[v] as usize;
+            adj[v_index] = u_u32;
+            cursor[v] += 1;
+            Ok(())
+        },
+    )?;
+
     Ok((adj_offsets, adj))
 }
 

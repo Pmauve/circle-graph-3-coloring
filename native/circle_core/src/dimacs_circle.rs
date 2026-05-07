@@ -1,4 +1,6 @@
 use std::fs;
+use std::fs::File;
+use std::io::{BufRead, BufReader};
 use std::path::Path;
 
 use crate::error::SosaError;
@@ -11,9 +13,148 @@ pub struct DimacsCircle {
     pub edges: Vec<(u32, u32)>,
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct DimacsCircleGeometry {
+    pub n: usize,
+    pub m_declared: usize,
+    pub circle_order: Vec<u32>,
+}
+
 pub fn read_dimacs_circle(path: &Path) -> Result<DimacsCircle, SosaError> {
     let text = fs::read_to_string(path)?;
     parse_dimacs_circle(&text)
+}
+
+pub fn read_dimacs_circle_geometry(path: &Path) -> Result<DimacsCircleGeometry, SosaError> {
+    let file = File::open(path)?;
+    parse_dimacs_circle_geometry(BufReader::new(file))
+}
+
+pub fn parse_dimacs_circle_geometry<R: BufRead>(
+    reader: R,
+) -> Result<DimacsCircleGeometry, SosaError> {
+    let mut n: Option<usize> = None;
+    let mut m_declared: Option<usize> = None;
+    let mut edge_count = 0usize;
+    let mut circle_order = Vec::new();
+    let mut in_circle_block = false;
+    let mut saw_circle_block = false;
+
+    for (line_index, raw_line) in reader.lines().enumerate() {
+        let line_number = line_index + 1;
+        let raw_line = raw_line?;
+        let line = raw_line.trim().trim_start_matches('\u{feff}');
+        if line.is_empty() {
+            continue;
+        }
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        match parts[0] {
+            "c" => match circle_action(&parts[1..]) {
+                Some("START") => {
+                    if in_circle_block {
+                        return input_error(format!(
+                            "nested circle representation block at line {line_number}"
+                        ));
+                    }
+                    if saw_circle_block {
+                        return input_error(format!(
+                            "duplicate circle representation block at line {line_number}"
+                        ));
+                    }
+                    in_circle_block = true;
+                    saw_circle_block = true;
+                }
+                Some("END") => {
+                    if !in_circle_block {
+                        return input_error(format!(
+                            "circle representation END without START at line {line_number}"
+                        ));
+                    }
+                    in_circle_block = false;
+                }
+                Some(action) if in_circle_block => {
+                    return input_error(format!(
+                        "unsupported circle representation directive {action:?} at line {line_number}"
+                    ));
+                }
+                _ if in_circle_block => {
+                    for token in &parts[1..] {
+                        circle_order.push(parse_positive_u32(token, line_number)?);
+                    }
+                }
+                _ => {}
+            },
+            "p" => {
+                if parts.len() != 4 || (parts[1] != "edge" && parts[1] != "col") {
+                    return input_error(format!(
+                        "unsupported DIMACS problem line at line {line_number}: {line}"
+                    ));
+                }
+                if n.is_some() {
+                    return input_error(format!(
+                        "duplicate DIMACS problem line at line {line_number}"
+                    ));
+                }
+                n = Some(parse_usize(parts[2], line_number, "vertex count")?);
+                m_declared = Some(parse_usize(parts[3], line_number, "edge count")?);
+            }
+            "e" => {
+                if parts.len() != 3 {
+                    return input_error(format!(
+                        "malformed edge line at line {line_number}: {line}"
+                    ));
+                }
+                let n = n.ok_or_else(|| {
+                    SosaError::Input(format!(
+                        "edge line before problem line at line {line_number}"
+                    ))
+                })?;
+                let u = parse_positive_u32(parts[1], line_number)?;
+                let v = parse_positive_u32(parts[2], line_number)?;
+                let n_u32 = u32::try_from(n).map_err(|_| {
+                    SosaError::Input(format!("vertex count {n} does not fit into u32"))
+                })?;
+                if u > n_u32 {
+                    return input_error(format!("edge vertex id {u} out of range 1..{n}"));
+                }
+                if v > n_u32 {
+                    return input_error(format!("edge vertex id {v} out of range 1..{n}"));
+                }
+                if u == v {
+                    return input_error(format!("self-loop on vertex {u} at line {line_number}"));
+                }
+                edge_count += 1;
+            }
+            _ => {
+                return input_error(format!(
+                    "unsupported DIMACS line at line {line_number}: {line}"
+                ));
+            }
+        }
+    }
+
+    if in_circle_block {
+        return input_error("circle representation block is missing END".to_string());
+    }
+    let n =
+        n.ok_or_else(|| SosaError::Input("DIMACS file is missing a problem line".to_string()))?;
+    let m_declared = m_declared.expect("m_declared must be present when n is present");
+    if !saw_circle_block {
+        return input_error("DIMACS file is missing a circle representation block".to_string());
+    }
+    if edge_count != m_declared {
+        return input_error(format!(
+            "problem line declares {m_declared} edge(s), but {edge_count} were read"
+        ));
+    }
+    validate_vertex_ranges(n, &[], &circle_order)?;
+    validate_circle_order(n, &circle_order)?;
+
+    Ok(DimacsCircleGeometry {
+        n,
+        m_declared,
+        circle_order,
+    })
 }
 
 pub fn parse_dimacs_circle(text: &str) -> Result<DimacsCircle, SosaError> {

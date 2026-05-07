@@ -3,6 +3,7 @@ use std::time::Instant;
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Stats {
     pub profile_timers: bool,
+    pub disable_branch_dedup: bool,
     pub rr_steps: u64,
     pub rr_deleted_vertices: u64,
     pub rr_rebuilds: u64,
@@ -22,6 +23,9 @@ pub struct Stats {
     pub lemma_37_calls: u64,
     pub lemma_38_calls: u64,
     pub lemma_33_calls: u64,
+    pub branch_candidates_generated: u64,
+    pub branch_candidates_unique: u64,
+    pub branch_candidates_duplicates: u64,
     pub max_recursion_depth: u64,
     pub base_case_time_ns: u128,
     pub arc_restriction_time_ns: u128,
@@ -41,6 +45,10 @@ impl Stats {
             profile_timers,
             ..Self::default()
         }
+    }
+
+    pub fn set_disable_branch_dedup(&mut self, disable_branch_dedup: bool) {
+        self.disable_branch_dedup = disable_branch_dedup;
     }
 
     pub fn start_timer(&self) -> Option<Instant> {

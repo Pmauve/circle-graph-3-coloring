@@ -29,12 +29,17 @@ where
     let mut seen = HashSet::new();
     visit_lemma_37_family(instance, stats, |semi, stats| {
         visit_lemma_38_family(&semi, stats, |full, stats| {
-            if seen.insert(PartitionedInstanceDedupKey::from_parts(
-                &full.instance,
-                &full.partition,
-            )) {
+            stats.branch_candidates_generated += 1;
+            if stats.disable_branch_dedup
+                || seen.insert(PartitionedInstanceDedupKey::from_parts(
+                    &full.instance,
+                    &full.partition,
+                ))
+            {
+                stats.branch_candidates_unique += 1;
                 return visit(full, stats);
             }
+            stats.branch_candidates_duplicates += 1;
             Ok(false)
         })
     })
@@ -86,12 +91,17 @@ where
             instance: semi.instance.clone(),
             partition: collapse_empty_top_and_bottom(&semi.partition)?,
         };
-        if seen.insert(PartitionedInstanceDedupKey::from_parts(
-            &full.instance,
-            &full.partition,
-        )) {
+        stats.branch_candidates_generated += 1;
+        if stats.disable_branch_dedup
+            || seen.insert(PartitionedInstanceDedupKey::from_parts(
+                &full.instance,
+                &full.partition,
+            ))
+        {
+            stats.branch_candidates_unique += 1;
             return visit(full, stats);
         }
+        stats.branch_candidates_duplicates += 1;
         return Ok(false);
     }
 

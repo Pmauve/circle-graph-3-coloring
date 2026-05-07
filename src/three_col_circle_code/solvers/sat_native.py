@@ -221,7 +221,7 @@ def _parse_native_stdout(
         if solver_status is None:
             return None, {}, "native SAT JSON output is missing solver_status"
         timings = {}
-        for key in ("core_time_s",):
+        for key in ("core_time_s", "parse_time_s", "build_time_s", "solve_time_s"):
             if key in payload:
                 try:
                     timings[key] = float(payload[key])
@@ -237,7 +237,12 @@ def _parse_native_stdout(
             continue
         if parts[:1] == ["s"] and len(parts) == 2:
             status = parts[1]
-        elif parts[:1] == ["t"] and len(parts) == 3 and parts[1] == "core_time_s":
+        elif parts[:1] == ["t"] and len(parts) == 3 and parts[1] in {
+            "core_time_s",
+            "parse_time_s",
+            "build_time_s",
+            "solve_time_s",
+        }:
             try:
                 timings[parts[1]] = float(parts[2])
             except ValueError:

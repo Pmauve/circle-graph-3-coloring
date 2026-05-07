@@ -7,7 +7,7 @@ use crate::lemma_38::{visit_lemma_33_family, FullySeparatedInstance};
 use crate::reduction::{reduce_exhaustively, ReductionOutcome};
 use crate::stats::Stats;
 use crate::{SolveConfig, SolveStatus, SolveSummary};
-use circle_core::dimacs_circle::read_dimacs_circle;
+use circle_core::dimacs_circle::{read_dimacs_circle, read_dimacs_circle_geometry};
 use circle_core::error::SosaError;
 use circle_core::instance::CircleInstance;
 
@@ -15,22 +15,47 @@ pub fn solve_dimacs_circle_file(
     path: &Path,
     config: SolveConfig,
 ) -> Result<SolveSummary, SosaError> {
-    let dimacs = read_dimacs_circle(path)?;
-    let instance =
-        CircleInstance::from_dimacs_with_crossing_validation(dimacs, config.validate_graph)?;
+    let parse_started = Instant::now();
+    let dimacs = if config.validate_graph {
+        Some(read_dimacs_circle(path)?)
+    } else {
+        None
+    };
+    let geometry = if config.validate_graph {
+        None
+    } else {
+        Some(read_dimacs_circle_geometry(path)?)
+    };
+    let parse_time_s = parse_started.elapsed().as_secs_f64();
+
+    let build_started = Instant::now();
+    let instance = if let Some(dimacs) = dimacs {
+        CircleInstance::from_dimacs_with_crossing_validation(dimacs, true)?
+    } else {
+        CircleInstance::from_dimacs_geometry_and_edge_file(
+            geometry.expect("geometry must be parsed when validation is disabled"),
+            path,
+        )?
+    };
+    let build_time_s = build_started.elapsed().as_secs_f64();
 
     let started = Instant::now();
     let mut stats = Stats::with_profile_timers(config.profile);
+    stats.set_disable_branch_dedup(config.disable_branch_dedup);
     let status = if solve_instance_recursively(instance, config, &mut stats, 0)? {
         SolveStatus::Colorable
     } else {
         SolveStatus::NotColorable
     };
-    let core_time_s = started.elapsed().as_secs_f64();
+    let solve_time_s = started.elapsed().as_secs_f64();
+    let core_time_s = solve_time_s;
 
     Ok(SolveSummary {
         status,
         core_time_s,
+        parse_time_s,
+        build_time_s,
+        solve_time_s,
         stats,
         error: None,
     })
@@ -130,6 +155,7 @@ e 2 3
                 base_case_algorithm: crate::BaseCaseAlgorithm::Backtracking,
                 validate_graph: true,
                 profile: false,
+                disable_branch_dedup: false,
             },
         )
         .unwrap();
@@ -163,6 +189,7 @@ e 3 4
                 base_case_algorithm: crate::BaseCaseAlgorithm::Backtracking,
                 validate_graph: true,
                 profile: false,
+                disable_branch_dedup: false,
             },
         )
         .unwrap();
@@ -193,6 +220,7 @@ e 2 3
                 base_case_algorithm: crate::BaseCaseAlgorithm::Backtracking,
                 validate_graph: true,
                 profile: false,
+                disable_branch_dedup: false,
             },
         )
         .unwrap();
@@ -221,6 +249,7 @@ e 1 2
                 base_case_algorithm: crate::BaseCaseAlgorithm::Backtracking,
                 validate_graph: true,
                 profile: false,
+                disable_branch_dedup: false,
             },
         );
         assert!(strict.unwrap_err().to_string().contains("does not match"));
@@ -232,6 +261,7 @@ e 1 2
                 base_case_algorithm: crate::BaseCaseAlgorithm::Backtracking,
                 validate_graph: false,
                 profile: false,
+                disable_branch_dedup: false,
             },
         )
         .unwrap();

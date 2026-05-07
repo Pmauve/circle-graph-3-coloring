@@ -215,12 +215,17 @@ where
         record_lemma_36_reduction_time(stats, started_at);
 
         let started_at = stats.start_timer();
-        let branch = if seen.insert(InstanceDedupKey::from_instance(&reduced)) {
+        stats.branch_candidates_generated += 1;
+        let branch = if stats.disable_branch_dedup
+            || seen.insert(InstanceDedupKey::from_instance(&reduced))
+        {
+            stats.branch_candidates_unique += 1;
             Some(Lemma36Branch {
                 instance: reduced,
                 eliminated,
             })
         } else {
+            stats.branch_candidates_duplicates += 1;
             None
         };
         record_lemma_36_dedup_time(stats, started_at);
@@ -279,16 +284,20 @@ where
         record_lemma_36_reduction_time(stats, started_at);
 
         let started_at = stats.start_timer();
-        let branch = if seen.insert(PartitionedInstanceDedupKey::from_parts(
-            &reduced,
-            &reduced_partition,
-        )) {
+        stats.branch_candidates_generated += 1;
+        let branch = if stats.disable_branch_dedup
+            || seen.insert(PartitionedInstanceDedupKey::from_parts(
+                &reduced,
+                &reduced_partition,
+            )) {
+            stats.branch_candidates_unique += 1;
             Some(Lemma36PartitionedBranch {
                 instance: reduced,
                 partition: reduced_partition,
                 eliminated,
             })
         } else {
+            stats.branch_candidates_duplicates += 1;
             None
         };
         record_lemma_36_dedup_time(stats, started_at);

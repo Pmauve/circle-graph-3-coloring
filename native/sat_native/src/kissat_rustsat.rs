@@ -23,6 +23,7 @@ mod imp {
         let reader = BufReader::new(file);
         let solver = RefCell::new(Kissat::default());
 
+        let build_started = Instant::now();
         stream_dimacs_edges(
             reader,
             |problem| {
@@ -43,6 +44,7 @@ mod imp {
                 Ok(())
             },
         )?;
+        let build_time_s = build_started.elapsed().as_secs_f64();
 
         let mut solver = solver.into_inner();
         let deadline = timeout_s.map(|seconds| Instant::now() + Duration::from_secs(seconds));
@@ -62,10 +64,14 @@ mod imp {
             SolverResult::Unsat => SatStatus::NotColorable,
             SolverResult::Interrupted => SatStatus::Unknown,
         };
+        let solve_time_s = started_at.elapsed().as_secs_f64();
 
         Ok(SatSummary {
             status,
-            core_time_s: Some(started_at.elapsed().as_secs_f64()),
+            core_time_s: Some(solve_time_s),
+            parse_time_s: None,
+            build_time_s: Some(build_time_s),
+            solve_time_s: Some(solve_time_s),
             error: None,
         })
     }

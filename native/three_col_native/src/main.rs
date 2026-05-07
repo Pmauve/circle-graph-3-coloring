@@ -310,6 +310,15 @@ fn sat_summary_text(summary: &SatSummary) -> String {
     if let Some(core_time_s) = summary.core_time_s {
         fields.push(format!("\"core_time_s\":{core_time_s:.6}"));
     }
+    if let Some(parse_time_s) = summary.parse_time_s {
+        fields.push(format!("\"parse_time_s\":{parse_time_s:.6}"));
+    }
+    if let Some(build_time_s) = summary.build_time_s {
+        fields.push(format!("\"build_time_s\":{build_time_s:.6}"));
+    }
+    if let Some(solve_time_s) = summary.solve_time_s {
+        fields.push(format!("\"solve_time_s\":{solve_time_s:.6}"));
+    }
     if let Some(error) = &summary.error {
         fields.push(format!("\"error\":{}", json_string(error)));
     }
@@ -424,12 +433,15 @@ mod tests {
         let summary = SatSummary {
             status: SatStatus::Colorable,
             core_time_s: Some(0.3),
+            parse_time_s: Some(0.1),
+            build_time_s: Some(0.2),
+            solve_time_s: Some(0.3),
             error: None,
         };
 
         assert_eq!(
             sat_summary_text(&summary),
-            "{\"status\":\"ok\",\"solver_status\":\"COLORABLE\",\"core_time_s\":0.300000}"
+            "{\"status\":\"ok\",\"solver_status\":\"COLORABLE\",\"core_time_s\":0.300000,\"parse_time_s\":0.100000,\"build_time_s\":0.200000,\"solve_time_s\":0.300000}"
         );
     }
 }

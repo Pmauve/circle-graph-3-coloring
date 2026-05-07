@@ -41,7 +41,7 @@ fn run() -> Result<CliRun, SosaError> {
     }
     if args.len() < 2 || args[0] != "solve" {
         return Err(SosaError::Input(
-            "usage: sosa_native solve <instance.col> [--base-case-n N] [--base-case-algorithm backtracking|cadical-rustsat|kissat-rustsat] [--skip-graph-validation] [--stats]"
+            "usage: sosa_native solve <instance.col> [--base-case-n N] [--base-case-algorithm backtracking|cadical-rustsat|kissat-rustsat] [--skip-graph-validation] [--stats] [--disable-branch-dedup]"
                 .to_string(),
         ));
     }
@@ -77,6 +77,10 @@ fn run() -> Result<CliRun, SosaError> {
                 config.profile = true;
                 index += 1;
             }
+            "--disable-branch-dedup" => {
+                config.disable_branch_dedup = true;
+                index += 1;
+            }
             unknown => {
                 return Err(SosaError::Input(format!("unknown argument {unknown:?}")));
             }
@@ -90,7 +94,7 @@ fn run() -> Result<CliRun, SosaError> {
 }
 
 fn print_help() {
-    println!("usage: sosa_native solve <instance.col> [--base-case-n N] [--base-case-algorithm backtracking|cadical-rustsat|kissat-rustsat] [--skip-graph-validation] [--stats]");
+    println!("usage: sosa_native solve <instance.col> [--base-case-n N] [--base-case-algorithm backtracking|cadical-rustsat|kissat-rustsat] [--skip-graph-validation] [--stats] [--disable-branch-dedup]");
 }
 
 fn print_summary(summary: &SolveSummary, print_stats: bool) {
@@ -100,7 +104,13 @@ fn print_summary(summary: &SolveSummary, print_stats: bool) {
         SolveStatus::Unknown => println!("s UNKNOWN"),
     }
     println!("t core_time_s {:.6}", summary.core_time_s);
+    println!("t parse_time_s {:.6}", summary.parse_time_s);
+    println!("t build_time_s {:.6}", summary.build_time_s);
+    println!("t solve_time_s {:.6}", summary.solve_time_s);
     if !print_stats {
+        if let Some(error) = &summary.error {
+            println!("e {error}");
+        }
         return;
     }
     println!("t solver_calls {}", summary.stats.solver_calls);
@@ -156,6 +166,18 @@ fn print_profile(stats: &Stats) {
     println!("p lemma_37_calls {}", stats.lemma_37_calls);
     println!("p lemma_38_calls {}", stats.lemma_38_calls);
     println!("p lemma_33_calls {}", stats.lemma_33_calls);
+    println!(
+        "p branch_candidates_generated {}",
+        stats.branch_candidates_generated
+    );
+    println!(
+        "p branch_candidates_unique {}",
+        stats.branch_candidates_unique
+    );
+    println!(
+        "p branch_candidates_duplicates {}",
+        stats.branch_candidates_duplicates
+    );
     println!("p max_recursion_depth {}", stats.max_recursion_depth);
     println!("p base_case_time_s {:.6}", ns_to_s(stats.base_case_time_ns));
     println!(

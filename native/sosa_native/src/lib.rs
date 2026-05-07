@@ -43,6 +43,7 @@ pub struct SolveConfig {
     pub base_case_algorithm: BaseCaseAlgorithm,
     pub validate_graph: bool,
     pub profile: bool,
+    pub disable_branch_dedup: bool,
 }
 
 impl Default for SolveConfig {
@@ -52,6 +53,7 @@ impl Default for SolveConfig {
             base_case_algorithm: BaseCaseAlgorithm::Backtracking,
             validate_graph: true,
             profile: false,
+            disable_branch_dedup: false,
         }
     }
 }
@@ -67,6 +69,9 @@ pub enum SolveStatus {
 pub struct SolveSummary {
     pub status: SolveStatus,
     pub core_time_s: f64,
+    pub parse_time_s: f64,
+    pub build_time_s: f64,
+    pub solve_time_s: f64,
     pub stats: stats::Stats,
     pub error: Option<String>,
 }
