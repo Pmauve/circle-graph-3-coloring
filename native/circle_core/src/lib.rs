@@ -3,6 +3,7 @@ pub mod colors;
 pub mod dimacs_circle;
 pub mod dimacs_edge;
 pub mod error;
+pub mod generation;
 pub mod instance;
 pub mod instance_check;
 pub mod partition;

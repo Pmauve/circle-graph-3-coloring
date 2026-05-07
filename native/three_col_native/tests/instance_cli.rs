@@ -48,6 +48,76 @@ e 1 1
     assert!(stdout.contains("self-loop"));
 }
 
+#[test]
+fn generate_writes_valid_col_instance() {
+    let path = fixture_path("generated.col");
+    let output = Command::new(binary())
+        .args([
+            "instance",
+            "generate",
+            "--family",
+            "rc_fast",
+            "--n",
+            "8",
+            "--seed",
+            "17",
+            "--output",
+            path.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains(r#""status":"ok""#));
+    assert!(stdout.contains(r#""instance_id":"rc_fast-k03-n0008-seed17""#));
+
+    let validate_output = Command::new(binary())
+        .args(["instance", "validate", path.to_str().unwrap()])
+        .output()
+        .unwrap();
+
+    assert!(validate_output.status.success());
+}
+
+#[test]
+fn generate_sequence_writes_requested_sizes() {
+    let mut output_dir = std::env::temp_dir();
+    output_dir.push(format!("three-col-native-sequence-{}", std::process::id()));
+    let output = Command::new(binary())
+        .args([
+            "instance",
+            "generate-sequence",
+            "--family",
+            "rcy_fast",
+            "--start-n",
+            "4",
+            "--stop-n",
+            "6",
+            "--step-n",
+            "2",
+            "--seed",
+            "19",
+            "--output-dir",
+            output_dir.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let first = output_dir
+        .join("rcy_fast")
+        .join("s")
+        .join("rcy_fast-k03-n0004-seed19.col");
+    let second = output_dir
+        .join("rcy_fast")
+        .join("s")
+        .join("rcy_fast-k03-n0006-seed19.col");
+
+    assert!(first.exists());
+    assert!(second.exists());
+}
+
 fn fixture_path(name: &str) -> std::path::PathBuf {
     let mut path = std::env::temp_dir();
     path.push(format!("three-col-native-{}-{name}", std::process::id()));

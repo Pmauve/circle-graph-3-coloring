@@ -2,6 +2,9 @@ use std::env;
 use std::path::PathBuf;
 
 use circle_core::error::SosaError;
+use circle_core::generation::{
+    sequence_output_path, CircleGraphBuilder, GeneratedSummary, GenerationConfig, GenerationFamily,
+};
 use circle_core::instance_check::{
     inspect_dimacs_circle_file, validate_dimacs_circle_file, InstanceSummary,
 };
@@ -42,22 +45,185 @@ fn run() -> Result<(String, i32), SosaError> {
 }
 
 fn run_instance(args: &[String]) -> Result<(String, i32), SosaError> {
+    let Some(command) = args.first() else {
+        return Err(SosaError::Input(instance_help().to_string()));
+    };
+    if command == "generate" {
+        return run_instance_generate(&args[1..]);
+    }
+    if command == "generate-sequence" {
+        return run_instance_generate_sequence(&args[1..]);
+    }
     if args.len() != 2 {
-        return Err(SosaError::Input(
-            "usage: three_col_native instance <inspect|validate> <instance.col>".to_string(),
-        ));
+        return Err(SosaError::Input(instance_help().to_string()));
     }
     let path = PathBuf::from(&args[1]);
-    let summary = match args[0].as_str() {
+    let summary = match command.as_str() {
         "inspect" => inspect_dimacs_circle_file(&path)?,
         "validate" => validate_dimacs_circle_file(&path)?,
         command => {
             return Err(SosaError::Input(format!(
-                "unknown instance command {command:?}; expected inspect or validate"
+                "unknown instance command {command:?}; expected inspect, validate, generate, or generate-sequence"
             )));
         }
     };
     Ok((summary_json(&summary), 0))
+}
+
+fn run_instance_generate(args: &[String]) -> Result<(String, i32), SosaError> {
+    let options = GenerateOptions::parse(args, false)?;
+    let mut builder = CircleGraphBuilder::new(options.config()?)?;
+    builder.extend_to(options.n)?;
+    let summary = builder.write_col(&options.output.ok_or_else(|| {
+        SosaError::Input("--output is required for instance generate".to_string())
+    })?)?;
+    Ok((generated_summary_json(&summary), 0))
+}
+
+fn run_instance_generate_sequence(args: &[String]) -> Result<(String, i32), SosaError> {
+    let options = GenerateOptions::parse(args, true)?;
+    let config = options.config()?;
+    let output_dir = options.output_dir.ok_or_else(|| {
+        SosaError::Input("--output-dir is required for instance generate-sequence".to_string())
+    })?;
+    if options.step_n == 0 {
+        return Err(SosaError::Input("--step-n must be at least 1".to_string()));
+    }
+    if options.start_n > options.stop_n {
+        return Err(SosaError::Input(
+            "--start-n must be less than or equal to --stop-n".to_string(),
+        ));
+    }
+
+    let mut builder = CircleGraphBuilder::new(config.clone())?;
+    let mut summaries = Vec::new();
+    let mut n = options.start_n;
+    while n <= options.stop_n {
+        builder.extend_to(n)?;
+        let path = sequence_output_path(
+            &output_dir,
+            config.family,
+            n,
+            config.seed,
+            config.num_colors,
+        );
+        summaries.push(builder.write_col(&path)?);
+        match n.checked_add(options.step_n) {
+            Some(next) => n = next,
+            None => break,
+        }
+    }
+    Ok((generated_sequence_json(&summaries), 0))
+}
+
+#[derive(Clone, Debug)]
+struct GenerateOptions {
+    family: Option<GenerationFamily>,
+    seed: Option<u64>,
+    n: usize,
+    start_n: usize,
+    stop_n: usize,
+    step_n: usize,
+    output: Option<PathBuf>,
+    output_dir: Option<PathBuf>,
+    num_colors: u8,
+    max_attempts_per_node: usize,
+}
+
+impl GenerateOptions {
+    fn parse(args: &[String], sequence: bool) -> Result<Self, SosaError> {
+        let mut options = Self {
+            family: None,
+            seed: None,
+            n: 0,
+            start_n: 0,
+            stop_n: 0,
+            step_n: 1,
+            output: None,
+            output_dir: None,
+            num_colors: 3,
+            max_attempts_per_node: 10_000,
+        };
+        let mut index = 0;
+        while index < args.len() {
+            match args[index].as_str() {
+                "--family" => {
+                    options.family = Some(GenerationFamily::parse(required_value(
+                        args, index, "--family",
+                    )?)?);
+                    index += 2;
+                }
+                "--seed" => {
+                    options.seed = Some(parse_u64_arg(args, index, "--seed")?);
+                    index += 2;
+                }
+                "--n" => {
+                    options.n = parse_usize_arg(args, index, "--n")?;
+                    index += 2;
+                }
+                "--start-n" => {
+                    options.start_n = parse_usize_arg(args, index, "--start-n")?;
+                    index += 2;
+                }
+                "--stop-n" => {
+                    options.stop_n = parse_usize_arg(args, index, "--stop-n")?;
+                    index += 2;
+                }
+                "--step-n" => {
+                    options.step_n = parse_usize_arg(args, index, "--step-n")?;
+                    index += 2;
+                }
+                "--output" => {
+                    options.output = Some(PathBuf::from(required_value(args, index, "--output")?));
+                    index += 2;
+                }
+                "--output-dir" => {
+                    options.output_dir =
+                        Some(PathBuf::from(required_value(args, index, "--output-dir")?));
+                    index += 2;
+                }
+                "--num-colors" => {
+                    options.num_colors = parse_u8_arg(args, index, "--num-colors")?;
+                    index += 2;
+                }
+                "--max-attempts-per-node" => {
+                    options.max_attempts_per_node =
+                        parse_usize_arg(args, index, "--max-attempts-per-node")?;
+                    index += 2;
+                }
+                unknown => {
+                    return Err(SosaError::Input(format!("unknown argument {unknown:?}")));
+                }
+            }
+        }
+
+        if sequence {
+            if options.start_n == 0 || options.stop_n == 0 {
+                return Err(SosaError::Input(
+                    "--start-n and --stop-n are required for instance generate-sequence"
+                        .to_string(),
+                ));
+            }
+        } else if options.n == 0 {
+            return Err(SosaError::Input(
+                "--n is required for instance generate".to_string(),
+            ));
+        }
+        Ok(options)
+    }
+
+    fn config(&self) -> Result<GenerationConfig, SosaError> {
+        Ok(GenerationConfig {
+            family: self
+                .family
+                .ok_or_else(|| SosaError::Input("--family is required".to_string()))?,
+            seed: self
+                .seed
+                .ok_or_else(|| SosaError::Input("--seed is required".to_string()))?,
+            num_colors: self.num_colors,
+            max_attempts_per_node: self.max_attempts_per_node,
+        })
+    }
 }
 
 fn run_sat(args: &[String]) -> Result<(String, i32), SosaError> {
@@ -115,21 +281,47 @@ fn required_value<'a>(args: &'a [String], index: usize, flag: &str) -> Result<&'
         .ok_or_else(|| SosaError::Input(format!("{flag} requires a value")))
 }
 
+fn parse_usize_arg(args: &[String], index: usize, flag: &str) -> Result<usize, SosaError> {
+    let value = required_value(args, index, flag)?;
+    value
+        .parse::<usize>()
+        .map_err(|_| SosaError::Input(format!("invalid {flag} value {value:?}")))
+}
+
+fn parse_u64_arg(args: &[String], index: usize, flag: &str) -> Result<u64, SosaError> {
+    let value = required_value(args, index, flag)?;
+    value
+        .parse::<u64>()
+        .map_err(|_| SosaError::Input(format!("invalid {flag} value {value:?}")))
+}
+
+fn parse_u8_arg(args: &[String], index: usize, flag: &str) -> Result<u8, SosaError> {
+    let value = required_value(args, index, flag)?;
+    value
+        .parse::<u8>()
+        .map_err(|_| SosaError::Input(format!("invalid {flag} value {value:?}")))
+}
+
 fn help() -> &'static str {
     "usage: three_col_native <instance|sat> ..."
 }
 
+fn instance_help() -> &'static str {
+    "usage: three_col_native instance <inspect|validate> <instance.col> | instance generate --family F --n N --seed S --output PATH | instance generate-sequence --family F --start-n N --stop-n N --step-n N --seed S --output-dir DIR"
+}
+
 fn sat_summary_text(summary: &SatSummary) -> String {
-    let mut lines = vec![
-        format!("s {}", status_to_output(summary.status)),
-        format!("t parse_encode_time_s {:.6}", summary.parse_encode_time_s),
-        format!("t solve_time_s {:.6}", summary.solve_time_s),
-        format!("t core_time_s {:.6}", summary.core_time_s),
+    let mut fields = vec![
+        json_pair("status", "ok"),
+        json_pair("solver_status", status_to_output(summary.status)),
+        format!("\"parse_encode_time_s\":{:.6}", summary.parse_encode_time_s),
+        format!("\"solve_time_s\":{:.6}", summary.solve_time_s),
+        format!("\"core_time_s\":{:.6}", summary.core_time_s),
     ];
     if let Some(error) = &summary.error {
-        lines.push(format!("e {error}"));
+        fields.push(format!("\"error\":{}", json_string(error)));
     }
-    lines.join("\n")
+    format!("{{{}}}", fields.join(","))
 }
 
 fn summary_json(summary: &InstanceSummary) -> String {
@@ -146,6 +338,34 @@ fn summary_json(summary: &InstanceSummary) -> String {
         fields.push(format!("\"num_colors\":{num_colors}"));
     }
     format!("{{{}}}", fields.join(","))
+}
+
+fn generated_summary_json(summary: &GeneratedSummary) -> String {
+    format!(
+        "{{{},{},{},\"n\":{},\"m\":{},\"num_colors\":{},\"path\":{}}}",
+        json_pair("status", "ok"),
+        json_pair("instance_id", &summary.instance_id),
+        json_pair("family", &summary.family),
+        summary.n,
+        summary.m,
+        summary.num_colors,
+        json_string(&summary.path.to_string_lossy())
+    )
+}
+
+fn generated_sequence_json(summaries: &[GeneratedSummary]) -> String {
+    let paths = summaries
+        .iter()
+        .map(|summary| json_string(&summary.path.to_string_lossy()))
+        .collect::<Vec<_>>()
+        .join(",");
+    let count = summaries.len();
+    format!(
+        "{{{},\"count\":{},\"paths\":[{}]}}",
+        json_pair("status", "ok"),
+        count,
+        paths
+    )
 }
 
 fn error_json(message: &str) -> String {
@@ -219,7 +439,7 @@ mod tests {
 
         assert_eq!(
             sat_summary_text(&summary),
-            "s COLORABLE\nt parse_encode_time_s 0.100000\nt solve_time_s 0.200000\nt core_time_s 0.300000"
+            "{\"status\":\"ok\",\"solver_status\":\"COLORABLE\",\"parse_encode_time_s\":0.100000,\"solve_time_s\":0.200000,\"core_time_s\":0.300000}"
         );
     }
 }
