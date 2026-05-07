@@ -6,3 +6,6 @@ members = [
     "three_col_native",
 ]
 resolver = "2"
+
+[patch.crates-io]
+rustsat-cadical = { path = "vendor/rustsat-cadical-0.7.5" }
