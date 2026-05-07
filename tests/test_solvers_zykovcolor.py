@@ -127,6 +127,24 @@ class ZykovColorSolverTests(unittest.TestCase):
         self.assertNotIn("--custom", command)
         self.assertEqual(command[-8:], ["--strategy", "2", "--num-colors", "3", "--solver", "1", "-e", "5"])
 
+    def test_solve_zykovcolor_rejects_duplicate_solver_extra_arg(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            executable = _write_fake_solver(Path(tmpdir), stdout="")
+            result = solve_zykovcolor(
+                _sample_record(),
+                params={
+                    "executable": str(executable),
+                    "configuration": "custom",
+                    "mode": "single-k",
+                    "decision_num_colors": 3,
+                    "solver": "cadical",
+                    "extra_args": ["--solver", "1"],
+                },
+            )
+
+        self.assertEqual(result.status, SOLVER_STATUS_ERROR)
+        self.assertIn("params.solver", str(result.error))
+
     def test_solve_zykovcolor_reports_parse_errors(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             executable = _write_fake_solver(Path(tmpdir), stdout="no result here\\n")

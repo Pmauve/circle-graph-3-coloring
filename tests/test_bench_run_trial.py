@@ -138,6 +138,25 @@ class BenchRunTrialTests(unittest.TestCase):
         self.assertIsNone(result["is_colorable"])
         self.assertIn("inconsistent", result["error"])
 
+    def test_run_trial_records_solver_exception_as_error_result(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            plan_dir, _work_root, instance_path = _write_plan(tmp_root)
+            save_instance(_build_record(instance_id="rc-n0002-seed1", family="rc", seed=1), instance_path)
+
+            with patch(
+                "three_col_circle_code.bench.run_trial.run_solver",
+                side_effect=MemoryError("graph too large"),
+            ):
+                result_path = run_trial(plan_dir=plan_dir, index=1)
+
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["ok_repetitions"], 0)
+        self.assertIn("MemoryError", result["error"])
+        self.assertEqual(result["details"]["error_type"], "MemoryError")
+
     def test_run_trial_records_invalid_missing_instance(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_root = Path(tmpdir)

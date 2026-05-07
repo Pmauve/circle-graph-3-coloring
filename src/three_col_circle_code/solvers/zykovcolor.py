@@ -123,6 +123,13 @@ def _run_zykovcolor_on_path(
         solver_args=solver_args,
     )
     extra_args = _normalize_extra_args(requested_params.get("extra_args", ()))
+    if "--solver" in extra_args:
+        return _error_result(
+            record=record,
+            requested_params=requested_params,
+            error="ZykovColor params.extra_args must not include --solver; use params.solver instead",
+            details={"core_time_source": "missing"},
+        )
     command = [executable, str(dimacs_path), *mode_args, *extra_args]
 
     try:

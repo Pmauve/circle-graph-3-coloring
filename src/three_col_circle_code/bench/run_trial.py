@@ -110,7 +110,7 @@ def run_trial(
     else:
         try:
             record = load_instance(trial_row.instance_path, validate=validate_instance_artifact)
-        except (InstanceFormatError, json.JSONDecodeError, OSError) as exc:
+        except (InstanceFormatError, json.JSONDecodeError, OSError, MemoryError) as exc:
             result = _build_invalid_result_record(
                 run_id=context.run_id,
                 trial=trial_row,
@@ -281,11 +281,28 @@ def _run_measurements(
     measurements: list[dict[str, Any]] = []
     last_details: dict[str, Any] = {}
     for repetition in range(1, repetitions + 1):
-        solve_result = run_solver(
-            instance_path,
-            solver_config,
-            validate_instance_artifact=validate_instance_artifact,
-        )
+        try:
+            solve_result = run_solver(
+                instance_path,
+                solver_config,
+                validate_instance_artifact=validate_instance_artifact,
+            )
+        except Exception as exc:
+            last_details = {
+                "error_type": type(exc).__name__,
+                "solver_target": solver_config.target,
+            }
+            measurements.append(
+                {
+                    "repetition": repetition,
+                    "status": "error",
+                    "wall_time_s": None,
+                    "core_time_s": None,
+                    "is_colorable": None,
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
+            )
+            continue
         last_details = dict(solve_result.details)
         measurements.append(
             {

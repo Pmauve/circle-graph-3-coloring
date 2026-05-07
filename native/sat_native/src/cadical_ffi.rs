@@ -108,7 +108,7 @@ e 3 4
 
     fn write_temp_file(label: &str, content: &str) -> PathBuf {
         let mut path = std::env::temp_dir();
-        path.push(format!("cadical-ffi-{label}-{}.col", unique_suffix()));
+        path.push(format!("cadical-direct-{label}-{}.col", unique_suffix()));
         fs::write(&path, content).unwrap();
         path
     }

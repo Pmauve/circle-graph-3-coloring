@@ -3,6 +3,7 @@ use std::path::Path;
 use circle_core::error::SosaError;
 
 use crate::cadical_ffi::solve_dimacs_edge_file_with_cadical;
+use crate::cadical_rustsat::solve_dimacs_edge_file_with_rustsat_cadical;
 use crate::encode::encode_dimacs_edge_file_to_writer;
 use crate::external::solve_with_stdin;
 use crate::kissat_ffi::solve_dimacs_edge_file_with_kissat;
@@ -11,10 +12,11 @@ use crate::{SatConfig, SatStatus, SatSummary};
 pub fn solve_dimacs_edge_file(path: &Path, config: SatConfig) -> Result<SatSummary, SosaError> {
     match config.backend.as_str() {
         "dimacs-pipe" => solve_dimacs_edge_file_with_pipe(path, config),
-        "cadical-ffi" => solve_dimacs_edge_file_with_cadical(path, config.timeout_s),
-        "kissat-ffi" => solve_dimacs_edge_file_with_kissat(path, config.timeout_s),
+        "cadical-direct" => solve_dimacs_edge_file_with_cadical(path, config.timeout_s),
+        "cadical-rustsat" => solve_dimacs_edge_file_with_rustsat_cadical(path, config.timeout_s),
+        "kissat-rustsat" => solve_dimacs_edge_file_with_kissat(path, config.timeout_s),
         backend => Err(SosaError::Input(format!(
-            "unsupported SAT backend {backend:?}, expected \"dimacs-pipe\", \"cadical-ffi\", or \"kissat-ffi\""
+            "unsupported SAT backend {backend:?}, expected \"dimacs-pipe\", \"cadical-direct\", \"cadical-rustsat\", or \"kissat-rustsat\""
         ))),
     }
 }
@@ -159,9 +161,9 @@ e 3 4
     }
 
     #[test]
-    fn solves_with_cadical_ffi_backend() {
+    fn solves_with_cadical_direct_backend() {
         let instance = write_temp_file(
-            "cadical-ffi",
+            "cadical-direct",
             "\
 p edge 3 3
 e 1 2
@@ -173,7 +175,7 @@ e 2 3
         let summary = solve_dimacs_edge_file(
             &instance,
             SatConfig {
-                backend: "cadical-ffi".to_string(),
+                backend: "cadical-direct".to_string(),
                 solver_bin: String::new(),
                 timeout_s: Some(5),
             },
@@ -187,9 +189,9 @@ e 2 3
 
     #[cfg(unix)]
     #[test]
-    fn solves_with_kissat_ffi_backend() {
+    fn solves_with_cadical_rustsat_backend() {
         let instance = write_temp_file(
-            "kissat-ffi",
+            "cadical-rustsat",
             "\
 p edge 3 3
 e 1 2
@@ -201,7 +203,35 @@ e 2 3
         let summary = solve_dimacs_edge_file(
             &instance,
             SatConfig {
-                backend: "kissat-ffi".to_string(),
+                backend: "cadical-rustsat".to_string(),
+                solver_bin: String::new(),
+                timeout_s: Some(5),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(summary.status, SatStatus::Colorable);
+        assert!(summary.core_time_s.is_some());
+        let _ = fs::remove_file(instance);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn solves_with_kissat_rustsat_backend() {
+        let instance = write_temp_file(
+            "kissat-rustsat",
+            "\
+p edge 3 3
+e 1 2
+e 1 3
+e 2 3
+",
+        );
+
+        let summary = solve_dimacs_edge_file(
+            &instance,
+            SatConfig {
+                backend: "kissat-rustsat".to_string(),
                 solver_bin: String::new(),
                 timeout_s: Some(5),
             },

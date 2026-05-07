@@ -1,4 +1,5 @@
 pub mod cadical_ffi;
+pub mod cadical_rustsat;
 pub mod cnf;
 pub mod encode;
 pub mod external;

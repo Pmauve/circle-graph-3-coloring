@@ -107,7 +107,7 @@ mod imp {
         _timeout_s: Option<u64>,
     ) -> Result<SatSummary, SosaError> {
         Err(SosaError::NotImplemented(
-            "kissat-ffi backend is only available on Unix targets".to_string(),
+            "kissat-rustsat backend is only available on Unix targets".to_string(),
         ))
     }
 }

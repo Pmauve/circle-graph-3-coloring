@@ -81,12 +81,12 @@ class NativeSatSolverTests(unittest.TestCase):
         self.assertIn("kissat", command)
         self.assertEqual(run.call_args.kwargs["timeout"], 42.0)
 
-    def test_ffi_backends_do_not_require_solver_bin(self) -> None:
-        for backend in ("cadical-ffi", "kissat-ffi"):
+    def test_native_embedded_backends_do_not_require_solver_bin(self) -> None:
+        for backend in ("cadical-direct", "cadical-rustsat", "kissat-rustsat"):
             with self.subTest(backend=backend):
-                self._assert_ffi_backend_does_not_require_solver_bin(backend)
+                self._assert_embedded_backend_does_not_require_solver_bin(backend)
 
-    def _assert_ffi_backend_does_not_require_solver_bin(self, backend: str) -> None:
+    def _assert_embedded_backend_does_not_require_solver_bin(self, backend: str) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             binary = Path(tmpdir) / "three_col_native"
             binary.write_text("", encoding="utf-8")
