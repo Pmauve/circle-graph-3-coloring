@@ -35,14 +35,6 @@
   "solvers": [
     {
       "target": "sat-3-col-native",
-      "label": "Native SAT CaDiCaL direct",
-      "params": {
-        "backend": "cadical-direct",
-        "timeout_s": 600
-      }
-    },
-    {
-      "target": "sat-3-col-native",
       "label": "Native SAT CaDiCaL RustSAT",
       "params": {
         "backend": "cadical-rustsat",

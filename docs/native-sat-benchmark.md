@@ -41,19 +41,6 @@ Example external solver block:
 }
 ```
 
-Example direct embedded CaDiCaL block:
-
-```json
-{
-  "target": "sat-3-col-native",
-  "label": "Native SAT CaDiCaL direct",
-  "params": {
-    "backend": "cadical-direct",
-    "timeout_s": 3600
-  }
-}
-```
-
 Example RustSAT CaDiCaL block:
 
 ```json
@@ -84,9 +71,8 @@ The Rust binary reads the benchmark `.col` file as DIMACS edge input, ignores
 circle comments, and builds the fixed 3-color CNF without materializing a
 Python/NetworkX graph. With `backend = "dimacs-pipe"` it streams the CNF to the
 configured SAT solver over stdin and parses the solver's SAT/UNSAT/UNKNOWN
-status. With `backend = "cadical-direct"` it adds clauses directly to the
-embedded CaDiCaL crate in-process. With `backend = "cadical-rustsat"` and
-`backend = "kissat-rustsat"` it adds clauses through RustSAT solver adapters.
+status. With `backend = "cadical-rustsat"` and `backend = "kissat-rustsat"` it
+adds clauses through RustSAT solver adapters.
 Normal execution does not write a `.cnf` file.
 
 When the external SAT solver prints a recognized process-time line, the

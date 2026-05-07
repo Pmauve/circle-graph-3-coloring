@@ -82,7 +82,7 @@ class NativeSatSolverTests(unittest.TestCase):
         self.assertEqual(run.call_args.kwargs["timeout"], 42.0)
 
     def test_native_embedded_backends_do_not_require_solver_bin(self) -> None:
-        for backend in ("cadical-direct", "cadical-rustsat", "kissat-rustsat"):
+        for backend in ("cadical-rustsat", "kissat-rustsat"):
             with self.subTest(backend=backend):
                 self._assert_embedded_backend_does_not_require_solver_bin(backend)
 

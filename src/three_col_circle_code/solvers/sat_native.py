@@ -19,7 +19,7 @@ from three_col_circle_code.instances.native import THREE_COL_NATIVE_BIN_ENV
 SAT_3_COL_NATIVE_SOLVER = "sat-3-col-native"
 IMPLEMENTATION_STATUS = "native-rust-sat-v4"
 DEFAULT_BACKEND = "dimacs-pipe"
-SUPPORTED_BACKENDS = ("dimacs-pipe", "cadical-direct", "cadical-rustsat", "kissat-rustsat")
+SUPPORTED_BACKENDS = ("dimacs-pipe", "cadical-rustsat", "kissat-rustsat")
 DEFAULT_TIMEOUT_S = 3600.0
 PYTHON_TIMEOUT_GRACE_S = 30.0
 
@@ -189,7 +189,7 @@ def _parse_backend(config: Mapping[str, Any]) -> str:
 
 def _parse_solver_bin(config: Mapping[str, Any], *, backend: str) -> Optional[str]:
     raw_value = config.get("solver_bin")
-    if backend in {"cadical-direct", "cadical-rustsat", "kissat-rustsat"} and raw_value is None:
+    if backend in {"cadical-rustsat", "kissat-rustsat"} and raw_value is None:
         return None
     if raw_value is None:
         raise ValueError("native SAT params.solver_bin is required")

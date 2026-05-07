@@ -229,7 +229,7 @@ impl GenerateOptions {
 fn run_sat(args: &[String]) -> Result<(String, i32), SosaError> {
     if args.len() < 2 || args[0] != "solve" {
         return Err(SosaError::Input(
-            "usage: three_col_native sat solve <instance.col> [--backend dimacs-pipe|cadical-direct|cadical-rustsat|kissat-rustsat] [--solver-bin <path>] [--timeout-s N]"
+            "usage: three_col_native sat solve <instance.col> [--backend dimacs-pipe|cadical-rustsat|kissat-rustsat] [--solver-bin <path>] [--timeout-s N]"
                 .to_string(),
         ));
     }
