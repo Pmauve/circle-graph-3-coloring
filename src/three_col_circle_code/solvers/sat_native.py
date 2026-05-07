@@ -12,10 +12,10 @@ from three_col_circle_code.solvers.common import (
     SOLVER_STATUS_OK,
     SolverResult,
 )
+from three_col_circle_code.instances.native import THREE_COL_NATIVE_BIN_ENV
 
 
 SAT_3_COL_NATIVE_SOLVER = "sat-3-col-native"
-SAT_NATIVE_BIN_ENV = "SAT_NATIVE_BIN"
 IMPLEMENTATION_STATUS = "native-rust-sat-pipe-v1"
 DEFAULT_BACKEND = "dimacs-pipe"
 DEFAULT_TIMEOUT_S = 3600.0
@@ -61,11 +61,12 @@ def solve_sat_3_col_native_from_path(
             n_vertices=n_vertices,
             m_edges=m_edges,
             details=details,
-            error=f"{SAT_NATIVE_BIN_ENV} is not set or does not point to an executable",
+            error=f"{THREE_COL_NATIVE_BIN_ENV} is not set or does not point to an executable",
         )
 
     command = [
         binary,
+        "sat",
         "solve",
         str(instance_path),
         "--backend",
@@ -199,17 +200,9 @@ def _parse_timeout_s(config: Mapping[str, Any]) -> float:
 
 
 def _resolve_native_binary() -> Optional[str]:
-    configured = os.environ.get(SAT_NATIVE_BIN_ENV)
+    configured = os.environ.get(THREE_COL_NATIVE_BIN_ENV)
     if configured:
         return configured
-    binary_name = "sat_native.exe" if os.name == "nt" else "sat_native"
-    repo_root = Path(__file__).resolve().parents[3]
-    workspace_candidate = repo_root / "native" / "target" / "release" / binary_name
-    if workspace_candidate.is_file():
-        return str(workspace_candidate)
-    member_candidate = repo_root / "native" / "sat_native" / "target" / "release" / binary_name
-    if member_candidate.is_file():
-        return str(member_candidate)
     return None
 
 

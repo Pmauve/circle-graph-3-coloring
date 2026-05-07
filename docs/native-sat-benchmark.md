@@ -10,8 +10,8 @@ Build the Rust binary from the native workspace:
 
 ```bash
 cd native
-cargo build --release -p sat_native
-export SAT_NATIVE_BIN="$PWD/target/release/sat_native"
+cargo build --release -p three_col_native
+export THREE_COL_NATIVE_BIN="$PWD/target/release/three_col_native"
 ```
 
 Example solver block:

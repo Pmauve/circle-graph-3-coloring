@@ -5,12 +5,14 @@ use circle_core::error::SosaError;
 use circle_core::instance_check::{
     inspect_dimacs_circle_file, validate_dimacs_circle_file, InstanceSummary,
 };
+use sat_native::solver::status_to_output;
+use sat_native::{solve_dimacs_edge_file, SatConfig, SatStatus, SatSummary};
 
 fn main() {
     let exit_code = match run() {
-        Ok(output) => {
+        Ok((output, exit_code)) => {
             println!("{output}");
-            0
+            exit_code
         }
         Err(error) => {
             println!("{}", error_json(&error.to_string()));
@@ -24,19 +26,29 @@ fn main() {
     std::process::exit(exit_code);
 }
 
-fn run() -> Result<String, SosaError> {
+fn run() -> Result<(String, i32), SosaError> {
     let args: Vec<String> = env::args().skip(1).collect();
     if args.iter().any(|arg| arg == "--help" || arg == "-h") {
-        return Ok(help().to_string());
+        return Ok((help().to_string(), 0));
     }
-    if args.len() != 3 || args[0] != "instance" {
+    let Some(command_group) = args.first() else {
+        return Err(SosaError::Input(help().to_string()));
+    };
+    match command_group.as_str() {
+        "instance" => run_instance(&args[1..]),
+        "sat" => run_sat(&args[1..]),
+        _ => Err(SosaError::Input(help().to_string())),
+    }
+}
+
+fn run_instance(args: &[String]) -> Result<(String, i32), SosaError> {
+    if args.len() != 2 {
         return Err(SosaError::Input(
             "usage: three_col_native instance <inspect|validate> <instance.col>".to_string(),
         ));
     }
-
-    let path = PathBuf::from(&args[2]);
-    let summary = match args[1].as_str() {
+    let path = PathBuf::from(&args[1]);
+    let summary = match args[0].as_str() {
         "inspect" => inspect_dimacs_circle_file(&path)?,
         "validate" => validate_dimacs_circle_file(&path)?,
         command => {
@@ -45,11 +57,79 @@ fn run() -> Result<String, SosaError> {
             )));
         }
     };
-    Ok(summary_json(&summary))
+    Ok((summary_json(&summary), 0))
+}
+
+fn run_sat(args: &[String]) -> Result<(String, i32), SosaError> {
+    if args.len() < 2 || args[0] != "solve" {
+        return Err(SosaError::Input(
+            "usage: three_col_native sat solve <instance.col> --solver-bin <path> [--backend dimacs-pipe] [--timeout-s N]"
+                .to_string(),
+        ));
+    }
+
+    let path = PathBuf::from(&args[1]);
+    let mut config = SatConfig {
+        backend: "dimacs-pipe".to_string(),
+        solver_bin: String::new(),
+        timeout_s: None,
+    };
+    let mut index = 2;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--backend" => {
+                config.backend = required_value(args, index, "--backend")?.to_string();
+                index += 2;
+            }
+            "--solver-bin" => {
+                config.solver_bin = required_value(args, index, "--solver-bin")?.to_string();
+                index += 2;
+            }
+            "--timeout-s" => {
+                let raw_value = required_value(args, index, "--timeout-s")?;
+                config.timeout_s = Some(raw_value.parse::<u64>().map_err(|_| {
+                    SosaError::Input(format!("invalid --timeout-s value {raw_value:?}"))
+                })?);
+                index += 2;
+            }
+            unknown => {
+                return Err(SosaError::Input(format!("unknown argument {unknown:?}")));
+            }
+        }
+    }
+    if config.solver_bin.is_empty() {
+        return Err(SosaError::Input("--solver-bin is required".to_string()));
+    }
+
+    let summary = solve_dimacs_edge_file(&path, config)?;
+    let exit_code = match summary.status {
+        SatStatus::Colorable | SatStatus::NotColorable => 0,
+        SatStatus::Unknown => 3,
+    };
+    Ok((sat_summary_text(&summary), exit_code))
+}
+
+fn required_value<'a>(args: &'a [String], index: usize, flag: &str) -> Result<&'a str, SosaError> {
+    args.get(index + 1)
+        .map(String::as_str)
+        .ok_or_else(|| SosaError::Input(format!("{flag} requires a value")))
 }
 
 fn help() -> &'static str {
-    "usage: three_col_native instance <inspect|validate> <instance.col>"
+    "usage: three_col_native <instance|sat> ..."
+}
+
+fn sat_summary_text(summary: &SatSummary) -> String {
+    let mut lines = vec![
+        format!("s {}", status_to_output(summary.status)),
+        format!("t parse_encode_time_s {:.6}", summary.parse_encode_time_s),
+        format!("t solve_time_s {:.6}", summary.solve_time_s),
+        format!("t core_time_s {:.6}", summary.core_time_s),
+    ];
+    if let Some(error) = &summary.error {
+        lines.push(format!("e {error}"));
+    }
+    lines.join("\n")
 }
 
 fn summary_json(summary: &InstanceSummary) -> String {
@@ -124,6 +204,22 @@ mod tests {
         assert_eq!(
             summary_json(&summary),
             "{\"status\":\"ok\",\"n\":2,\"m\":1}"
+        );
+    }
+
+    #[test]
+    fn renders_sat_summary_text() {
+        let summary = SatSummary {
+            status: SatStatus::Colorable,
+            parse_encode_time_s: 0.1,
+            solve_time_s: 0.2,
+            core_time_s: 0.3,
+            error: None,
+        };
+
+        assert_eq!(
+            sat_summary_text(&summary),
+            "s COLORABLE\nt parse_encode_time_s 0.100000\nt solve_time_s 0.200000\nt core_time_s 0.300000"
         );
     }
 }

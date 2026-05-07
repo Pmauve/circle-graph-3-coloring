@@ -9,3 +9,4 @@ __pycache__/
 external/
 native/target/
 native/sosa_native/target/
+*.col.validation.json

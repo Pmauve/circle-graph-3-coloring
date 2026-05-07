@@ -19,8 +19,8 @@ class NativeSatSolverTests(unittest.TestCase):
     def test_missing_binary_returns_error(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             path = _write_col(Path(tmpdir) / "triangle.col")
-            missing_binary = str(Path(tmpdir) / "missing-sat-native")
-            with patch.dict(os.environ, {"SAT_NATIVE_BIN": missing_binary}):
+            missing_binary = str(Path(tmpdir) / "missing-three-col-native")
+            with patch.dict(os.environ, {"THREE_COL_NATIVE_BIN": missing_binary}):
                 result = solve_sat_3_col_native_from_path(
                     path,
                     params={"solver_bin": "kissat"},
@@ -28,16 +28,16 @@ class NativeSatSolverTests(unittest.TestCase):
 
         self.assertEqual(result.solver, SAT_3_COL_NATIVE_SOLVER)
         self.assertEqual(result.status, SOLVER_STATUS_ERROR)
-        self.assertIn("SAT_NATIVE_BIN", result.error or "")
+        self.assertIn("THREE_COL_NATIVE_BIN", result.error or "")
         self.assertEqual(result.n_vertices, 3)
         self.assertEqual(result.m_edges, 3)
 
     def test_missing_solver_bin_returns_error(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
-            binary = Path(tmpdir) / "sat_native"
+            binary = Path(tmpdir) / "three_col_native"
             binary.write_text("", encoding="utf-8")
             path = _write_col(Path(tmpdir) / "triangle.col")
-            with patch.dict(os.environ, {"SAT_NATIVE_BIN": str(binary)}):
+            with patch.dict(os.environ, {"THREE_COL_NATIVE_BIN": str(binary)}):
                 result = solve_sat_3_col_native_from_path(path)
 
         self.assertEqual(result.status, SOLVER_STATUS_ERROR)
@@ -45,7 +45,7 @@ class NativeSatSolverTests(unittest.TestCase):
 
     def test_runs_binary_and_parses_timings(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
-            binary = Path(tmpdir) / "sat_native"
+            binary = Path(tmpdir) / "three_col_native"
             binary.write_text("", encoding="utf-8")
             path = _write_col(Path(tmpdir) / "triangle.col")
             completed = CompletedProcess(
@@ -59,7 +59,7 @@ class NativeSatSolverTests(unittest.TestCase):
                 ),
                 stderr="",
             )
-            with patch.dict(os.environ, {"SAT_NATIVE_BIN": str(binary)}), patch(
+            with patch.dict(os.environ, {"THREE_COL_NATIVE_BIN": str(binary)}), patch(
                 "three_col_circle_code.solvers.sat_native.subprocess.run",
                 return_value=completed,
             ) as run:
@@ -78,14 +78,14 @@ class NativeSatSolverTests(unittest.TestCase):
         self.assertEqual(result.details["parse_encode_time_s"], 0.01)
         self.assertEqual(result.details["solve_time_s"], 0.02)
         command = run.call_args.args[0]
-        self.assertEqual(command[:3], [str(binary), "solve", str(path)])
+        self.assertEqual(command[:4], [str(binary), "sat", "solve", str(path)])
         self.assertIn("--solver-bin", command)
         self.assertIn("kissat", command)
         self.assertEqual(run.call_args.kwargs["timeout"], 12.0)
 
     def test_parses_not_colorable_status(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
-            binary = Path(tmpdir) / "sat_native"
+            binary = Path(tmpdir) / "three_col_native"
             binary.write_text("", encoding="utf-8")
             path = _write_col(Path(tmpdir) / "triangle.col")
             completed = CompletedProcess(
@@ -94,7 +94,7 @@ class NativeSatSolverTests(unittest.TestCase):
                 stdout="s NOT_COLORABLE\nt core_time_s 0.456\n",
                 stderr="",
             )
-            with patch.dict(os.environ, {"SAT_NATIVE_BIN": str(binary)}), patch(
+            with patch.dict(os.environ, {"THREE_COL_NATIVE_BIN": str(binary)}), patch(
                 "three_col_circle_code.solvers.sat_native.subprocess.run",
                 return_value=completed,
             ):
@@ -109,7 +109,7 @@ class NativeSatSolverTests(unittest.TestCase):
 
     def test_nonzero_exit_returns_error(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
-            binary = Path(tmpdir) / "sat_native"
+            binary = Path(tmpdir) / "three_col_native"
             binary.write_text("", encoding="utf-8")
             path = _write_col(Path(tmpdir) / "triangle.col")
             completed = CompletedProcess(
@@ -118,7 +118,7 @@ class NativeSatSolverTests(unittest.TestCase):
                 stdout="s ERROR\ne bad input\n",
                 stderr="",
             )
-            with patch.dict(os.environ, {"SAT_NATIVE_BIN": str(binary)}), patch(
+            with patch.dict(os.environ, {"THREE_COL_NATIVE_BIN": str(binary)}), patch(
                 "three_col_circle_code.solvers.sat_native.subprocess.run",
                 return_value=completed,
             ):
@@ -132,12 +132,12 @@ class NativeSatSolverTests(unittest.TestCase):
 
     def test_timeout_returns_error(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
-            binary = Path(tmpdir) / "sat_native"
+            binary = Path(tmpdir) / "three_col_native"
             binary.write_text("", encoding="utf-8")
             path = _write_col(Path(tmpdir) / "triangle.col")
-            with patch.dict(os.environ, {"SAT_NATIVE_BIN": str(binary)}), patch(
+            with patch.dict(os.environ, {"THREE_COL_NATIVE_BIN": str(binary)}), patch(
                 "three_col_circle_code.solvers.sat_native.subprocess.run",
-                side_effect=TimeoutExpired(cmd=["sat_native"], timeout=0.01),
+                side_effect=TimeoutExpired(cmd=["three_col_native"], timeout=0.01),
             ):
                 result = solve_sat_3_col_native_from_path(
                     path,

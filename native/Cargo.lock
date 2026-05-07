@@ -25,4 +25,5 @@ name = "three_col_native"
 version = "0.1.0"
 dependencies = [
  "circle_core",
+ "sat_native",
 ]
