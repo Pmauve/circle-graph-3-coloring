@@ -18,6 +18,7 @@ from three_col_circle_code.bench.plan_io import (
 )
 from three_col_circle_code.instances.io import load_instance, save_instance
 from three_col_circle_code.instances.model import InstanceMetadata, InstanceRecord
+from three_col_circle_code.instances.native import NativeInstanceInvalid
 from three_col_circle_code.instances.validate import validate_instance
 
 
@@ -91,6 +92,52 @@ class BenchGenerateInstanceTests(unittest.TestCase):
         self.assertEqual(result["status"], "skipped")
         self.assertFalse(result["generated"])
         validate.assert_called_once()
+        generate.assert_not_called()
+
+    def test_run_instance_generation_skips_existing_col_with_native_sidecar(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            instance_path = tmp_root / "instances" / "rc" / "s" / "rc-k03-n0002-seed1.col"
+            instance_path.parent.mkdir(parents=True)
+            instance_path.write_text("p edge 2 0\n", encoding="utf-8")
+            plan_dir, _work_root = _write_plan(tmp_root, instance_path=instance_path)
+
+            with patch(
+                "three_col_circle_code.bench.generate_instance.ensure_validated_sidecar",
+                return_value=None,
+            ) as validate, patch(
+                "three_col_circle_code.bench.generate_instance.load_instance"
+            ) as load_instance, patch(
+                "three_col_circle_code.bench.generate_instance.generate_instance"
+            ) as generate:
+                result_path = run_instance_generation(plan_dir=plan_dir, index=1)
+
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(result["status"], "skipped")
+        self.assertFalse(result["generated"])
+        self.assertTrue(result["validation_ok"])
+        validate.assert_called_once_with(instance_path)
+        load_instance.assert_not_called()
+        generate.assert_not_called()
+
+    def test_run_instance_generation_marks_invalid_existing_col(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            instance_path = tmp_root / "instances" / "rc" / "s" / "rc-k03-n0002-seed1.col"
+            instance_path.parent.mkdir(parents=True)
+            instance_path.write_text("bad", encoding="utf-8")
+            plan_dir, _work_root = _write_plan(tmp_root, instance_path=instance_path)
+
+            with patch(
+                "three_col_circle_code.bench.generate_instance.ensure_validated_sidecar",
+                side_effect=NativeInstanceInvalid("bad instance"),
+            ), patch("three_col_circle_code.bench.generate_instance.generate_instance") as generate:
+                result_path = run_instance_generation(plan_dir=plan_dir, index=1)
+
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(result["status"], "invalid")
         generate.assert_not_called()
 
     def test_run_instance_generation_force_rechecks_existing_instance_without_regenerating(self) -> None:

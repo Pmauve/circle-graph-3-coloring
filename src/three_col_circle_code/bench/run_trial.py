@@ -20,6 +20,11 @@ from three_col_circle_code.bench.records import (
 )
 from three_col_circle_code.instances.io import load_instance
 from three_col_circle_code.instances.model import InstanceFormatError, InstanceMetadata, bucket_for_n
+from three_col_circle_code.instances.native import (
+    NativeInstanceError,
+    NativeInstanceInvalid,
+    ensure_validated_sidecar,
+)
 from three_col_circle_code.solvers.common import SolverConfig
 from three_col_circle_code.solvers.registry import run_solver_from_path as run_solver
 from three_col_circle_code.solvers.sat_native import SAT_3_COL_NATIVE_SOLVER
@@ -60,6 +65,19 @@ def run_trial(
         work_root=context.work_root,
         trial=trial_row,
     )
+    if validate_instance_artifact and trial_row.instance_path.suffix == ".col":
+        try:
+            ensure_validated_sidecar(trial_row.instance_path, force=True)
+        except NativeInstanceInvalid as exc:
+            result = _build_invalid_result_record(
+                trial=trial_row,
+                started_at=started_at,
+                error=exc,
+            )
+            _write_result(result_path, result)
+            return result_path
+        except NativeInstanceError as exc:
+            raise ValueError(str(exc)) from exc
     solver_config = SolverConfig(
         solver=trial_row.solver,
         backend=trial_row.backend,

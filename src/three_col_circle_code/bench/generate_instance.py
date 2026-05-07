@@ -14,6 +14,11 @@ from three_col_circle_code.bench.plan_io import (
 from three_col_circle_code.generation.random_instances import generate_instance, write_instance_to_path
 from three_col_circle_code.instances.io import load_instance
 from three_col_circle_code.instances.model import InstanceFormatError, InstanceRecord
+from three_col_circle_code.instances.native import (
+    NativeInstanceError,
+    NativeInstanceInvalid,
+    ensure_validated_sidecar,
+)
 from three_col_circle_code.instances.validate import validate_instance
 
 
@@ -39,7 +44,9 @@ def run_instance_generation(
     started_at = _now()
     generated = False
     try:
-        existing_info = _load_valid_existing_instance(instance_row.instance_path)
+        existing_info = _load_valid_existing_col_instance(instance_row.instance_path)
+        if existing_info is None:
+            existing_info = _load_valid_existing_instance(instance_row.instance_path)
         if existing_info is None:
             record = generate_instance(
                 family=instance_row.family,
@@ -52,7 +59,7 @@ def run_instance_generation(
             loaded_record = load_instance(instance_row.instance_path)
             validation_ok, validation_errors = _validate_record(loaded_record)
         else:
-            loaded_record, validation_errors = existing_info
+            validation_errors = existing_info
             validation_ok = True
         status = "ok" if generated else "skipped"
         if not validation_ok:
@@ -67,6 +74,19 @@ def run_instance_generation(
             validation_errors=validation_errors,
             started_at=started_at,
             error=None,
+            environment=collect_environment_metadata(),
+        )
+    except NativeInstanceInvalid as exc:
+        result = _build_result(
+            index=index,
+            status="invalid",
+            instance_id=instance_row.instance_id,
+            instance_path=instance_row.instance_path,
+            generated=generated,
+            validation_ok=False,
+            validation_errors=[{"code": "native_validation_failed", "message": str(exc)}],
+            started_at=started_at,
+            error=str(exc),
             environment=collect_environment_metadata(),
         )
     except Exception as exc:
@@ -129,9 +149,19 @@ def _resolve_work_root(*, plan_dir: Path, work_root: Optional[Path]) -> Path:
         raise ValueError("plan manifest is missing required field 'work_root'") from exc
 
 
-def _load_valid_existing_instance(instance_path: Path) -> Optional[tuple[InstanceRecord, list[dict[str, str]]]]:
+def _load_valid_existing_col_instance(instance_path: Path) -> Optional[list[dict[str, str]]]:
+    """Validate or trust an existing DIMACS-circle file without materializing a Python graph."""
+    if not Path(instance_path).exists() or Path(instance_path).suffix != ".col":
+        return None
+    ensure_validated_sidecar(Path(instance_path))
+    return []
+
+
+def _load_valid_existing_instance(instance_path: Path) -> Optional[list[dict[str, str]]]:
     """Load and validate an existing instance once."""
     if not Path(instance_path).exists():
+        return None
+    if Path(instance_path).suffix == ".col":
         return None
     try:
         record = load_instance(instance_path)
@@ -140,7 +170,7 @@ def _load_valid_existing_instance(instance_path: Path) -> Optional[tuple[Instanc
     validation_ok, _validation_errors = _validate_record(record)
     if not validation_ok:
         return None
-    return record, _validation_errors
+    return _validation_errors
 
 
 def _validate_record(record: InstanceRecord) -> tuple[bool, list[dict[str, str]]]:

@@ -59,6 +59,7 @@ pub fn validate_dimacs_circle<R: BufRead>(reader: R) -> Result<InstanceSummary, 
     let mut parser = ParserState::default();
     let mut edge_count = 0usize;
     let mut circle_order = Vec::new();
+    let mut edge_list = Vec::new();
     let mut edges = HashSet::new();
 
     for (line_index, raw_line) in reader.lines().enumerate() {
@@ -111,6 +112,7 @@ pub fn validate_dimacs_circle<R: BufRead>(reader: R) -> Result<InstanceSummary, 
                 if !edges.insert(key) {
                     return input_error(format!("duplicate edge ({u}, {v}) at line {line_number}"));
                 }
+                edge_list.push((u, v));
                 edge_count += 1;
             }
             _ => {
@@ -137,7 +139,14 @@ pub fn validate_dimacs_circle<R: BufRead>(reader: R) -> Result<InstanceSummary, 
         ));
     }
     validate_metadata_consistency(&parser, problem)?;
-    validate_circle_order(problem.n, &circle_order)?;
+    let endpoints = validate_circle_order(problem.n, &circle_order)?;
+    validate_edges_are_crossings(&edge_list, &endpoints)?;
+    let crossing_count = count_crossings(&circle_order, &endpoints);
+    if crossing_count != edge_count as u128 {
+        return input_error(format!(
+            "circle representation has {crossing_count} crossing pair(s), but {edge_count} edge(s) were listed"
+        ));
+    }
     parser.summary()
 }
 
@@ -316,7 +325,12 @@ fn validate_metadata_consistency(parser: &ParserState, problem: Problem) -> Resu
     Ok(())
 }
 
-fn validate_circle_order(n: usize, circle_order: &[usize]) -> Result<(), SosaError> {
+struct Endpoints {
+    left: Vec<usize>,
+    right: Vec<usize>,
+}
+
+fn validate_circle_order(n: usize, circle_order: &[usize]) -> Result<Endpoints, SosaError> {
     let expected_len = n
         .checked_mul(2)
         .ok_or_else(|| SosaError::Input(format!("vertex count {n} is too large")))?;
@@ -327,12 +341,19 @@ fn validate_circle_order(n: usize, circle_order: &[usize]) -> Result<(), SosaErr
         ));
     }
     let mut counts = vec![0u8; n];
-    for &vertex in circle_order {
+    let mut left = vec![usize::MAX; n + 1];
+    let mut right = vec![usize::MAX; n + 1];
+    for (position, &vertex) in circle_order.iter().enumerate() {
         if vertex > n {
             return input_error(format!("circle vertex id {vertex} out of range 1..{n}"));
         }
         let count = &mut counts[vertex - 1];
         *count = count.saturating_add(1);
+        match *count {
+            1 => left[vertex] = position,
+            2 => right[vertex] = position,
+            _ => {}
+        }
     }
     for (index, count) in counts.iter().copied().enumerate() {
         if count != 2 {
@@ -342,7 +363,80 @@ fn validate_circle_order(n: usize, circle_order: &[usize]) -> Result<(), SosaErr
             ));
         }
     }
+    Ok(Endpoints { left, right })
+}
+
+fn validate_edges_are_crossings(
+    edges: &[(usize, usize)],
+    endpoints: &Endpoints,
+) -> Result<(), SosaError> {
+    for &(u, v) in edges {
+        if !chords_cross(u, v, endpoints) {
+            return input_error(format!("edge ({u}, {v}) is not a circle crossing"));
+        }
+    }
     Ok(())
+}
+
+fn chords_cross(u: usize, v: usize, endpoints: &Endpoints) -> bool {
+    let lu = endpoints.left[u];
+    let ru = endpoints.right[u];
+    let lv = endpoints.left[v];
+    let rv = endpoints.right[v];
+    (lu < lv && lv < ru && ru < rv) || (lv < lu && lu < rv && rv < ru)
+}
+
+fn count_crossings(circle_order: &[usize], endpoints: &Endpoints) -> u128 {
+    let mut fenwick = Fenwick::new(circle_order.len() + 1);
+    let mut seen = vec![false; endpoints.left.len()];
+    let mut total = 0u128;
+    for (position, &vertex) in circle_order.iter().enumerate() {
+        let fenwick_position = position + 1;
+        if !seen[vertex] {
+            seen[vertex] = true;
+            fenwick.add(fenwick_position, 1);
+        } else {
+            let left_position = endpoints.left[vertex] + 1;
+            total += fenwick.range_sum(left_position + 1, fenwick_position - 1) as u128;
+            fenwick.add(left_position, -1);
+        }
+    }
+    total
+}
+
+struct Fenwick {
+    values: Vec<i64>,
+}
+
+impl Fenwick {
+    fn new(size: usize) -> Self {
+        Self {
+            values: vec![0; size + 1],
+        }
+    }
+
+    fn add(&mut self, mut index: usize, delta: i64) {
+        while index < self.values.len() {
+            self.values[index] += delta;
+            index += index & index.wrapping_neg();
+        }
+    }
+
+    fn prefix_sum(&self, mut index: usize) -> i64 {
+        let mut total = 0;
+        while index > 0 {
+            total += self.values[index];
+            index &= index - 1;
+        }
+        total
+    }
+
+    fn range_sum(&self, start: usize, end: usize) -> i64 {
+        if start > end {
+            return 0;
+        }
+        self.prefix_sum(end) - self.prefix_sum(start - 1)
+    }
 }
 
 fn circle_action(parts: &[&str]) -> Option<&'static str> {
@@ -457,5 +551,36 @@ e 1 2
         .unwrap_err();
 
         assert!(error.to_string().contains("metadata n=4"));
+    }
+
+    #[test]
+    fn rejects_listed_non_crossing_edge() {
+        let error = validate_dimacs_circle(Cursor::new(
+            "\
+c ircle representation START
+c 1 1 2 2
+c ircle representation END
+p edge 2 1
+e 1 2
+",
+        ))
+        .unwrap_err();
+
+        assert!(error.to_string().contains("not a circle crossing"));
+    }
+
+    #[test]
+    fn rejects_missing_crossing_edge() {
+        let error = validate_dimacs_circle(Cursor::new(
+            "\
+c ircle representation START
+c 1 2 1 2
+c ircle representation END
+p edge 2 0
+",
+        ))
+        .unwrap_err();
+
+        assert!(error.to_string().contains("crossing pair"));
     }
 }
