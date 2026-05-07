@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::time::Instant;
 
-use crate::arc_ops::restrict_instance_to_arc;
+use crate::arc_ops::{chords_contained_in_left_right_arcs, restrict_instance_to_vertices};
 use crate::base_case::solve_base_case;
 use crate::lemma_38::{visit_lemma_33_family, FullySeparatedInstance};
 use crate::reduction::{reduce_exhaustively, ReductionOutcome};
@@ -10,7 +10,6 @@ use crate::{SolveConfig, SolveStatus, SolveSummary};
 use circle_core::dimacs_circle::read_dimacs_circle;
 use circle_core::error::SosaError;
 use circle_core::instance::CircleInstance;
-use circle_core::partition::ArcName;
 
 pub fn solve_dimacs_circle_file(
     path: &Path,
@@ -21,7 +20,7 @@ pub fn solve_dimacs_circle_file(
         CircleInstance::from_dimacs_with_crossing_validation(dimacs, config.validate_graph)?;
 
     let started = Instant::now();
-    let mut stats = Stats::default();
+    let mut stats = Stats::with_profile_timers(config.profile);
     let status = if solve_instance_recursively(instance, config, &mut stats, 0)? {
         SolveStatus::Colorable
     } else {
@@ -51,7 +50,10 @@ fn solve_instance_recursively(
         ReductionOutcome::Consistent(reduced) => reduced,
     };
     if reduced.n <= config.base_case_n {
-        return solve_base_case(&reduced, config.base_case_algorithm, stats);
+        let started_at = stats.start_timer();
+        let is_colorable = solve_base_case(&reduced, config.base_case_algorithm, stats)?;
+        stats.base_case_time_ns += Stats::elapsed_ns(started_at);
+        return Ok(is_colorable);
     }
 
     let mut found_colorable_branch = false;
@@ -71,17 +73,31 @@ fn solve_full_branch(
     stats: &mut Stats,
     depth: u64,
 ) -> Result<bool, SosaError> {
-    let left = restrict_instance_to_arc(&full.instance, &full.partition, ArcName::L)?;
-    let right = restrict_instance_to_arc(&full.instance, &full.partition, ArcName::R)?;
-    let (first, second) = if left.n <= right.n {
-        (left, right)
+    let (left_vertices, right_vertices) =
+        chords_contained_in_left_right_arcs(&full.instance, &full.partition);
+    let left_n = left_vertices.count_ones();
+    let right_n = right_vertices.count_ones();
+    let (first_vertices, second_vertices) = if left_n <= right_n {
+        (&left_vertices, &right_vertices)
     } else {
-        (right, left)
+        (&right_vertices, &left_vertices)
     };
 
+    stats.arc_restrictions += 1;
+    stats.child_instances_built += 1;
+    let started_at = stats.start_timer();
+    let first = restrict_instance_to_vertices(&full.instance, first_vertices)?;
+    stats.arc_restriction_time_ns += Stats::elapsed_ns(started_at);
     if !solve_instance_recursively(first, config, stats, depth)? {
+        stats.second_child_instances_skipped += 1;
         return Ok(false);
     }
+
+    stats.arc_restrictions += 1;
+    stats.child_instances_built += 1;
+    let started_at = stats.start_timer();
+    let second = restrict_instance_to_vertices(&full.instance, second_vertices)?;
+    stats.arc_restriction_time_ns += Stats::elapsed_ns(started_at);
     solve_instance_recursively(second, config, stats, depth)
 }
 
@@ -113,6 +129,7 @@ e 2 3
                 base_case_n: 3,
                 base_case_algorithm: crate::BaseCaseAlgorithm::Backtracking,
                 validate_graph: true,
+                profile: false,
             },
         )
         .unwrap();
@@ -145,6 +162,7 @@ e 3 4
                 base_case_n: 4,
                 base_case_algorithm: crate::BaseCaseAlgorithm::Backtracking,
                 validate_graph: true,
+                profile: false,
             },
         )
         .unwrap();
@@ -174,6 +192,7 @@ e 2 3
                 base_case_n: 2,
                 base_case_algorithm: crate::BaseCaseAlgorithm::Backtracking,
                 validate_graph: true,
+                profile: false,
             },
         )
         .unwrap();
@@ -201,6 +220,7 @@ e 1 2
                 base_case_n: 2,
                 base_case_algorithm: crate::BaseCaseAlgorithm::Backtracking,
                 validate_graph: true,
+                profile: false,
             },
         );
         assert!(strict.unwrap_err().to_string().contains("does not match"));
@@ -211,6 +231,7 @@ e 1 2
                 base_case_n: 2,
                 base_case_algorithm: crate::BaseCaseAlgorithm::Backtracking,
                 validate_graph: false,
+                profile: false,
             },
         )
         .unwrap();

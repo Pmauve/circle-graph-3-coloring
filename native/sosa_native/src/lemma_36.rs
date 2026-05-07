@@ -1,8 +1,7 @@
 use std::collections::HashSet;
 
 use crate::reduction::{
-    reduce_exhaustively, reduce_exhaustively_with_partition, PartitionedReductionOutcome,
-    ReductionOutcome,
+    reduce_allowed, reduce_allowed_with_partition, PartitionedReductionOutcome, ReductionOutcome,
 };
 use crate::stats::Stats;
 use circle_core::bitset::BitSet;
@@ -30,6 +29,57 @@ pub struct Lemma36PartitionedBranch {
     pub instance: CircleInstance,
     pub partition: CirclePartition,
     pub eliminated: EliminatedSet,
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub(crate) struct InstanceDedupKey {
+    endpoint_at: Vec<u32>,
+    allowed: Vec<ColorMask>,
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub(crate) struct PartitionedInstanceDedupKey {
+    instance: InstanceDedupKey,
+    partition: PartitionDedupKey,
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub(crate) struct PartitionDedupKey {
+    n_endpoints: usize,
+    left_boundary: usize,
+    top_boundary: usize,
+    right_boundary: usize,
+    bottom_boundary: usize,
+}
+
+impl InstanceDedupKey {
+    pub(crate) fn from_instance(instance: &CircleInstance) -> Self {
+        Self {
+            endpoint_at: instance.endpoint_at.clone(),
+            allowed: instance.allowed.clone(),
+        }
+    }
+}
+
+impl PartitionDedupKey {
+    pub(crate) fn from_partition(partition: &CirclePartition) -> Self {
+        Self {
+            n_endpoints: partition.n_endpoints,
+            left_boundary: partition.left_boundary,
+            top_boundary: partition.top_boundary,
+            right_boundary: partition.right_boundary,
+            bottom_boundary: partition.bottom_boundary,
+        }
+    }
+}
+
+impl PartitionedInstanceDedupKey {
+    pub(crate) fn from_parts(instance: &CircleInstance, partition: &CirclePartition) -> Self {
+        Self {
+            instance: InstanceDedupKey::from_instance(instance),
+            partition: PartitionDedupKey::from_partition(partition),
+        }
+    }
 }
 
 pub fn visit_lemma_36_family<F>(
@@ -128,41 +178,56 @@ fn visit_monochromatic_branches<F>(
     instance: &CircleInstance,
     vertices: &BitSet,
     eliminated: EliminatedSet,
-    seen: &mut HashSet<CircleInstance>,
+    seen: &mut HashSet<InstanceDedupKey>,
     stats: &mut Stats,
     visit: &mut F,
 ) -> Result<bool, SosaError>
 where
     F: FnMut(Lemma36Branch, &mut Stats) -> Result<bool, SosaError>,
 {
+    let started_at = stats.start_timer();
     let target_vertices = vertices.iter_ones().collect::<Vec<_>>();
+    record_lemma_36_setup_time(stats, started_at);
     for color_mask in COLOR_BRANCH_ORDER {
+        let started_at = stats.start_timer();
         if target_vertices
             .iter()
             .any(|&vertex| instance.allowed[vertex] & color_mask == 0)
         {
+            record_lemma_36_setup_time(stats, started_at);
             continue;
         }
 
-        let mut branch = instance.clone();
+        let mut allowed = instance.allowed.clone();
         for &vertex in &target_vertices {
-            branch.allowed[vertex] = color_mask;
+            allowed[vertex] = color_mask;
         }
+        record_lemma_36_setup_time(stats, started_at);
 
-        let reduced = match reduce_exhaustively(branch, stats)? {
-            ReductionOutcome::Conflict => continue,
+        let started_at = stats.start_timer();
+        let reduced = match reduce_allowed(instance, allowed, stats)? {
+            ReductionOutcome::Conflict => {
+                record_lemma_36_reduction_time(stats, started_at);
+                continue;
+            }
             ReductionOutcome::Consistent(instance) => instance,
         };
-        if seen.insert(reduced.clone())
-            && visit(
-                Lemma36Branch {
-                    instance: reduced,
-                    eliminated,
-                },
-                stats,
-            )?
-        {
-            return Ok(true);
+        record_lemma_36_reduction_time(stats, started_at);
+
+        let started_at = stats.start_timer();
+        let branch = if seen.insert(InstanceDedupKey::from_instance(&reduced)) {
+            Some(Lemma36Branch {
+                instance: reduced,
+                eliminated,
+            })
+        } else {
+            None
+        };
+        record_lemma_36_dedup_time(stats, started_at);
+        if let Some(branch) = branch {
+            if visit(branch, stats)? {
+                return Ok(true);
+            }
         }
     }
     Ok(false)
@@ -173,49 +238,85 @@ fn visit_partitioned_monochromatic_branches<F>(
     partition: &CirclePartition,
     vertices: &BitSet,
     eliminated: EliminatedSet,
-    seen: &mut HashSet<(CircleInstance, CirclePartition)>,
+    seen: &mut HashSet<PartitionedInstanceDedupKey>,
     stats: &mut Stats,
     visit: &mut F,
 ) -> Result<bool, SosaError>
 where
     F: FnMut(Lemma36PartitionedBranch, &mut Stats) -> Result<bool, SosaError>,
 {
+    let started_at = stats.start_timer();
     let target_vertices = vertices.iter_ones().collect::<Vec<_>>();
+    record_lemma_36_setup_time(stats, started_at);
     for color_mask in COLOR_BRANCH_ORDER {
+        let started_at = stats.start_timer();
         if target_vertices
             .iter()
             .any(|&vertex| instance.allowed[vertex] & color_mask == 0)
         {
+            record_lemma_36_setup_time(stats, started_at);
             continue;
         }
 
-        let mut branch = instance.clone();
+        let mut allowed = instance.allowed.clone();
         for &vertex in &target_vertices {
-            branch.allowed[vertex] = color_mask;
+            allowed[vertex] = color_mask;
         }
+        record_lemma_36_setup_time(stats, started_at);
 
+        let started_at = stats.start_timer();
         let (reduced, reduced_partition) =
-            match reduce_exhaustively_with_partition(branch, partition, stats)? {
-                PartitionedReductionOutcome::Conflict => continue,
+            match reduce_allowed_with_partition(instance, allowed, partition, stats)? {
+                PartitionedReductionOutcome::Conflict => {
+                    record_lemma_36_reduction_time(stats, started_at);
+                    continue;
+                }
                 PartitionedReductionOutcome::Consistent {
                     instance,
                     partition,
                 } => (instance, partition),
             };
-        if seen.insert((reduced.clone(), reduced_partition.clone()))
-            && visit(
-                Lemma36PartitionedBranch {
-                    instance: reduced,
-                    partition: reduced_partition,
-                    eliminated,
-                },
-                stats,
-            )?
-        {
-            return Ok(true);
+        record_lemma_36_reduction_time(stats, started_at);
+
+        let started_at = stats.start_timer();
+        let branch = if seen.insert(PartitionedInstanceDedupKey::from_parts(
+            &reduced,
+            &reduced_partition,
+        )) {
+            Some(Lemma36PartitionedBranch {
+                instance: reduced,
+                partition: reduced_partition,
+                eliminated,
+            })
+        } else {
+            None
+        };
+        record_lemma_36_dedup_time(stats, started_at);
+        if let Some(branch) = branch {
+            if visit(branch, stats)? {
+                return Ok(true);
+            }
         }
     }
     Ok(false)
+}
+
+fn record_lemma_36_setup_time(stats: &mut Stats, started_at: Option<std::time::Instant>) {
+    let elapsed = Stats::elapsed_ns(started_at);
+    stats.lemma_36_branch_setup_time_ns += elapsed;
+    stats.lemma_36_time_ns += elapsed;
+}
+
+fn record_lemma_36_reduction_time(stats: &mut Stats, started_at: Option<std::time::Instant>) {
+    let elapsed = Stats::elapsed_ns(started_at);
+    stats.lemma_36_reduction_time_ns += elapsed;
+    stats.lemma_36_time_ns += elapsed;
+}
+
+fn record_lemma_36_dedup_time(stats: &mut Stats, started_at: Option<std::time::Instant>) {
+    let elapsed = Stats::elapsed_ns(started_at);
+    stats.lemma_36_dedup_time_ns += elapsed;
+    stats.lemma_36_time_ns += elapsed;
 }
 
 fn contains_internal_edge(instance: &CircleInstance, vertices: &BitSet) -> bool {

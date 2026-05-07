@@ -56,6 +56,35 @@ pub fn restrict_instance_to_arc(
     instance.rebuild_from_active(&active, instance.allowed.clone())
 }
 
+pub fn restrict_instance_to_vertices(
+    instance: &CircleInstance,
+    active: &BitSet,
+) -> Result<CircleInstance, SosaError> {
+    instance.rebuild_from_active(active, instance.allowed.clone())
+}
+
+pub fn chords_contained_in_left_right_arcs(
+    instance: &CircleInstance,
+    partition: &CirclePartition,
+) -> (BitSet, BitSet) {
+    let mut left = BitSet::empty(instance.n);
+    let mut right = BitSet::empty(instance.n);
+    for vertex in 0..instance.n {
+        let Some(first_arc) = partition.endpoint_arc(instance.left[vertex] as usize) else {
+            continue;
+        };
+        let Some(second_arc) = partition.endpoint_arc(instance.right[vertex] as usize) else {
+            continue;
+        };
+        if first_arc == ArcName::L && second_arc == ArcName::L {
+            left.set(vertex, true);
+        } else if first_arc == ArcName::R && second_arc == ArcName::R {
+            right.set(vertex, true);
+        }
+    }
+    (left, right)
+}
+
 pub fn advance_boundary_inside_arc(
     instance: &CircleInstance,
     partition: &CirclePartition,

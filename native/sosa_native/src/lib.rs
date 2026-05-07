@@ -7,6 +7,8 @@ pub mod reduction;
 pub mod solver;
 pub mod stats;
 
+pub use stats::Stats;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BaseCaseAlgorithm {
     Backtracking,
@@ -40,6 +42,7 @@ pub struct SolveConfig {
     pub base_case_n: usize,
     pub base_case_algorithm: BaseCaseAlgorithm,
     pub validate_graph: bool,
+    pub profile: bool,
 }
 
 impl Default for SolveConfig {
@@ -48,6 +51,7 @@ impl Default for SolveConfig {
             base_case_n: 128,
             base_case_algorithm: BaseCaseAlgorithm::Backtracking,
             validate_graph: true,
+            profile: false,
         }
     }
 }

@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use circle_core::error::SosaError;
 use sosa_native::{
-    solve_dimacs_circle_file, BaseCaseAlgorithm, SolveConfig, SolveStatus, SolveSummary,
+    solve_dimacs_circle_file, BaseCaseAlgorithm, SolveConfig, SolveStatus, SolveSummary, Stats,
 };
 
 struct CliRun {
@@ -74,6 +74,7 @@ fn run() -> Result<CliRun, SosaError> {
             }
             "--stats" => {
                 print_stats = true;
+                config.profile = true;
                 index += 1;
             }
             unknown => {
@@ -128,7 +129,64 @@ fn print_summary(summary: &SolveSummary, print_stats: bool) {
         "t base_case_sat_solve_s {:.6}",
         summary.stats.base_case_sat_solve_ns as f64 / 1_000_000_000.0
     );
+    print_profile(&summary.stats);
     if let Some(error) = &summary.error {
         println!("e {error}");
     }
+}
+
+fn print_profile(stats: &Stats) {
+    println!("p rr_steps {}", stats.rr_steps);
+    println!("p rr_deleted_vertices {}", stats.rr_deleted_vertices);
+    println!("p rr_rebuilds {}", stats.rr_rebuilds);
+    println!(
+        "p partitioned_rr_rebuilds {}",
+        stats.partitioned_rr_rebuilds
+    );
+    println!("p base_case_calls {}", stats.base_case_calls);
+    println!("p base_case_search_nodes {}", stats.base_case_search_nodes);
+    println!("p solver_calls {}", stats.solver_calls);
+    println!("p arc_restrictions {}", stats.arc_restrictions);
+    println!("p child_instances_built {}", stats.child_instances_built);
+    println!(
+        "p second_child_instances_skipped {}",
+        stats.second_child_instances_skipped
+    );
+    println!("p lemma_36_calls {}", stats.lemma_36_calls);
+    println!("p lemma_37_calls {}", stats.lemma_37_calls);
+    println!("p lemma_38_calls {}", stats.lemma_38_calls);
+    println!("p lemma_33_calls {}", stats.lemma_33_calls);
+    println!("p max_recursion_depth {}", stats.max_recursion_depth);
+    println!("p base_case_time_s {:.6}", ns_to_s(stats.base_case_time_ns));
+    println!(
+        "p arc_restriction_time_s {:.6}",
+        ns_to_s(stats.arc_restriction_time_ns)
+    );
+    println!("p rr_queue_time_s {:.6}", ns_to_s(stats.rr_queue_time_ns));
+    println!(
+        "p rr_rebuild_time_s {:.6}",
+        ns_to_s(stats.rr_rebuild_time_ns)
+    );
+    println!(
+        "p partitioned_rr_rebuild_time_s {:.6}",
+        ns_to_s(stats.partitioned_rr_rebuild_time_ns)
+    );
+    println!("p lemma_36_time_s {:.6}", ns_to_s(stats.lemma_36_time_ns));
+    println!(
+        "p lemma_36_branch_setup_time_s {:.6}",
+        ns_to_s(stats.lemma_36_branch_setup_time_ns)
+    );
+    println!(
+        "p lemma_36_reduction_time_s {:.6}",
+        ns_to_s(stats.lemma_36_reduction_time_ns)
+    );
+    println!(
+        "p lemma_36_dedup_time_s {:.6}",
+        ns_to_s(stats.lemma_36_dedup_time_ns)
+    );
+    println!("p lemma_38_time_s {:.6}", ns_to_s(stats.lemma_38_time_ns));
+}
+
+fn ns_to_s(nanos: u128) -> f64 {
+    nanos as f64 / 1_000_000_000.0
 }

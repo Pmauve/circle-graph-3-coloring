@@ -23,19 +23,66 @@ pub fn reduce_exhaustively(
     instance: CircleInstance,
     stats: &mut Stats,
 ) -> Result<ReductionOutcome, SosaError> {
-    let mut state = ReductionState::from_instance(&instance);
+    let state = ReductionState::from_instance(&instance);
+    reduce_state(instance, state, stats)
+}
+
+pub fn reduce_allowed(
+    instance: &CircleInstance,
+    allowed: Vec<ColorMask>,
+    stats: &mut Stats,
+) -> Result<ReductionOutcome, SosaError> {
+    let state = ReductionState::from_allowed(instance, allowed)?;
+    reduce_borrowed_state(instance, state, stats)
+}
+
+fn reduce_state(
+    instance: CircleInstance,
+    mut state: ReductionState,
+    stats: &mut Stats,
+) -> Result<ReductionOutcome, SosaError> {
+    let started_at = stats.start_timer();
     if !run_rr_queue(&instance, &mut state, stats) {
+        stats.rr_queue_time_ns += Stats::elapsed_ns(started_at);
         return Ok(ReductionOutcome::Conflict);
     }
+    stats.rr_queue_time_ns += Stats::elapsed_ns(started_at);
 
     if state.deleted_count > 0 {
         stats.rr_deleted_vertices += state.deleted_count as u64;
-        Ok(ReductionOutcome::Consistent(instance.rebuild_from_active(
-            &state.active_vertices,
-            state.allowed,
-        )?))
+        stats.rr_rebuilds += 1;
+        let started_at = stats.start_timer();
+        let rebuilt = instance.rebuild_from_active(&state.active_vertices, state.allowed)?;
+        stats.rr_rebuild_time_ns += Stats::elapsed_ns(started_at);
+        Ok(ReductionOutcome::Consistent(rebuilt))
     } else {
         let mut reduced = instance;
+        reduced.allowed = state.allowed;
+        Ok(ReductionOutcome::Consistent(reduced))
+    }
+}
+
+fn reduce_borrowed_state(
+    instance: &CircleInstance,
+    mut state: ReductionState,
+    stats: &mut Stats,
+) -> Result<ReductionOutcome, SosaError> {
+    let started_at = stats.start_timer();
+    if !run_rr_queue(instance, &mut state, stats) {
+        stats.rr_queue_time_ns += Stats::elapsed_ns(started_at);
+        return Ok(ReductionOutcome::Conflict);
+    }
+    stats.rr_queue_time_ns += Stats::elapsed_ns(started_at);
+
+    if state.deleted_count > 0 {
+        stats.rr_deleted_vertices += state.deleted_count as u64;
+        stats.rr_rebuilds += 1;
+        let started_at = stats.start_timer();
+        let rebuilt = instance.rebuild_from_active(&state.active_vertices, state.allowed)?;
+        stats.rr_rebuild_time_ns += Stats::elapsed_ns(started_at);
+        Ok(ReductionOutcome::Consistent(rebuilt))
+    } else {
+        let mut reduced = instance.clone();
         reduced.allowed = state.allowed;
         Ok(ReductionOutcome::Consistent(reduced))
     }
@@ -47,23 +94,67 @@ pub fn reduce_exhaustively_with_partition(
     stats: &mut Stats,
 ) -> Result<PartitionedReductionOutcome, SosaError> {
     let mut state = ReductionState::from_instance(&instance);
+    let started_at = stats.start_timer();
     if !run_rr_queue(&instance, &mut state, stats) {
+        stats.rr_queue_time_ns += Stats::elapsed_ns(started_at);
         return Ok(PartitionedReductionOutcome::Conflict);
     }
+    stats.rr_queue_time_ns += Stats::elapsed_ns(started_at);
 
     if state.deleted_count > 0 {
         stats.rr_deleted_vertices += state.deleted_count as u64;
+        stats.partitioned_rr_rebuilds += 1;
+        let started_at = stats.start_timer();
         let (instance, partition) = instance.rebuild_from_active_with_partition(
             &state.active_vertices,
             state.allowed,
             partition,
         )?;
+        stats.partitioned_rr_rebuild_time_ns += Stats::elapsed_ns(started_at);
         Ok(PartitionedReductionOutcome::Consistent {
             instance,
             partition,
         })
     } else {
         let mut reduced = instance;
+        reduced.allowed = state.allowed;
+        Ok(PartitionedReductionOutcome::Consistent {
+            instance: reduced,
+            partition: partition.clone(),
+        })
+    }
+}
+
+pub fn reduce_allowed_with_partition(
+    instance: &CircleInstance,
+    allowed: Vec<ColorMask>,
+    partition: &CirclePartition,
+    stats: &mut Stats,
+) -> Result<PartitionedReductionOutcome, SosaError> {
+    let mut state = ReductionState::from_allowed(instance, allowed)?;
+    let started_at = stats.start_timer();
+    if !run_rr_queue(instance, &mut state, stats) {
+        stats.rr_queue_time_ns += Stats::elapsed_ns(started_at);
+        return Ok(PartitionedReductionOutcome::Conflict);
+    }
+    stats.rr_queue_time_ns += Stats::elapsed_ns(started_at);
+
+    if state.deleted_count > 0 {
+        stats.rr_deleted_vertices += state.deleted_count as u64;
+        stats.partitioned_rr_rebuilds += 1;
+        let started_at = stats.start_timer();
+        let (instance, partition) = instance.rebuild_from_active_with_partition(
+            &state.active_vertices,
+            state.allowed,
+            partition,
+        )?;
+        stats.partitioned_rr_rebuild_time_ns += Stats::elapsed_ns(started_at);
+        Ok(PartitionedReductionOutcome::Consistent {
+            instance,
+            partition,
+        })
+    } else {
+        let mut reduced = instance.clone();
         reduced.allowed = state.allowed;
         Ok(PartitionedReductionOutcome::Consistent {
             instance: reduced,
@@ -113,15 +204,27 @@ struct ReductionState {
 
 impl ReductionState {
     fn from_instance(instance: &CircleInstance) -> Self {
-        let queue = instance
-            .allowed
+        Self::from_allowed_unchecked(instance, instance.allowed.clone())
+    }
+
+    fn from_allowed(instance: &CircleInstance, allowed: Vec<ColorMask>) -> Result<Self, SosaError> {
+        if allowed.len() != instance.n {
+            return Err(SosaError::Internal(
+                "allowed colors must match instance size".to_string(),
+            ));
+        }
+        Ok(Self::from_allowed_unchecked(instance, allowed))
+    }
+
+    fn from_allowed_unchecked(instance: &CircleInstance, allowed: Vec<ColorMask>) -> Self {
+        let queue = allowed
             .iter()
             .enumerate()
             .filter_map(|(vertex, &mask)| singleton_color(mask).map(|_| vertex as u32))
             .collect();
         Self {
             active_vertices: BitSet::full(instance.n),
-            allowed: instance.allowed.clone(),
+            allowed,
             queue,
             deleted_count: 0,
         }

@@ -12,7 +12,6 @@ pub struct CircleInstance {
     pub endpoint_at: Vec<u32>,
     pub left: Vec<u32>,
     pub right: Vec<u32>,
-    pub mate: Vec<u32>,
     pub adj_offsets: Vec<u32>,
     pub adj: Vec<u32>,
     pub allowed: Vec<ColorMask>,
@@ -44,7 +43,6 @@ impl CircleInstance {
             }
         }
 
-        let mut mate = vec![u32::MAX; endpoint_count];
         for vertex in 0..n {
             if left[vertex] == u32::MAX || right[vertex] == u32::MAX {
                 return Err(SosaError::Input(format!(
@@ -52,8 +50,6 @@ impl CircleInstance {
                     vertex + 1
                 )));
             }
-            mate[left[vertex] as usize] = right[vertex];
-            mate[right[vertex] as usize] = left[vertex];
         }
 
         let mut edges = Vec::with_capacity(dimacs.edges.len());
@@ -76,15 +72,7 @@ impl CircleInstance {
         }
         edges.sort_unstable();
 
-        let instance = Self::from_parts(
-            n,
-            endpoint_at,
-            left,
-            right,
-            mate,
-            &edges,
-            vec![ALL_COLORS; n],
-        )?;
+        let instance = Self::from_parts(n, endpoint_at, left, right, &edges, vec![ALL_COLORS; n])?;
         if validate_crossings {
             instance.validate_edge_crossings(&edges)?;
         }
@@ -96,7 +84,6 @@ impl CircleInstance {
         endpoint_at: Vec<u32>,
         left: Vec<u32>,
         right: Vec<u32>,
-        mate: Vec<u32>,
         edges: &[(u32, u32)],
         allowed: Vec<ColorMask>,
     ) -> Result<Self, SosaError> {
@@ -106,7 +93,6 @@ impl CircleInstance {
             endpoint_at,
             left,
             right,
-            mate,
             adj_offsets,
             adj,
             allowed,
@@ -172,46 +158,29 @@ impl CircleInstance {
             }
         }
 
-        let mut mate = vec![u32::MAX; endpoint_at.len()];
         for vertex in 0..new_n {
             if left[vertex] == u32::MAX || right[vertex] == u32::MAX {
                 return Err(SosaError::Internal(format!(
                     "active vertex {vertex} does not have exactly two rebuilt endpoints"
                 )));
             }
-            mate[left[vertex] as usize] = right[vertex];
-            mate[right[vertex] as usize] = left[vertex];
         }
 
-        let mut edges = Vec::new();
-        for old_u in active.iter_ones() {
-            let new_u = old_to_new[old_u];
-            for &old_v in self.neighbors(old_u as u32) {
-                if old_v as usize <= old_u {
-                    continue;
-                }
-                let new_v = old_to_new[old_v as usize];
-                if new_v != u32::MAX {
-                    edges.push((new_u, new_v));
-                }
-            }
-        }
-        edges.sort_unstable();
-
+        let (adj_offsets, adj) = self.rebuild_csr_from_active(active, &old_to_new, new_n)?;
         let mut rebuilt_allowed = Vec::with_capacity(new_n);
         for old_vertex in active.iter_ones() {
             rebuilt_allowed.push(allowed[old_vertex]);
         }
 
-        Self::from_parts(
-            new_n,
+        Ok(Self {
+            n: new_n,
             endpoint_at,
             left,
             right,
-            mate,
-            &edges,
-            rebuilt_allowed,
-        )
+            adj_offsets,
+            adj,
+            allowed: rebuilt_allowed,
+        })
     }
 
     pub fn rebuild_from_active_with_partition(
@@ -280,46 +249,29 @@ impl CircleInstance {
             }
         }
 
-        let mut mate = vec![u32::MAX; endpoint_at.len()];
         for vertex in 0..new_n {
             if left[vertex] == u32::MAX || right[vertex] == u32::MAX {
                 return Err(SosaError::Internal(format!(
                     "active vertex {vertex} does not have exactly two rebuilt endpoints"
                 )));
             }
-            mate[left[vertex] as usize] = right[vertex];
-            mate[right[vertex] as usize] = left[vertex];
         }
 
-        let mut edges = Vec::new();
-        for old_u in active.iter_ones() {
-            let new_u = old_to_new[old_u];
-            for &old_v in self.neighbors(old_u as u32) {
-                if old_v as usize <= old_u {
-                    continue;
-                }
-                let new_v = old_to_new[old_v as usize];
-                if new_v != u32::MAX {
-                    edges.push((new_u, new_v));
-                }
-            }
-        }
-        edges.sort_unstable();
-
+        let (adj_offsets, adj) = self.rebuild_csr_from_active(active, &old_to_new, new_n)?;
         let mut rebuilt_allowed = Vec::with_capacity(new_n);
         for old_vertex in active.iter_ones() {
             rebuilt_allowed.push(allowed[old_vertex]);
         }
 
-        let rebuilt = Self::from_parts(
-            new_n,
+        let rebuilt = Self {
+            n: new_n,
             endpoint_at,
             left,
             right,
-            mate,
-            &edges,
-            rebuilt_allowed,
-        )?;
+            adj_offsets,
+            adj,
+            allowed: rebuilt_allowed,
+        };
         let rebuilt_partition = CirclePartition::new(
             new_endpoint_count,
             new_boundaries[0],
@@ -328,6 +280,48 @@ impl CircleInstance {
             new_boundaries[3],
         )?;
         Ok((rebuilt, rebuilt_partition))
+    }
+
+    fn rebuild_csr_from_active(
+        &self,
+        active: &BitSet,
+        old_to_new: &[u32],
+        new_n: usize,
+    ) -> Result<(Vec<u32>, Vec<u32>), SosaError> {
+        let mut degree = vec![0usize; new_n];
+        for old_u in active.iter_ones() {
+            let new_u = old_to_new[old_u] as usize;
+            for &old_v in self.neighbors(old_u as u32) {
+                let new_v = old_to_new[old_v as usize];
+                if new_v != u32::MAX {
+                    degree[new_u] += 1;
+                }
+            }
+        }
+
+        let mut adj_offsets = Vec::with_capacity(new_n + 1);
+        adj_offsets.push(0);
+        for count in degree {
+            let next = *adj_offsets.last().unwrap() as usize + count;
+            adj_offsets.push(next as u32);
+        }
+
+        let mut cursor = adj_offsets[..new_n].to_vec();
+        let mut adj = vec![0u32; *adj_offsets.last().unwrap() as usize];
+        for old_u in active.iter_ones() {
+            let new_u = old_to_new[old_u] as usize;
+            for &old_v in self.neighbors(old_u as u32) {
+                let new_v = old_to_new[old_v as usize];
+                if new_v == u32::MAX {
+                    continue;
+                }
+                let index = cursor[new_u] as usize;
+                adj[index] = new_v;
+                cursor[new_u] += 1;
+            }
+        }
+
+        Ok((adj_offsets, adj))
     }
 
     fn validate_edge_crossings(&self, edges: &[(u32, u32)]) -> Result<(), SosaError> {

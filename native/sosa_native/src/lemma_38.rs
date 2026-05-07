@@ -1,7 +1,9 @@
 use std::collections::HashSet;
 
 use crate::arc_ops::{advance_boundary_inside_arc, chords_between_arcs, count_endpoints_in_arc};
-use crate::lemma_36::{visit_lemma_36_family_with_partition, EliminatedSet};
+use crate::lemma_36::{
+    visit_lemma_36_family_with_partition, EliminatedSet, PartitionedInstanceDedupKey,
+};
 use crate::lemma_37::{visit_lemma_37_family, SemiSeparatedInstance};
 use crate::stats::Stats;
 use circle_core::bitset::BitSet;
@@ -27,7 +29,10 @@ where
     let mut seen = HashSet::new();
     visit_lemma_37_family(instance, stats, |semi, stats| {
         visit_lemma_38_family(&semi, stats, |full, stats| {
-            if seen.insert(full.clone()) {
+            if seen.insert(PartitionedInstanceDedupKey::from_parts(
+                &full.instance,
+                &full.partition,
+            )) {
                 return visit(full, stats);
             }
             Ok(false)
@@ -43,9 +48,12 @@ pub fn visit_lemma_38_family<F>(
 where
     F: FnMut(FullySeparatedInstance, &mut Stats) -> Result<bool, SosaError>,
 {
+    let started_at = stats.start_timer();
     stats.lemma_38_calls += 1;
     let mut seen = HashSet::new();
-    visit_lemma_38_recursive(semi, stats, &mut seen, &mut visit)
+    let result = visit_lemma_38_recursive(semi, stats, &mut seen, &mut visit);
+    stats.lemma_38_time_ns += Stats::elapsed_ns(started_at);
+    result
 }
 
 pub fn is_fully_separated_instance(full: &FullySeparatedInstance) -> bool {
@@ -65,7 +73,7 @@ pub fn is_fully_separated_instance(full: &FullySeparatedInstance) -> bool {
 fn visit_lemma_38_recursive<F>(
     semi: &SemiSeparatedInstance,
     stats: &mut Stats,
-    seen: &mut HashSet<FullySeparatedInstance>,
+    seen: &mut HashSet<PartitionedInstanceDedupKey>,
     visit: &mut F,
 ) -> Result<bool, SosaError>
 where
@@ -78,7 +86,10 @@ where
             instance: semi.instance.clone(),
             partition: collapse_empty_top_and_bottom(&semi.partition)?,
         };
-        if seen.insert(full.clone()) {
+        if seen.insert(PartitionedInstanceDedupKey::from_parts(
+            &full.instance,
+            &full.partition,
+        )) {
             return visit(full, stats);
         }
         return Ok(false);
