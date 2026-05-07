@@ -5,6 +5,7 @@ import networkx as nx
 
 from three_col_circle_code.instances.model import InstanceRecord
 from three_col_circle_code.instances.io import load_instance
+from three_col_circle_code.instances.native import ensure_validated_sidecar
 from three_col_circle_code.instances.validate import validate_instance
 from three_col_circle_code.solvers.common import SolverConfig, SolverResult
 from three_col_circle_code.solvers.sat import (
@@ -109,7 +110,10 @@ def run_solver_from_path(
     validate_instance_artifact: bool = False,
 ) -> SolverResult:
     """Dispatch one solver invocation from a benchmark instance artifact path."""
-    if validate_instance_artifact:
+    if validate_instance_artifact and _uses_path_without_python_graph(config) and instance_path.suffix == ".col":
+        ensure_validated_sidecar(instance_path, force=True)
+        record = None
+    elif validate_instance_artifact:
         record = load_instance(instance_path, validate=True)
         report = validate_instance(record.graph, metadata=record.metadata.to_dict())
         if not report.ok:
@@ -171,3 +175,7 @@ def _validate_solver_config(*, solver: str, backend: Optional[str]) -> None:
         raise ValueError(
             f"unsupported SAT backend {backend!r}; expected one of {available_sat_solver_backends()}"
         )
+
+
+def _uses_path_without_python_graph(config: SolverConfig) -> bool:
+    return config.solver in {SAT_3_COL_NATIVE_SOLVER, SOSA_3_COL_NATIVE_SOLVER, ZYKOVCOLOR_SOLVER}

@@ -15,8 +15,8 @@ pub struct ExternalSolveOutput {
 
 pub fn solve_with_stdin(
     solver_bin: &str,
-    dimacs_cnf: &str,
     timeout_s: Option<u64>,
+    write_input: impl FnOnce(&mut dyn Write) -> Result<f64, SosaError>,
 ) -> Result<ExternalSolveOutput, SosaError> {
     let started_at = Instant::now();
     let mut child = Command::new(solver_bin)
@@ -34,7 +34,7 @@ pub fn solve_with_stdin(
         let stdin = child.stdin.as_mut().ok_or_else(|| {
             SosaError::Internal("SAT solver stdin pipe was not available".to_string())
         })?;
-        stdin.write_all(dimacs_cnf.as_bytes())?;
+        write_input(stdin)?;
     }
     drop(child.stdin.take());
 
@@ -62,14 +62,6 @@ pub fn solve_with_stdin(
     let solve_time_s = started_at.elapsed().as_secs_f64();
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
-    if !output.status.success() {
-        return Err(SosaError::Input(format!(
-            "SAT solver exited with {}; stdout_tail={}; stderr_tail={}",
-            output.status,
-            tail(&stdout),
-            tail(&stderr)
-        )));
-    }
     let status = parse_solver_status(&stdout).ok_or_else(|| {
         SosaError::Input(format!(
             "SAT solver output is missing SAT/UNSAT status; stdout_tail={}; stderr_tail={}",
@@ -77,6 +69,14 @@ pub fn solve_with_stdin(
             tail(&stderr)
         ))
     })?;
+    if !solver_exit_matches_status(output.status.code(), status) {
+        return Err(SosaError::Input(format!(
+            "SAT solver exited with {}; stdout_tail={}; stderr_tail={}",
+            output.status,
+            tail(&stdout),
+            tail(&stderr)
+        )));
+    }
     Ok(ExternalSolveOutput {
         status,
         solve_time_s,
@@ -104,6 +104,16 @@ pub fn parse_solver_status(stdout: &str) -> Option<SatStatus> {
         }
     }
     None
+}
+
+fn solver_exit_matches_status(exit_code: Option<i32>, status: SatStatus) -> bool {
+    match (exit_code, status) {
+        (Some(0), _) => true,
+        (Some(10), SatStatus::Colorable) => true,
+        (Some(20), SatStatus::NotColorable) => true,
+        (_, SatStatus::Unknown) => true,
+        _ => false,
+    }
 }
 
 fn tail(text: &str) -> String {

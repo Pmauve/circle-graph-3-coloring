@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 use std::fs::File;
-use std::io::BufReader;
+use std::io::{BufReader, Write};
 use std::path::Path;
 use std::time::Instant;
 
@@ -9,52 +9,52 @@ use circle_core::error::SosaError;
 
 use crate::cnf::{edge_clauses, n_clauses, n_vars, vertex_clause};
 
-#[derive(Debug)]
-pub struct EncodedCnf {
-    pub dimacs: String,
-    pub encode_time_s: f64,
-}
-
-pub fn encode_dimacs_edge_file(path: &Path) -> Result<EncodedCnf, SosaError> {
+pub fn encode_dimacs_edge_file_to_writer(
+    path: &Path,
+    output: &mut dyn Write,
+) -> Result<f64, SosaError> {
     let file = File::open(path)?;
     let reader = BufReader::new(file);
     let started_at = Instant::now();
-    let dimacs = RefCell::new(String::new());
+    let output = RefCell::new(output);
 
     stream_dimacs_edges(
         reader,
         |problem| {
-            write_header_and_vertex_clauses(problem, &mut dimacs.borrow_mut());
+            write_header_and_vertex_clauses(problem, *output.borrow_mut())?;
             Ok(())
         },
         |u, v| {
-            write_edge_clauses(u, v, &mut dimacs.borrow_mut());
+            write_edge_clauses(u, v, *output.borrow_mut())?;
             Ok(())
         },
     )?;
 
-    Ok(EncodedCnf {
-        dimacs: dimacs.into_inner(),
-        encode_time_s: started_at.elapsed().as_secs_f64(),
-    })
+    Ok(started_at.elapsed().as_secs_f64())
 }
 
-fn write_header_and_vertex_clauses(problem: DimacsProblem, output: &mut String) {
-    output.push_str(&format!(
-        "p cnf {} {}\n",
+fn write_header_and_vertex_clauses(
+    problem: DimacsProblem,
+    output: &mut dyn Write,
+) -> Result<(), SosaError> {
+    writeln!(
+        output,
+        "p cnf {} {}",
         n_vars(problem.n),
         n_clauses(problem.n, problem.m)
-    ));
+    )?;
     for vertex in 1..=problem.n {
         let clause = vertex_clause(vertex);
-        output.push_str(&format!("{} {} {} 0\n", clause[0], clause[1], clause[2]));
+        writeln!(output, "{} {} {} 0", clause[0], clause[1], clause[2])?;
     }
+    Ok(())
 }
 
-fn write_edge_clauses(u: usize, v: usize, output: &mut String) {
+fn write_edge_clauses(u: usize, v: usize, output: &mut dyn Write) -> Result<(), SosaError> {
     for clause in edge_clauses(u, v) {
-        output.push_str(&format!("{} {} 0\n", clause[0], clause[1]));
+        writeln!(output, "{} {} 0", clause[0], clause[1])?;
     }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -77,10 +77,11 @@ e 1 2
 ",
         );
 
-        let encoded = encode_dimacs_edge_file(&path).unwrap();
+        let mut encoded = Vec::new();
+        encode_dimacs_edge_file_to_writer(&path, &mut encoded).unwrap();
 
         assert_eq!(
-            encoded.dimacs,
+            String::from_utf8(encoded).unwrap(),
             "\
 p cnf 6 5
 1 2 3 0
@@ -96,8 +97,9 @@ p cnf 6 5
     #[test]
     fn rejects_invalid_edge_input() {
         let path = write_temp_file("p edge 1 1\ne 1 2\n");
+        let mut output = Vec::new();
 
-        let error = encode_dimacs_edge_file(&path).unwrap_err();
+        let error = encode_dimacs_edge_file_to_writer(&path, &mut output).unwrap_err();
 
         assert!(error.to_string().contains("out of range"));
         let _ = fs::remove_file(path);

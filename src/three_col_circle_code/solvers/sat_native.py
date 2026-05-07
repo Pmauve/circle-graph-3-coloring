@@ -122,7 +122,12 @@ def solve_sat_3_col_native_from_path(
     if core_time_s is not None:
         details["core_time_source"] = "sat_native_reported"
 
-    if completed.returncode != 0 or status_line == "ERROR" or parse_error is not None:
+    allowed_unknown_exit = completed.returncode == 3 and status_line == "UNKNOWN"
+    if (
+        (completed.returncode != 0 and not allowed_unknown_exit)
+        or status_line == "ERROR"
+        or parse_error is not None
+    ):
         error_parts = []
         if parse_error is not None:
             error_parts.append(parse_error)

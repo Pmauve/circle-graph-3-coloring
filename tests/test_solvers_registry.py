@@ -210,6 +210,38 @@ class SolverRegistryTests(unittest.TestCase):
         solve.assert_called_once_with(path, params={"solver_bin": "kissat"})
         self.assertIs(result, fake_result)
 
+    def test_run_solver_from_path_validates_native_col_without_loading_graph(self) -> None:
+        path = Path("instance.col")
+        config = SolverConfig(
+            solver=SAT_3_COL_NATIVE_SOLVER,
+            params={"solver_bin": "kissat"},
+        )
+        fake_result = SolverResult(
+            solver=SAT_3_COL_NATIVE_SOLVER,
+            backend=None,
+            status=SOLVER_STATUS_OK,
+            wall_time_s=0.1,
+            is_colorable=True,
+            n_vertices=2,
+            m_edges=1,
+            details={},
+            error=None,
+        )
+
+        with patch(
+            "three_col_circle_code.solvers.registry.ensure_validated_sidecar",
+        ) as validate, patch(
+            "three_col_circle_code.solvers.registry.load_instance",
+            side_effect=AssertionError("should not load graph"),
+        ), patch(
+            "three_col_circle_code.solvers.registry.solve_sat_3_col_native_from_path",
+            return_value=fake_result,
+        ):
+            result = run_solver_from_path(path, config, validate_instance_artifact=True)
+
+        validate.assert_called_once_with(path, force=True)
+        self.assertIs(result, fake_result)
+
     def test_run_solver_from_path_dispatches_to_native_sosa_solver(self) -> None:
         path = Path("instance.col")
         config = SolverConfig(solver=SOSA_3_COL_NATIVE_SOLVER, params={"base_case_n": 16})

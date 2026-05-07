@@ -2,7 +2,7 @@ use std::path::Path;
 
 use circle_core::error::SosaError;
 
-use crate::encode::encode_dimacs_edge_file;
+use crate::encode::encode_dimacs_edge_file_to_writer;
 use crate::external::solve_with_stdin;
 use crate::{SatConfig, SatStatus, SatSummary};
 
@@ -14,13 +14,16 @@ pub fn solve_dimacs_edge_file(path: &Path, config: SatConfig) -> Result<SatSumma
         )));
     }
 
-    let encoded = encode_dimacs_edge_file(path)?;
-    let output = solve_with_stdin(&config.solver_bin, &encoded.dimacs, config.timeout_s)?;
+    let mut encode_time_s = 0.0;
+    let output = solve_with_stdin(&config.solver_bin, config.timeout_s, |stdin| {
+        encode_time_s = encode_dimacs_edge_file_to_writer(path, stdin)?;
+        Ok(encode_time_s)
+    })?;
     Ok(SatSummary {
         status: output.status,
-        parse_encode_time_s: encoded.encode_time_s,
+        parse_encode_time_s: encode_time_s,
         solve_time_s: output.solve_time_s,
-        core_time_s: encoded.encode_time_s + output.solve_time_s,
+        core_time_s: encode_time_s + output.solve_time_s,
         error: None,
     })
 }
@@ -57,7 +60,7 @@ p edge 2 1
 e 1 2
 ",
         );
-        let solver = write_fake_solver("sat", "s SATISFIABLE");
+        let solver = write_fake_solver("sat", "s SATISFIABLE", Some(10));
         let summary = solve_dimacs_edge_file(
             &instance,
             SatConfig {
@@ -88,7 +91,7 @@ e 2 4
 e 3 4
 ",
         );
-        let solver = write_fake_solver("unsat", "s UNSATISFIABLE");
+        let solver = write_fake_solver("unsat", "s UNSATISFIABLE", Some(20));
         let summary = solve_dimacs_edge_file(
             &instance,
             SatConfig {
@@ -128,14 +131,17 @@ e 3 4
         path
     }
 
-    fn write_fake_solver(label: &str, output_line: &str) -> PathBuf {
+    fn write_fake_solver(label: &str, output_line: &str, exit_code: Option<i32>) -> PathBuf {
         let mut path = std::env::temp_dir();
         #[cfg(windows)]
         {
             path.push(format!("sat-native-fake-{label}-{}.cmd", unique_suffix()));
+            let exit_line = exit_code
+                .map(|code| format!("exit /b {code}\r\n"))
+                .unwrap_or_default();
             fs::write(
                 &path,
-                format!("@echo off\r\nmore > nul\r\necho {output_line}\r\n"),
+                format!("@echo off\r\nmore > nul\r\necho {output_line}\r\n{exit_line}"),
             )
             .unwrap();
         }
@@ -144,9 +150,12 @@ e 3 4
             use std::os::unix::fs::PermissionsExt;
 
             path.push(format!("sat-native-fake-{label}-{}", unique_suffix()));
+            let exit_line = exit_code
+                .map(|code| format!("exit {code}\n"))
+                .unwrap_or_default();
             fs::write(
                 &path,
-                format!("#!/bin/sh\ncat >/dev/null\nprintf '%s\\n' '{output_line}'\n"),
+                format!("#!/bin/sh\ncat >/dev/null\nprintf '%s\\n' '{output_line}'\n{exit_line}"),
             )
             .unwrap();
             let mut permissions = fs::metadata(&path).unwrap().permissions();

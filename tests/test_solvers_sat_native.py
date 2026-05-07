@@ -107,6 +107,30 @@ class NativeSatSolverTests(unittest.TestCase):
         self.assertFalse(result.is_colorable)
         self.assertEqual(result.core_time_s, 0.456)
 
+    def test_accepts_unknown_status_exit_code(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            binary = Path(tmpdir) / "three_col_native"
+            binary.write_text("", encoding="utf-8")
+            path = _write_col(Path(tmpdir) / "triangle.col")
+            completed = CompletedProcess(
+                args=[],
+                returncode=3,
+                stdout="s UNKNOWN\nt core_time_s 1.25\n",
+                stderr="",
+            )
+            with patch.dict(os.environ, {"THREE_COL_NATIVE_BIN": str(binary)}), patch(
+                "three_col_circle_code.solvers.sat_native.subprocess.run",
+                return_value=completed,
+            ):
+                result = solve_sat_3_col_native_from_path(
+                    path,
+                    params={"solver_bin": "kissat"},
+                )
+
+        self.assertEqual(result.status, SOLVER_STATUS_OK)
+        self.assertIsNone(result.is_colorable)
+        self.assertEqual(result.core_time_s, 1.25)
+
     def test_nonzero_exit_returns_error(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             binary = Path(tmpdir) / "three_col_native"
