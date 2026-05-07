@@ -52,6 +52,8 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     parser.add_argument("--plan-dir", type=Path, required=True)
     parser.add_argument("--work-root", type=Path, default=None)
     parser.add_argument("--fail-on-incomplete", action="store_true")
+    parser.add_argument("--require-ready-for-trials", action="store_true")
+    parser.add_argument("--require-ready-for-merge", action="store_true")
     args = parser.parse_args(list(argv) if argv is not None else None)
 
     try:
@@ -60,7 +62,9 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         print(f"benchmark status failed: {exc}", file=sys.stderr)
         return 2
     print(json.dumps(status, indent=2, sort_keys=True))
-    if args.fail_on_incomplete and not status["ready_for_merge"]:
+    if args.require_ready_for_trials and not status["ready_for_trials"]:
+        return 1
+    if (args.fail_on_incomplete or args.require_ready_for_merge) and not status["ready_for_merge"]:
         return 1
     return 0
 

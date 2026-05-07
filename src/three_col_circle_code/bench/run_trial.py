@@ -60,16 +60,27 @@ def run_trial(
             return result_path
 
     started_at = _now()
-    validation_ok, validation_errors = _load_cached_instance_validation(
-        instances=context.instances,
-        work_root=context.work_root,
-        trial=trial_row,
-    )
+    try:
+        validation_ok, validation_errors = _load_cached_instance_validation(
+            instances=context.instances,
+            work_root=context.work_root,
+            trial=trial_row,
+        )
+    except ValueError as exc:
+        result = _build_invalid_result_record(
+            run_id=context.run_id,
+            trial=trial_row,
+            started_at=started_at,
+            error=exc,
+        )
+        _write_result(result_path, result)
+        return result_path
     if validate_instance_artifact and trial_row.instance_path.suffix == ".col":
         try:
             ensure_validated_sidecar(trial_row.instance_path, force=True)
         except NativeInstanceInvalid as exc:
             result = _build_invalid_result_record(
+                run_id=context.run_id,
                 trial=trial_row,
                 started_at=started_at,
                 error=exc,
@@ -89,6 +100,7 @@ def run_trial(
             instance_metadata = _load_path_solver_metadata(trial_row)
         except (InstanceFormatError, OSError) as exc:
             result = _build_invalid_result_record(
+                run_id=context.run_id,
                 trial=trial_row,
                 started_at=started_at,
                 error=exc,
@@ -100,6 +112,7 @@ def run_trial(
             record = load_instance(trial_row.instance_path, validate=validate_instance_artifact)
         except (InstanceFormatError, json.JSONDecodeError, OSError) as exc:
             result = _build_invalid_result_record(
+                run_id=context.run_id,
                 trial=trial_row,
                 started_at=started_at,
                 error=exc,
@@ -216,10 +229,16 @@ def _load_cached_instance_validation(
     return validation_ok, [dict(item) for item in validation_errors]
 
 
-def _build_invalid_result_record(*, trial: Any, started_at: str, error: Exception) -> dict[str, Any]:
+def _build_invalid_result_record(
+    *,
+    trial: Any,
+    started_at: str,
+    error: Exception,
+    run_id: Optional[str] = None,
+) -> dict[str, Any]:
     """Build an invalid trial result row for a missing or malformed instance."""
     return build_invalid_result_record(
-        run_id=None,
+        run_id=run_id,
         index=trial.index,
         instance_id=trial.instance_id,
         instance_path=trial.instance_path,

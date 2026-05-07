@@ -242,15 +242,46 @@ class BenchRunTrialTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "does not contain index"):
                 run_trial(plan_dir=plan_dir, index=2)
 
-    def test_run_trial_rejects_missing_instance_generation_result(self) -> None:
+    def test_run_trial_records_missing_instance_generation_result(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_root = Path(tmpdir)
             plan_dir, work_root, instance_path = _write_plan(tmp_root)
             save_instance(_build_record(instance_id="rc-n0002-seed1", family="rc", seed=1), instance_path)
             instance_result_path(work_root, 1).unlink()
 
-            with self.assertRaisesRegex(ValueError, "run benchmark_generate_instance"):
-                run_trial(plan_dir=plan_dir, index=1)
+            result_path = run_trial(plan_dir=plan_dir, index=1)
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(result["status"], "invalid")
+        self.assertEqual(result["run_id"], "smoke")
+        self.assertIn("run benchmark_generate_instance", result["error"])
+        self.assertEqual(result["details"]["load_error_type"], "ValueError")
+
+    def test_run_trial_records_failed_instance_generation_result(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            plan_dir, work_root, _instance_path = _write_plan(tmp_root)
+            instance_result_path(work_root, 1).write_text(
+                json.dumps(
+                    {
+                        "index": 1,
+                        "kind": "instance",
+                        "status": "error",
+                        "instance_id": "rc-n0002-seed1",
+                        "instance_path": str(tmp_root / "instances" / "rc" / "s" / "rc-n0002-seed1.json"),
+                        "validation_ok": False,
+                        "validation_errors": [],
+                        "error": "generator failed",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result_path = run_trial(plan_dir=plan_dir, index=1)
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(result["status"], "invalid")
+        self.assertIn("generator failed", result["error"])
 
     def test_run_trial_uses_cached_validation_without_revalidating(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -75,6 +75,20 @@ benchmark_merge \
 Set `TASK_INDEX` from the scheduler array variable, for example `$SLURM_ARRAY_TASK_ID` or `$SGE_TASK_ID`.
 Generic shell templates live in `scripts/benchmark_cluster/`.
 
+For SGE, prefer the guarded staged submit helper when launching a full run:
+
+```bash
+RUN_ID=pipeline-smoke \
+INSTANCE_TASK=run_instance_task_bc5.sh \
+TRIAL_TASK=run_trial_task_bc5.sh \
+scripts/benchmark_cluster/sge_staged_submit.sh
+```
+
+This uses `qsub -sync y` and gates each stage with `benchmark_status`. This is
+stricter than `-hold_jid`: scheduler holds wait for predecessor jobs to finish,
+but they do not assert that every array task produced successful benchmark
+outputs.
+
 ## Outputs
 
 ```text
@@ -99,3 +113,7 @@ includes `average_degree = 2m / n`.
 Instance generation is deterministic, so it can run on any available node. Timing-sensitive solver trials should run on one comparable hardware class.
 
 Generation and trial commands resume existing successful task outputs. Use `--force` to replace outputs.
+If an instance generation task failed or is missing, `benchmark_run_trial` writes
+a structured invalid trial result instead of exiting before creating
+`result.json`; status reports should therefore show explicit trial failures
+rather than silent missing trial outputs for known-bad instance prerequisites.

@@ -62,6 +62,29 @@ class BenchStatusTests(unittest.TestCase):
 
         self.assertEqual(exit_code, 1)
 
+    def test_cli_require_ready_for_trials_checks_instance_stage(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            plan_dir, work_root = _write_plan(tmp_root)
+            _write_result(instance_result_path(work_root, 1), "ok")
+            _write_result(instance_result_path(work_root, 2), "error")
+
+            exit_code = main(["--plan-dir", str(plan_dir), "--require-ready-for-trials"])
+
+        self.assertEqual(exit_code, 1)
+
+    def test_cli_require_ready_for_merge_checks_trial_stage(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            plan_dir, work_root = _write_plan(tmp_root)
+            _write_result(instance_result_path(work_root, 1), "ok")
+            _write_result(instance_result_path(work_root, 2), "ok")
+            _write_result(trial_result_path(work_root, 1), "ok")
+
+            exit_code = main(["--plan-dir", str(plan_dir), "--require-ready-for-merge"])
+
+        self.assertEqual(exit_code, 1)
+
 
 def _write_plan(tmp_root: Path) -> tuple[Path, Path]:
     plan_dir = tmp_root / "plans" / "smoke"
