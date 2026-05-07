@@ -20,9 +20,7 @@ pub enum SatStatus {
 #[derive(Debug)]
 pub struct SatSummary {
     pub status: SatStatus,
-    pub parse_encode_time_s: f64,
-    pub solve_time_s: f64,
-    pub core_time_s: f64,
+    pub core_time_s: Option<f64>,
     pub error: Option<String>,
 }
 

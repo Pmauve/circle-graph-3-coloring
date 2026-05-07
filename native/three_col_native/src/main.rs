@@ -314,10 +314,10 @@ fn sat_summary_text(summary: &SatSummary) -> String {
     let mut fields = vec![
         json_pair("status", "ok"),
         json_pair("solver_status", status_to_output(summary.status)),
-        format!("\"parse_encode_time_s\":{:.6}", summary.parse_encode_time_s),
-        format!("\"solve_time_s\":{:.6}", summary.solve_time_s),
-        format!("\"core_time_s\":{:.6}", summary.core_time_s),
     ];
+    if let Some(core_time_s) = summary.core_time_s {
+        fields.push(format!("\"core_time_s\":{core_time_s:.6}"));
+    }
     if let Some(error) = &summary.error {
         fields.push(format!("\"error\":{}", json_string(error)));
     }
@@ -431,15 +431,13 @@ mod tests {
     fn renders_sat_summary_text() {
         let summary = SatSummary {
             status: SatStatus::Colorable,
-            parse_encode_time_s: 0.1,
-            solve_time_s: 0.2,
-            core_time_s: 0.3,
+            core_time_s: Some(0.3),
             error: None,
         };
 
         assert_eq!(
             sat_summary_text(&summary),
-            "{\"status\":\"ok\",\"solver_status\":\"COLORABLE\",\"parse_encode_time_s\":0.100000,\"solve_time_s\":0.200000,\"core_time_s\":0.300000}"
+            "{\"status\":\"ok\",\"solver_status\":\"COLORABLE\",\"core_time_s\":0.300000}"
         );
     }
 }

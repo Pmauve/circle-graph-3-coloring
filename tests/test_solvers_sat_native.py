@@ -53,7 +53,7 @@ class NativeSatSolverTests(unittest.TestCase):
                 returncode=0,
                 stdout=(
                     '{"status":"ok","solver_status":"COLORABLE",'
-                    '"parse_encode_time_s":0.010,"solve_time_s":0.020,"core_time_s":0.030}\n'
+                    '"core_time_s":0.030}\n'
                 ),
                 stderr="",
             )
@@ -73,8 +73,8 @@ class NativeSatSolverTests(unittest.TestCase):
         self.assertEqual(result.status, SOLVER_STATUS_OK)
         self.assertTrue(result.is_colorable)
         self.assertEqual(result.core_time_s, 0.03)
-        self.assertEqual(result.details["parse_encode_time_s"], 0.01)
-        self.assertEqual(result.details["solve_time_s"], 0.02)
+        self.assertNotIn("parse_encode_time_s", result.details)
+        self.assertNotIn("solve_time_s", result.details)
         command = run.call_args.args[0]
         self.assertEqual(command[:4], [str(binary), "sat", "solve", str(path)])
         self.assertIn("--solver-bin", command)

@@ -10,14 +10,13 @@ use crate::SatStatus;
 #[derive(Debug)]
 pub struct ExternalSolveOutput {
     pub status: SatStatus,
-    pub solve_time_s: f64,
-    pub core_time_s: f64,
+    pub core_time_s: Option<f64>,
 }
 
 pub fn solve_with_stdin(
     solver_bin: &str,
     timeout_s: Option<u64>,
-    write_input: impl FnOnce(&mut dyn Write) -> Result<f64, SosaError>,
+    write_input: impl FnOnce(&mut dyn Write) -> Result<(), SosaError>,
 ) -> Result<ExternalSolveOutput, SosaError> {
     let started_at = Instant::now();
     let mut child = Command::new(solver_bin)
@@ -46,7 +45,6 @@ pub fn solve_with_stdin(
     drop(child.stdin.take());
 
     let timeout = timeout_s.map(Duration::from_secs);
-    let solver_wait_started_at = Instant::now();
     loop {
         if child.try_wait()?.is_some() {
             break;
@@ -67,8 +65,6 @@ pub fn solve_with_stdin(
     }
 
     let output = child.wait_with_output()?;
-    let core_time_s = started_at.elapsed().as_secs_f64();
-    let solve_time_s = solver_wait_started_at.elapsed().as_secs_f64();
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
     let status = parse_solver_status(&stdout).ok_or_else(|| {
@@ -86,9 +82,9 @@ pub fn solve_with_stdin(
             tail(&stderr)
         )));
     }
+    let core_time_s = parse_solver_time_s(&stdout);
     Ok(ExternalSolveOutput {
         status,
-        solve_time_s,
         core_time_s,
     })
 }
@@ -125,6 +121,32 @@ fn solver_exit_matches_status(exit_code: Option<i32>, status: SatStatus) -> bool
     }
 }
 
+pub fn parse_solver_time_s(stdout: &str) -> Option<f64> {
+    for raw_line in stdout.lines().rev() {
+        let line = raw_line
+            .trim()
+            .strip_prefix('c')
+            .unwrap_or(raw_line.trim())
+            .trim();
+        let lower = line.to_ascii_lowercase();
+        if lower.contains("total process time since initialization")
+            || lower.starts_with("process-time:")
+            || lower.starts_with("process time:")
+        {
+            if let Some(value) = first_float_after_separator(line) {
+                return Some(value);
+            }
+        }
+    }
+    None
+}
+
+fn first_float_after_separator(line: &str) -> Option<f64> {
+    let tail = line.split_once(':').map(|(_, tail)| tail).unwrap_or(line);
+    tail.split_whitespace()
+        .find_map(|token| token.parse::<f64>().ok())
+}
+
 fn tail(text: &str) -> String {
     const LIMIT: usize = 4000;
     if text.len() <= LIMIT {
@@ -154,5 +176,20 @@ mod tests {
         );
         assert_eq!(parse_solver_status("s UNKNOWN\n"), Some(SatStatus::Unknown));
         assert_eq!(parse_solver_status("no status\n"), None);
+    }
+
+    #[test]
+    fn parses_common_solver_time_lines() {
+        assert_eq!(
+            parse_solver_time_s(
+                "c total process time since initialization:         1.23    seconds\n"
+            ),
+            Some(1.23)
+        );
+        assert_eq!(
+            parse_solver_time_s("c process-time: 0.45 seconds\n"),
+            Some(0.45)
+        );
+        assert_eq!(parse_solver_time_s("c real-time: 0.50 seconds\n"), None);
     }
 }

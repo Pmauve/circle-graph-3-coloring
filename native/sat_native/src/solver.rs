@@ -14,15 +14,12 @@ pub fn solve_dimacs_edge_file(path: &Path, config: SatConfig) -> Result<SatSumma
         )));
     }
 
-    let mut encode_time_s = 0.0;
     let output = solve_with_stdin(&config.solver_bin, config.timeout_s, |stdin| {
-        encode_time_s = encode_dimacs_edge_file_to_writer(path, stdin)?;
-        Ok(encode_time_s)
+        encode_dimacs_edge_file_to_writer(path, stdin)?;
+        Ok(())
     })?;
     Ok(SatSummary {
         status: output.status,
-        parse_encode_time_s: encode_time_s,
-        solve_time_s: output.solve_time_s,
         core_time_s: output.core_time_s,
         error: None,
     })
@@ -60,7 +57,11 @@ p edge 2 1
 e 1 2
 ",
         );
-        let solver = write_fake_solver("sat", "s SATISFIABLE", Some(10));
+        let solver = write_fake_solver(
+            "sat",
+            "s SATISFIABLE\nc process-time: 0.12 seconds",
+            Some(10),
+        );
         let summary = solve_dimacs_edge_file(
             &instance,
             SatConfig {
@@ -72,8 +73,7 @@ e 1 2
         .unwrap();
 
         assert_eq!(summary.status, SatStatus::Colorable);
-        assert!(summary.core_time_s >= summary.parse_encode_time_s);
-        assert!(summary.core_time_s >= summary.solve_time_s);
+        assert_eq!(summary.core_time_s, Some(0.12));
         let _ = fs::remove_file(instance);
         let _ = fs::remove_file(solver);
     }
@@ -92,7 +92,11 @@ e 2 4
 e 3 4
 ",
         );
-        let solver = write_fake_solver("unsat", "s UNSATISFIABLE", Some(20));
+        let solver = write_fake_solver(
+            "unsat",
+            "s UNSATISFIABLE\nc process-time: 0.12 seconds",
+            Some(20),
+        );
         let summary = solve_dimacs_edge_file(
             &instance,
             SatConfig {
@@ -104,6 +108,7 @@ e 3 4
         .unwrap();
 
         assert_eq!(summary.status, SatStatus::NotColorable);
+        assert_eq!(summary.core_time_s, Some(0.12));
         let _ = fs::remove_file(instance);
         let _ = fs::remove_file(solver);
     }
@@ -159,9 +164,13 @@ e 3 4
             let exit_line = exit_code
                 .map(|code| format!("exit /b {code}\r\n"))
                 .unwrap_or_default();
+            let output_lines = output_line
+                .lines()
+                .map(|line| format!("echo {line}\r\n"))
+                .collect::<String>();
             fs::write(
                 &path,
-                format!("@echo off\r\nmore > nul\r\necho {output_line}\r\n{exit_line}"),
+                format!("@echo off\r\nmore > nul\r\n{output_lines}{exit_line}"),
             )
             .unwrap();
         }

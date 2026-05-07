@@ -46,16 +46,17 @@ circle comments, streams the fixed 3-color CNF to the configured SAT solver over
 stdin, and parses the solver's SAT/UNSAT/UNKNOWN status. Normal execution does
 not write a `.cnf` file and does not materialize a Python/NetworkX graph.
 
-The native solver reports:
+When the external SAT solver prints a recognized process-time line, the native
+wrapper reports that value as `core_time_s`:
 
 ```text
-t parse_encode_time_s 0.000123
-t solve_time_s 0.004567
-t core_time_s 0.004690
+{"status":"ok","solver_status":"COLORABLE","core_time_s":0.004690}
 ```
 
-`solve_time_s` includes external process startup, DIMACS transfer over stdin,
-the SAT solver's DIMACS parsing, and SAT solving time. A future embedded
+If no solver time can be parsed, `core_time_s` is omitted and benchmark reports
+should use `wall_time_s`. `wall_time_s` is always measured by the Python
+benchmark wrapper and includes Rust startup, `.col` parsing, CNF streaming,
+external solver startup, solver parsing, and solving. A future embedded
 CaDiCaL/Kissat backend can remove the process and DIMACS parsing overhead.
 
 External SAT binaries commonly exit with `10` for SAT and `20` for UNSAT. The
