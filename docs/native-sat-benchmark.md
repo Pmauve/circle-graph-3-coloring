@@ -27,7 +27,7 @@ export KISSAT_BIN="$HOME/opt/sat-solvers/kissat/build/kissat"
 Benchmark specs are JSON, so use absolute solver paths there rather than
 `$CADICAL_BIN` or `$KISSAT_BIN`.
 
-Example solver block:
+Example external solver block:
 
 ```json
 {
@@ -41,23 +41,38 @@ Example solver block:
 }
 ```
 
-The Rust binary reads the benchmark `.col` file as DIMACS edge input, ignores
-circle comments, streams the fixed 3-color CNF to the configured SAT solver over
-stdin, and parses the solver's SAT/UNSAT/UNKNOWN status. Normal execution does
-not write a `.cnf` file and does not materialize a Python/NetworkX graph.
+Example embedded CaDiCaL block:
 
-When the external SAT solver prints a recognized process-time line, the native
-wrapper reports that value as `core_time_s`:
+```json
+{
+  "target": "sat-3-col-native",
+  "label": "Native SAT CaDiCaL FFI",
+  "params": {
+    "backend": "cadical-ffi",
+    "timeout_s": 3600
+  }
+}
+```
+
+The Rust binary reads the benchmark `.col` file as DIMACS edge input, ignores
+circle comments, and builds the fixed 3-color CNF without materializing a
+Python/NetworkX graph. With `backend = "dimacs-pipe"` it streams the CNF to the
+configured SAT solver over stdin and parses the solver's SAT/UNSAT/UNKNOWN
+status. With `backend = "cadical-ffi"` it adds clauses directly to the embedded
+CaDiCaL binding in-process. Normal execution does not write a `.cnf` file.
+
+When the external SAT solver prints a recognized process-time line, the
+`dimacs-pipe` wrapper reports that value as `core_time_s`:
 
 ```text
 {"status":"ok","solver_status":"COLORABLE","core_time_s":0.004690}
 ```
 
-If no solver time can be parsed, `core_time_s` is omitted and benchmark reports
-should use `wall_time_s`. `wall_time_s` is always measured by the Python
-benchmark wrapper and includes Rust startup, `.col` parsing, CNF streaming,
-external solver startup, solver parsing, and solving. A future embedded
-CaDiCaL/Kissat backend can remove the process and DIMACS parsing overhead.
+For `cadical-ffi`, `core_time_s` is measured around the embedded CaDiCaL
+`solve()` call. `wall_time_s` is always measured by the Python benchmark wrapper
+and includes Rust startup, `.col` parsing, clause construction, and solving.
+For `dimacs-pipe`, `wall_time_s` also includes external solver startup, DIMACS
+parsing, stdout/stderr handling, and process shutdown.
 
 External SAT binaries commonly exit with `10` for SAT and `20` for UNSAT. The
 native wrapper accepts those conventional codes and treats other unexpected

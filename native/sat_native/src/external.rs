@@ -108,7 +108,9 @@ fn read_pipe(pipe: &mut impl Read) -> std::io::Result<Vec<u8>> {
     Ok(bytes)
 }
 
-fn join_pipe_reader(handle: thread::JoinHandle<std::io::Result<Vec<u8>>>) -> Result<Vec<u8>, SosaError> {
+fn join_pipe_reader(
+    handle: thread::JoinHandle<std::io::Result<Vec<u8>>>,
+) -> Result<Vec<u8>, SosaError> {
     handle
         .join()
         .map_err(|_| SosaError::Internal("SAT solver output reader thread panicked".to_string()))?

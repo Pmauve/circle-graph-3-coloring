@@ -81,6 +81,37 @@ class NativeSatSolverTests(unittest.TestCase):
         self.assertIn("kissat", command)
         self.assertEqual(run.call_args.kwargs["timeout"], 42.0)
 
+    def test_cadical_ffi_backend_does_not_require_solver_bin(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            binary = Path(tmpdir) / "three_col_native"
+            binary.write_text("", encoding="utf-8")
+            path = _write_col(Path(tmpdir) / "triangle.col")
+            completed = CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout=(
+                    '{"status":"ok","solver_status":"COLORABLE",'
+                    '"core_time_s":0.020}\n'
+                ),
+                stderr="",
+            )
+            with patch.dict(os.environ, {"THREE_COL_NATIVE_BIN": str(binary)}), patch(
+                "three_col_circle_code.solvers.sat_native.subprocess.run",
+                return_value=completed,
+            ) as run:
+                result = solve_sat_3_col_native_from_path(
+                    path,
+                    params={"backend": "cadical-ffi", "timeout_s": 12},
+                )
+
+        self.assertEqual(result.status, SOLVER_STATUS_OK)
+        self.assertTrue(result.is_colorable)
+        self.assertEqual(result.core_time_s, 0.02)
+        command = run.call_args.args[0]
+        self.assertIn("cadical-ffi", command)
+        self.assertNotIn("--solver-bin", command)
+        self.assertNotIn("solver_bin", result.details)
+
     def test_parses_not_colorable_status(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             binary = Path(tmpdir) / "three_col_native"

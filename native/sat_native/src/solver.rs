@@ -2,18 +2,25 @@ use std::path::Path;
 
 use circle_core::error::SosaError;
 
+use crate::cadical_ffi::solve_dimacs_edge_file_with_cadical;
 use crate::encode::encode_dimacs_edge_file_to_writer;
 use crate::external::solve_with_stdin;
 use crate::{SatConfig, SatStatus, SatSummary};
 
 pub fn solve_dimacs_edge_file(path: &Path, config: SatConfig) -> Result<SatSummary, SosaError> {
-    if config.backend != "dimacs-pipe" {
-        return Err(SosaError::Input(format!(
-            "unsupported SAT backend {:?}, expected \"dimacs-pipe\"",
-            config.backend
-        )));
+    match config.backend.as_str() {
+        "dimacs-pipe" => solve_dimacs_edge_file_with_pipe(path, config),
+        "cadical-ffi" => solve_dimacs_edge_file_with_cadical(path, config.timeout_s),
+        backend => Err(SosaError::Input(format!(
+            "unsupported SAT backend {backend:?}, expected \"dimacs-pipe\" or \"cadical-ffi\""
+        ))),
     }
+}
 
+fn solve_dimacs_edge_file_with_pipe(
+    path: &Path,
+    config: SatConfig,
+) -> Result<SatSummary, SosaError> {
     let output = solve_with_stdin(&config.solver_bin, config.timeout_s, |stdin| {
         encode_dimacs_edge_file_to_writer(path, stdin)?;
         Ok(())
@@ -146,6 +153,33 @@ e 3 4
         .unwrap_err();
 
         assert!(error.to_string().contains("unsupported SAT backend"));
+        let _ = fs::remove_file(instance);
+    }
+
+    #[test]
+    fn solves_with_cadical_ffi_backend() {
+        let instance = write_temp_file(
+            "cadical-ffi",
+            "\
+p edge 3 3
+e 1 2
+e 1 3
+e 2 3
+",
+        );
+
+        let summary = solve_dimacs_edge_file(
+            &instance,
+            SatConfig {
+                backend: "cadical-ffi".to_string(),
+                solver_bin: String::new(),
+                timeout_s: Some(5),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(summary.status, SatStatus::Colorable);
+        assert!(summary.core_time_s.is_some());
         let _ = fs::remove_file(instance);
     }
 

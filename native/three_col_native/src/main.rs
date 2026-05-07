@@ -229,7 +229,7 @@ impl GenerateOptions {
 fn run_sat(args: &[String]) -> Result<(String, i32), SosaError> {
     if args.len() < 2 || args[0] != "solve" {
         return Err(SosaError::Input(
-            "usage: three_col_native sat solve <instance.col> --solver-bin <path> [--backend dimacs-pipe] [--timeout-s N]"
+            "usage: three_col_native sat solve <instance.col> [--backend dimacs-pipe|cadical-ffi] [--solver-bin <path>] [--timeout-s N]"
                 .to_string(),
         ));
     }
@@ -263,7 +263,7 @@ fn run_sat(args: &[String]) -> Result<(String, i32), SosaError> {
             }
         }
     }
-    if config.solver_bin.is_empty() {
+    if config.backend == "dimacs-pipe" && config.solver_bin.is_empty() {
         return Err(SosaError::Input("--solver-bin is required".to_string()));
     }
 

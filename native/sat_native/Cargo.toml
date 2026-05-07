@@ -4,4 +4,5 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+cadical = "0.1.16"
 circle_core = { path = "../circle_core" }

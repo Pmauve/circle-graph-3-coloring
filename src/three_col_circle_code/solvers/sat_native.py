@@ -17,8 +17,9 @@ from three_col_circle_code.instances.native import THREE_COL_NATIVE_BIN_ENV
 
 
 SAT_3_COL_NATIVE_SOLVER = "sat-3-col-native"
-IMPLEMENTATION_STATUS = "native-rust-sat-pipe-v1"
+IMPLEMENTATION_STATUS = "native-rust-sat-v2"
 DEFAULT_BACKEND = "dimacs-pipe"
+SUPPORTED_BACKENDS = ("dimacs-pipe", "cadical-ffi")
 DEFAULT_TIMEOUT_S = 3600.0
 PYTHON_TIMEOUT_GRACE_S = 30.0
 
@@ -34,7 +35,7 @@ def solve_sat_3_col_native_from_path(
     n_vertices, m_edges = _read_problem_size(instance_path)
     try:
         backend = _parse_backend(config)
-        solver_bin = _parse_solver_bin(config)
+        solver_bin = _parse_solver_bin(config, backend=backend)
         timeout_s = _parse_timeout_s(config)
     except ValueError as exc:
         return _error_result(
@@ -54,10 +55,11 @@ def solve_sat_3_col_native_from_path(
         "config": config,
         "binary": binary,
         "backend": backend,
-        "solver_bin": solver_bin,
         "timeout_s": timeout_s,
         "core_time_source": "missing",
     }
+    if solver_bin is not None:
+        details["solver_bin"] = solver_bin
     if not binary or not Path(binary).is_file():
         return _error_result(
             n_vertices=n_vertices,
@@ -73,11 +75,11 @@ def solve_sat_3_col_native_from_path(
         str(instance_path),
         "--backend",
         backend,
-        "--solver-bin",
-        solver_bin,
         "--timeout-s",
         _format_timeout(timeout_s),
     ]
+    if solver_bin is not None:
+        command.extend(["--solver-bin", solver_bin])
     started_at = perf_counter()
     try:
         completed = subprocess.run(
@@ -180,13 +182,15 @@ def solve_sat_3_col_native_from_path(
 
 def _parse_backend(config: Mapping[str, Any]) -> str:
     backend = str(config.get("backend", DEFAULT_BACKEND))
-    if backend != DEFAULT_BACKEND:
-        raise ValueError(f"native SAT backend must be {DEFAULT_BACKEND!r}")
+    if backend not in SUPPORTED_BACKENDS:
+        raise ValueError(f"native SAT backend must be one of {SUPPORTED_BACKENDS!r}")
     return backend
 
 
-def _parse_solver_bin(config: Mapping[str, Any]) -> str:
+def _parse_solver_bin(config: Mapping[str, Any], *, backend: str) -> Optional[str]:
     raw_value = config.get("solver_bin")
+    if backend == "cadical-ffi" and raw_value is None:
+        return None
     if raw_value is None:
         raise ValueError("native SAT params.solver_bin is required")
     value = str(raw_value)

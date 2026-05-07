@@ -1,3 +1,4 @@
+pub mod cadical_ffi;
 pub mod cnf;
 pub mod encode;
 pub mod external;
