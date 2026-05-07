@@ -5,34 +5,54 @@
   "instances": [
     {
       "family": "rc_fast",
-      "n_values": [200, 400, 600, 800, 1000, 5000, 10000],
+      "n": {"start": 200, "stop": 1000, "step": 200},
+      "seeds": [42]
+    },
+    {
+      "family": "rc_fast",
+      "n_values": [5000, 10000],
       "seeds": [42]
     },
     {
       "family": "rcy_fast",
-      "n_values": [200, 400, 600, 800, 1000, 5000, 10000],
+      "n": {"start": 200, "stop": 1000, "step": 200},
+      "seeds": [42]
+    },
+    {
+      "family": "rcy_fast",
+      "n_values": [5000, 10000],
       "seeds": [42]
     },
     {
       "family": "rccy_full_sweep_weighted_active",
-      "n_values": [200, 400, 600, 800, 1000, 4000, 10000],
+      "n": {"start": 200, "stop": 1000, "step": 200},
+      "seeds": [42]
+    },
+    {
+      "family": "rccy_full_sweep_weighted_active",
+      "n_values": [4000, 10000],
       "seeds": [42]
     },
     {
       "family": "rccy_tuned",
-      "n_values": [200, 400, 600, 800, 1000, 5000, 10000],
+      "n": {"start": 200, "stop": 1000, "step": 200},
+      "seeds": [42]
+    },
+    {
+      "family": "rccy_tuned",
+      "n_values": [5000, 10000],
       "seeds": [42]
     }
   ],
   "solvers": [
     {
       "target": "sat-baseline:pysat-cadical",
-      "label": "SAT CaDiCaL",
+      "label": "Legacy PySAT CaDiCaL",
       "params": {}
     },
     {
       "target": "sat-baseline:pysat-kissat404",
-      "label": "SAT Kissat 4.0.4",
+      "label": "Legacy PySAT Kissat 4.0.4",
       "params": {}
     },
     {

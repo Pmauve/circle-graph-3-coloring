@@ -1,0 +1,63 @@
+{
+  "instance_pool_root": "eval/instances",
+  "repetitions": 3,
+  "warmup_repetitions": 1,
+  "instances": [
+    {
+      "family": "rcy_fast",
+      "n": {"start": 100, "stop": 10000, "step": 100},
+      "seeds": [42]
+    },
+    {
+      "family": "rccy_tuned",
+      "n": {"start": 100, "stop": 10000, "step": 100},
+      "seeds": [42]
+    },
+    {
+      "family": "rccy_full_sweep_max_active",
+      "n": {"start": 100, "stop": 10000, "step": 100},
+      "seeds": [42]
+    },
+    {
+      "family": "rccy_full_sweep_weighted_active",
+      "n": {"start": 100, "stop": 10000, "step": 100},
+      "seeds": [42]
+    }
+  ],
+  "solvers": [
+    {
+      "target": "sat-3-col-native",
+      "label": "Native SAT CaDiCaL dimacs-pipe",
+      "params": {
+        "backend": "dimacs-pipe",
+        "solver_bin": "cadical",
+        "timeout_s": 3600
+      }
+    },
+    {
+      "target": "sat-3-col-native",
+      "label": "Native SAT Kissat dimacs-pipe",
+      "params": {
+        "backend": "dimacs-pipe",
+        "solver_bin": "kissat",
+        "timeout_s": 3600
+      }
+    },
+    {
+      "target": "sosa-3-col-native",
+      "label": "SOSA native bt base 8",
+      "params": {
+        "base_case_n": 8,
+        "timeout_s": 3600
+      }
+    },
+    {
+      "target": "sosa-3-col-native",
+      "label": "SOSA native bt base 128",
+      "params": {
+        "base_case_n": 128,
+        "timeout_s": 3600
+      }
+    }
+  ]
+}

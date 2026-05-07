@@ -4,8 +4,12 @@
   "warmup_repetitions": 1,
   "instances": [
     {
-      "family": "rc",
-      "n_values": [4, 5],
+      "family": "rcy_fast",
+      "n": {
+        "start": 4,
+        "stop": 8,
+        "step": 4
+      },
       "seeds": [1]
     }
   ],
