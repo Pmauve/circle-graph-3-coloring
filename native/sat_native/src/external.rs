@@ -1,4 +1,4 @@
-use std::io::Write;
+use std::io::{Read, Write};
 use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -30,19 +30,30 @@ pub fn solve_with_stdin(
             ))
         })?;
 
+    let mut stdout = child.stdout.take().ok_or_else(|| {
+        SosaError::Internal("SAT solver stdout pipe was not available".to_string())
+    })?;
+    let mut stderr = child.stderr.take().ok_or_else(|| {
+        SosaError::Internal("SAT solver stderr pipe was not available".to_string())
+    })?;
+    let stdout_handle = thread::spawn(move || read_pipe(&mut stdout));
+    let stderr_handle = thread::spawn(move || read_pipe(&mut stderr));
+
     let write_result = {
-        let stdin = child.stdin.as_mut().ok_or_else(|| {
+        let mut stdin = child.stdin.take().ok_or_else(|| {
             SosaError::Internal("SAT solver stdin pipe was not available".to_string())
         })?;
-        write_input(stdin)
+        let result = write_input(&mut stdin);
+        drop(stdin);
+        result
     };
     if let Err(error) = write_result {
-        drop(child.stdin.take());
         let _ = child.kill();
         let _ = child.wait();
+        let _ = join_pipe_reader(stdout_handle);
+        let _ = join_pipe_reader(stderr_handle);
         return Err(error);
     }
-    drop(child.stdin.take());
 
     let timeout = timeout_s.map(Duration::from_secs);
     loop {
@@ -52,41 +63,56 @@ pub fn solve_with_stdin(
         if let Some(timeout) = timeout {
             if started_at.elapsed() > timeout {
                 let _ = child.kill();
-                let output = child.wait_with_output()?;
+                let _ = child.wait();
+                let stdout = join_pipe_reader(stdout_handle)?;
+                let stderr = join_pipe_reader(stderr_handle)?;
                 return Err(SosaError::Input(format!(
                     "SAT solver timed out after {}s; stdout_tail={}; stderr_tail={}",
                     timeout.as_secs(),
-                    tail(&String::from_utf8_lossy(&output.stdout)),
-                    tail(&String::from_utf8_lossy(&output.stderr))
+                    tail(&String::from_utf8_lossy(&stdout)),
+                    tail(&String::from_utf8_lossy(&stderr))
                 )));
             }
         }
         thread::sleep(Duration::from_millis(10));
     }
 
-    let output = child.wait_with_output()?;
-    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
-    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
-    let status = parse_solver_status(&stdout).ok_or_else(|| {
+    let exit_status = child.wait()?;
+    let stdout = String::from_utf8_lossy(&join_pipe_reader(stdout_handle)?).into_owned();
+    let stderr = String::from_utf8_lossy(&join_pipe_reader(stderr_handle)?).into_owned();
+    let solver_status = parse_solver_status(&stdout).ok_or_else(|| {
         SosaError::Input(format!(
             "SAT solver output is missing SAT/UNSAT status; stdout_tail={}; stderr_tail={}",
             tail(&stdout),
             tail(&stderr)
         ))
     })?;
-    if !solver_exit_matches_status(output.status.code(), status) {
+    if !solver_exit_matches_status(exit_status.code(), solver_status) {
         return Err(SosaError::Input(format!(
             "SAT solver exited with {}; stdout_tail={}; stderr_tail={}",
-            output.status,
+            exit_status,
             tail(&stdout),
             tail(&stderr)
         )));
     }
     let core_time_s = parse_solver_time_s(&stdout);
     Ok(ExternalSolveOutput {
-        status,
+        status: solver_status,
         core_time_s,
     })
+}
+
+fn read_pipe(pipe: &mut impl Read) -> std::io::Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    pipe.read_to_end(&mut bytes)?;
+    Ok(bytes)
+}
+
+fn join_pipe_reader(handle: thread::JoinHandle<std::io::Result<Vec<u8>>>) -> Result<Vec<u8>, SosaError> {
+    handle
+        .join()
+        .map_err(|_| SosaError::Internal("SAT solver output reader thread panicked".to_string()))?
+        .map_err(SosaError::from)
 }
 
 pub fn parse_solver_status(stdout: &str) -> Option<SatStatus> {
