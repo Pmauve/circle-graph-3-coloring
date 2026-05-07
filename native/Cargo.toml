@@ -3,5 +3,6 @@ members = [
     "circle_core",
     "sat_native",
     "sosa_native",
+    "three_col_native",
 ]
 resolver = "2"
