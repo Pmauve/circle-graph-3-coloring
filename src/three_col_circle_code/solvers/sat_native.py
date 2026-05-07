@@ -20,6 +20,7 @@ SAT_3_COL_NATIVE_SOLVER = "sat-3-col-native"
 IMPLEMENTATION_STATUS = "native-rust-sat-pipe-v1"
 DEFAULT_BACKEND = "dimacs-pipe"
 DEFAULT_TIMEOUT_S = 3600.0
+PYTHON_TIMEOUT_GRACE_S = 30.0
 
 
 def solve_sat_3_col_native_from_path(
@@ -84,7 +85,7 @@ def solve_sat_3_col_native_from_path(
             check=False,
             capture_output=True,
             text=True,
-            timeout=timeout_s,
+            timeout=timeout_s + PYTHON_TIMEOUT_GRACE_S,
         )
     except subprocess.TimeoutExpired as exc:
         wall_time_s = perf_counter() - started_at

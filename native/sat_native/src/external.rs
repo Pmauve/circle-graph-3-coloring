@@ -11,6 +11,7 @@ use crate::SatStatus;
 pub struct ExternalSolveOutput {
     pub status: SatStatus,
     pub solve_time_s: f64,
+    pub core_time_s: f64,
 }
 
 pub fn solve_with_stdin(
@@ -30,15 +31,22 @@ pub fn solve_with_stdin(
             ))
         })?;
 
-    {
+    let write_result = {
         let stdin = child.stdin.as_mut().ok_or_else(|| {
             SosaError::Internal("SAT solver stdin pipe was not available".to_string())
         })?;
-        write_input(stdin)?;
+        write_input(stdin)
+    };
+    if let Err(error) = write_result {
+        drop(child.stdin.take());
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(error);
     }
     drop(child.stdin.take());
 
     let timeout = timeout_s.map(Duration::from_secs);
+    let solver_wait_started_at = Instant::now();
     loop {
         if child.try_wait()?.is_some() {
             break;
@@ -59,7 +67,8 @@ pub fn solve_with_stdin(
     }
 
     let output = child.wait_with_output()?;
-    let solve_time_s = started_at.elapsed().as_secs_f64();
+    let core_time_s = started_at.elapsed().as_secs_f64();
+    let solve_time_s = solver_wait_started_at.elapsed().as_secs_f64();
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
     let status = parse_solver_status(&stdout).ok_or_else(|| {
@@ -80,6 +89,7 @@ pub fn solve_with_stdin(
     Ok(ExternalSolveOutput {
         status,
         solve_time_s,
+        core_time_s,
     })
 }
 
@@ -111,7 +121,6 @@ fn solver_exit_matches_status(exit_code: Option<i32>, status: SatStatus) -> bool
         (Some(0), _) => true,
         (Some(10), SatStatus::Colorable) => true,
         (Some(20), SatStatus::NotColorable) => true,
-        (_, SatStatus::Unknown) => true,
         _ => false,
     }
 }

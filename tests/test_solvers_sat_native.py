@@ -79,7 +79,7 @@ class NativeSatSolverTests(unittest.TestCase):
         self.assertEqual(command[:4], [str(binary), "sat", "solve", str(path)])
         self.assertIn("--solver-bin", command)
         self.assertIn("kissat", command)
-        self.assertEqual(run.call_args.kwargs["timeout"], 12.0)
+        self.assertEqual(run.call_args.kwargs["timeout"], 42.0)
 
     def test_parses_not_colorable_status(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -23,7 +23,7 @@ pub fn solve_dimacs_edge_file(path: &Path, config: SatConfig) -> Result<SatSumma
         status: output.status,
         parse_encode_time_s: encode_time_s,
         solve_time_s: output.solve_time_s,
-        core_time_s: encode_time_s + output.solve_time_s,
+        core_time_s: output.core_time_s,
         error: None,
     })
 }
@@ -72,6 +72,7 @@ e 1 2
         .unwrap();
 
         assert_eq!(summary.status, SatStatus::Colorable);
+        assert!(summary.core_time_s >= summary.parse_encode_time_s);
         assert!(summary.core_time_s >= summary.solve_time_s);
         let _ = fs::remove_file(instance);
         let _ = fs::remove_file(solver);
@@ -103,6 +104,25 @@ e 3 4
         .unwrap();
 
         assert_eq!(summary.status, SatStatus::NotColorable);
+        let _ = fs::remove_file(instance);
+        let _ = fs::remove_file(solver);
+    }
+
+    #[test]
+    fn rejects_unknown_status_with_nonzero_solver_exit() {
+        let instance = write_temp_file("unknown", "p edge 1 0\n");
+        let solver = write_fake_solver("unknown", "s UNKNOWN", Some(1));
+        let error = solve_dimacs_edge_file(
+            &instance,
+            SatConfig {
+                backend: "dimacs-pipe".to_string(),
+                solver_bin: solver.to_string_lossy().to_string(),
+                timeout_s: Some(5),
+            },
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("exited with"));
         let _ = fs::remove_file(instance);
         let _ = fs::remove_file(solver);
     }
