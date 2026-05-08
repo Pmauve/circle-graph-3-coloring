@@ -21,10 +21,7 @@ class NativeSatSolverTests(unittest.TestCase):
             path = _write_col(Path(tmpdir) / "triangle.col")
             missing_binary = str(Path(tmpdir) / "missing-three-col-native")
             with patch.dict(os.environ, {"THREE_COL_NATIVE_BIN": missing_binary}):
-                result = solve_sat_3_col_native_from_path(
-                    path,
-                    params={"solver_bin": "kissat"},
-                )
+                result = solve_sat_3_col_native_from_path(path)
 
         self.assertEqual(result.solver, SAT_3_COL_NATIVE_SOLVER)
         self.assertEqual(result.status, SOLVER_STATUS_ERROR)
@@ -32,13 +29,16 @@ class NativeSatSolverTests(unittest.TestCase):
         self.assertEqual(result.n_vertices, 3)
         self.assertEqual(result.m_edges, 3)
 
-    def test_missing_solver_bin_returns_error(self) -> None:
+    def test_legacy_solver_bin_returns_error(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             binary = Path(tmpdir) / "three_col_native"
             binary.write_text("", encoding="utf-8")
             path = _write_col(Path(tmpdir) / "triangle.col")
             with patch.dict(os.environ, {"THREE_COL_NATIVE_BIN": str(binary)}):
-                result = solve_sat_3_col_native_from_path(path)
+                result = solve_sat_3_col_native_from_path(
+                    path,
+                    params={"solver_bin": "kissat"},
+                )
 
         self.assertEqual(result.status, SOLVER_STATUS_ERROR)
         self.assertIn("solver_bin", result.error or "")
@@ -64,8 +64,7 @@ class NativeSatSolverTests(unittest.TestCase):
                 result = solve_sat_3_col_native_from_path(
                     path,
                     params={
-                        "backend": "dimacs-pipe",
-                        "solver_bin": "kissat",
+                        "backend": "cadical-rustsat",
                         "timeout_s": 12,
                     },
                 )
@@ -77,8 +76,8 @@ class NativeSatSolverTests(unittest.TestCase):
         self.assertNotIn("solve_time_s", result.details)
         command = run.call_args.args[0]
         self.assertEqual(command[:4], [str(binary), "sat", "solve", str(path)])
-        self.assertIn("--solver-bin", command)
-        self.assertIn("kissat", command)
+        self.assertIn("cadical-rustsat", command)
+        self.assertNotIn("--solver-bin", command)
         self.assertEqual(run.call_args.kwargs["timeout"], 42.0)
 
     def test_native_embedded_backends_do_not_require_solver_bin(self) -> None:
@@ -134,7 +133,7 @@ class NativeSatSolverTests(unittest.TestCase):
             ):
                 result = solve_sat_3_col_native_from_path(
                     path,
-                    params={"solver_bin": "kissat"},
+                    params={"backend": "cadical-rustsat"},
                 )
 
         self.assertEqual(result.status, SOLVER_STATUS_OK)
@@ -158,7 +157,7 @@ class NativeSatSolverTests(unittest.TestCase):
             ):
                 result = solve_sat_3_col_native_from_path(
                     path,
-                    params={"solver_bin": "kissat"},
+                    params={"backend": "cadical-rustsat"},
                 )
 
         self.assertEqual(result.status, SOLVER_STATUS_OK)
@@ -182,7 +181,7 @@ class NativeSatSolverTests(unittest.TestCase):
             ):
                 result = solve_sat_3_col_native_from_path(
                     path,
-                    params={"solver_bin": "kissat"},
+                    params={"backend": "cadical-rustsat"},
                 )
 
         self.assertEqual(result.status, SOLVER_STATUS_ERROR)
@@ -199,7 +198,7 @@ class NativeSatSolverTests(unittest.TestCase):
             ):
                 result = solve_sat_3_col_native_from_path(
                     path,
-                    params={"solver_bin": "kissat", "timeout_s": 0.01},
+                    params={"backend": "cadical-rustsat", "timeout_s": 0.01},
                 )
 
         self.assertEqual(result.status, SOLVER_STATUS_ERROR)

@@ -187,7 +187,7 @@ class SolverRegistryTests(unittest.TestCase):
         path = Path("instance.col")
         config = SolverConfig(
             solver=SAT_3_COL_NATIVE_SOLVER,
-            params={"solver_bin": "kissat"},
+            params={"backend": "kissat-rustsat"},
         )
         fake_result = SolverResult(
             solver=SAT_3_COL_NATIVE_SOLVER,
@@ -207,14 +207,14 @@ class SolverRegistryTests(unittest.TestCase):
         ) as solve:
             result = run_solver_from_path(path, config)
 
-        solve.assert_called_once_with(path, params={"solver_bin": "kissat"})
+        solve.assert_called_once_with(path, params={"backend": "kissat-rustsat"})
         self.assertIs(result, fake_result)
 
     def test_run_solver_from_path_validates_native_col_without_loading_graph(self) -> None:
         path = Path("instance.col")
         config = SolverConfig(
             solver=SAT_3_COL_NATIVE_SOLVER,
-            params={"solver_bin": "kissat"},
+            params={"backend": "kissat-rustsat"},
         )
         fake_result = SolverResult(
             solver=SAT_3_COL_NATIVE_SOLVER,

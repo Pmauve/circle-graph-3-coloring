@@ -32,6 +32,7 @@ pub fn solve_dimacs_circle_file(
     Ok(SolveSummary {
         status,
         core_time_s,
+        stats,
         error: None,
     })
 }
@@ -50,7 +51,7 @@ fn solve_instance_recursively(
         ReductionOutcome::Consistent(reduced) => reduced,
     };
     if reduced.n <= config.base_case_n {
-        return Ok(solve_base_case(&reduced, stats));
+        return solve_base_case(&reduced, config.base_case_algorithm, stats);
     }
 
     let mut found_colorable_branch = false;
@@ -110,6 +111,7 @@ e 2 3
             &path,
             SolveConfig {
                 base_case_n: 3,
+                base_case_algorithm: crate::BaseCaseAlgorithm::Backtracking,
                 validate_graph: true,
             },
         )
@@ -141,6 +143,7 @@ e 3 4
             &path,
             SolveConfig {
                 base_case_n: 4,
+                base_case_algorithm: crate::BaseCaseAlgorithm::Backtracking,
                 validate_graph: true,
             },
         )
@@ -169,6 +172,7 @@ e 2 3
             &path,
             SolveConfig {
                 base_case_n: 2,
+                base_case_algorithm: crate::BaseCaseAlgorithm::Backtracking,
                 validate_graph: true,
             },
         )
@@ -195,6 +199,7 @@ e 1 2
             &path,
             SolveConfig {
                 base_case_n: 2,
+                base_case_algorithm: crate::BaseCaseAlgorithm::Backtracking,
                 validate_graph: true,
             },
         );
@@ -204,6 +209,7 @@ e 1 2
             &path,
             SolveConfig {
                 base_case_n: 2,
+                base_case_algorithm: crate::BaseCaseAlgorithm::Backtracking,
                 validate_graph: false,
             },
         )

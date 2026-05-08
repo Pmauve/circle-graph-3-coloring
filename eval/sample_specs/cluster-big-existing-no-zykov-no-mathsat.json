@@ -352,7 +352,7 @@
     },
     {
       "target": "sosa-3-col-native",
-      "label": "SOSA native bt base 8",
+      "label": "SOSA base 8",
       "params": {
         "base_case_n": 8,
         "timeout_s": 3600
@@ -360,7 +360,7 @@
     },
     {
       "target": "sosa-3-col-native",
-      "label": "SOSA native bt base 128",
+      "label": "SOSA base 128",
       "params": {
         "base_case_n": 128,
         "timeout_s": 3600

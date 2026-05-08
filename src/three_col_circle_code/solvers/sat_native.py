@@ -18,8 +18,8 @@ from three_col_circle_code.instances.native import THREE_COL_NATIVE_BIN_ENV
 
 SAT_3_COL_NATIVE_SOLVER = "sat-3-col-native"
 IMPLEMENTATION_STATUS = "native-rust-sat-v4"
-DEFAULT_BACKEND = "dimacs-pipe"
-SUPPORTED_BACKENDS = ("dimacs-pipe", "cadical-rustsat", "kissat-rustsat")
+DEFAULT_BACKEND = "cadical-rustsat"
+SUPPORTED_BACKENDS = ("cadical-rustsat", "kissat-rustsat")
 DEFAULT_TIMEOUT_S = 3600.0
 PYTHON_TIMEOUT_GRACE_S = 30.0
 
@@ -34,8 +34,8 @@ def solve_sat_3_col_native_from_path(
     binary = _resolve_native_binary()
     n_vertices, m_edges = _read_problem_size(instance_path)
     try:
+        _reject_legacy_params(config)
         backend = _parse_backend(config)
-        solver_bin = _parse_solver_bin(config, backend=backend)
         timeout_s = _parse_timeout_s(config)
     except ValueError as exc:
         return _error_result(
@@ -58,8 +58,6 @@ def solve_sat_3_col_native_from_path(
         "timeout_s": timeout_s,
         "core_time_source": "missing",
     }
-    if solver_bin is not None:
-        details["solver_bin"] = solver_bin
     if not binary or not Path(binary).is_file():
         return _error_result(
             n_vertices=n_vertices,
@@ -78,8 +76,6 @@ def solve_sat_3_col_native_from_path(
         "--timeout-s",
         _format_timeout(timeout_s),
     ]
-    if solver_bin is not None:
-        command.extend(["--solver-bin", solver_bin])
     started_at = perf_counter()
     try:
         completed = subprocess.run(
@@ -187,16 +183,9 @@ def _parse_backend(config: Mapping[str, Any]) -> str:
     return backend
 
 
-def _parse_solver_bin(config: Mapping[str, Any], *, backend: str) -> Optional[str]:
-    raw_value = config.get("solver_bin")
-    if backend in {"cadical-rustsat", "kissat-rustsat"} and raw_value is None:
-        return None
-    if raw_value is None:
-        raise ValueError("native SAT params.solver_bin is required")
-    value = str(raw_value)
-    if not value:
-        raise ValueError("native SAT params.solver_bin must not be empty")
-    return value
+def _reject_legacy_params(config: Mapping[str, Any]) -> None:
+    if "solver_bin" in config:
+        raise ValueError("native SAT params.solver_bin is no longer supported")
 
 
 def _parse_timeout_s(config: Mapping[str, Any]) -> float:

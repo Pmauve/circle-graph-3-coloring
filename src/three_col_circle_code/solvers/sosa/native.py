@@ -21,7 +21,10 @@ SOSA_3_COL_NATIVE_SOLVER = "sosa-3-col-native"
 SOSA_NATIVE_BIN_ENV = "SOSA_NATIVE_BIN"
 IMPLEMENTATION_STATUS = "native-rust-file-backend"
 DEFAULT_BASE_CASE_N = 128
+DEFAULT_BASE_CASE_ALGORITHM = "backtracking"
+SUPPORTED_BASE_CASE_ALGORITHMS = ("backtracking", "cadical-rustsat", "kissat-rustsat")
 DEFAULT_TIMEOUT_S = 3600.0
+DEFAULT_STATS = False
 
 
 def solve_sosa_3_col_native_from_path(
@@ -36,7 +39,9 @@ def solve_sosa_3_col_native_from_path(
     n_vertices, m_edges = _read_problem_size(instance_path)
     try:
         base_case_n = _parse_base_case_n(config)
+        base_case_algorithm = _parse_base_case_algorithm(config)
         timeout_s = _parse_timeout_s(config)
+        stats = _parse_stats(config)
     except ValueError as exc:
         return _error_result(
             n_vertices=n_vertices,
@@ -55,7 +60,9 @@ def solve_sosa_3_col_native_from_path(
         "core_time_source": "missing",
         "binary": binary,
         "base_case_n": base_case_n,
+        "base_case_algorithm": base_case_algorithm,
         "timeout_s": timeout_s,
+        "stats": stats,
         "skip_graph_validation": not validate_instance_artifact,
     }
 
@@ -75,7 +82,9 @@ def solve_sosa_3_col_native_from_path(
                 n_vertices=n_vertices,
                 m_edges=m_edges,
                 base_case_n=base_case_n,
+                base_case_algorithm=base_case_algorithm,
                 timeout_s=timeout_s,
+                stats=stats,
                 validate_instance_artifact=validate_instance_artifact,
                 details=details,
             )
@@ -95,7 +104,9 @@ def _run_native_binary(
     n_vertices: int,
     m_edges: int,
     base_case_n: int,
+    base_case_algorithm: str,
     timeout_s: float,
+    stats: bool,
     validate_instance_artifact: bool,
     details: dict[str, Any],
 ) -> SolverResult:
@@ -105,9 +116,13 @@ def _run_native_binary(
         str(instance_path),
         "--base-case-n",
         str(base_case_n),
+        "--base-case-algorithm",
+        base_case_algorithm,
     ]
     if not validate_instance_artifact:
         command.append("--skip-graph-validation")
+    if stats:
+        command.append("--stats")
 
     started_at = perf_counter()
     try:
@@ -211,6 +226,16 @@ def _parse_base_case_n(config: Mapping[str, Any]) -> int:
     return value
 
 
+def _parse_base_case_algorithm(config: Mapping[str, Any]) -> str:
+    value = str(config.get("base_case_algorithm", DEFAULT_BASE_CASE_ALGORITHM))
+    if value not in SUPPORTED_BASE_CASE_ALGORITHMS:
+        raise ValueError(
+            "native SOSA parameter 'base_case_algorithm' must be one of "
+            f"{SUPPORTED_BASE_CASE_ALGORITHMS!r}"
+        )
+    return value
+
+
 def _parse_timeout_s(config: Mapping[str, Any]) -> float:
     raw_value = config.get("timeout_s", DEFAULT_TIMEOUT_S)
     try:
@@ -220,6 +245,13 @@ def _parse_timeout_s(config: Mapping[str, Any]) -> float:
     if value <= 0.0:
         raise ValueError("native SOSA parameter 'timeout_s' must be positive")
     return value
+
+
+def _parse_stats(config: Mapping[str, Any]) -> bool:
+    raw_value = config.get("stats", DEFAULT_STATS)
+    if isinstance(raw_value, bool):
+        return raw_value
+    raise ValueError("native SOSA parameter 'stats' must be a boolean")
 
 
 def _resolve_native_binary() -> Optional[str]:

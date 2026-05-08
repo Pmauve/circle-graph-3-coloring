@@ -90,7 +90,7 @@ mod imp {
     }
 
     fn kissat_error(error: impl std::fmt::Display) -> SosaError {
-        SosaError::Internal(format!("Kissat FFI failed: {error}"))
+        SosaError::Internal(format!("RustSAT Kissat failed: {error}"))
     }
 }
 

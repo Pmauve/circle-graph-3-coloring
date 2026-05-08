@@ -50,7 +50,11 @@ class NativeSosaSolverTests(unittest.TestCase):
             ) as run:
                 result = solve_sosa_3_col_native_from_path(
                     path,
-                    params={"base_case_n": 8, "timeout_s": 12},
+                    params={
+                        "base_case_n": 8,
+                        "base_case_algorithm": "cadical-rustsat",
+                        "timeout_s": 12,
+                    },
                 )
 
         self.assertEqual(result.status, SOLVER_STATUS_OK)
@@ -60,8 +64,48 @@ class NativeSosaSolverTests(unittest.TestCase):
         self.assertEqual(command[:2], [str(binary), "solve"])
         self.assertIn("--base-case-n", command)
         self.assertIn("8", command)
+        self.assertIn("--base-case-algorithm", command)
+        self.assertIn("cadical-rustsat", command)
         self.assertIn("--skip-graph-validation", command)
+        self.assertNotIn("--stats", command)
+        self.assertEqual(result.details["base_case_algorithm"], "cadical-rustsat")
+        self.assertFalse(result.details["stats"])
         self.assertEqual(run.call_args.kwargs["timeout"], 12.0)
+
+    def test_stats_flag_is_opt_in(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            binary = Path(tmpdir) / "sosa_native"
+            binary.write_text("", encoding="utf-8")
+            path = _write_col(Path(tmpdir) / "triangle.col")
+            completed = CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout="s COLORABLE\nt core_time_s 0.123\nt base_case_calls 1\n",
+                stderr="",
+            )
+            with patch.dict(os.environ, {"SOSA_NATIVE_BIN": str(binary)}), patch(
+                "three_col_circle_code.solvers.sosa.native.subprocess.run",
+                return_value=completed,
+            ) as run:
+                result = solve_sosa_3_col_native_from_path(path, params={"stats": True})
+
+        self.assertEqual(result.status, SOLVER_STATUS_OK)
+        self.assertIn("--stats", run.call_args.args[0])
+        self.assertTrue(result.details["stats"])
+
+    def test_rejects_unknown_base_case_algorithm(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            binary = Path(tmpdir) / "sosa_native"
+            binary.write_text("", encoding="utf-8")
+            path = _write_col(Path(tmpdir) / "triangle.col")
+            with patch.dict(os.environ, {"SOSA_NATIVE_BIN": str(binary)}):
+                result = solve_sosa_3_col_native_from_path(
+                    path,
+                    params={"base_case_algorithm": "oracle"},
+                )
+
+        self.assertEqual(result.status, SOLVER_STATUS_ERROR)
+        self.assertIn("base_case_algorithm", result.error or "")
 
     def test_validate_instance_artifact_omits_skip_flag(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

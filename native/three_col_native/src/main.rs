@@ -229,15 +229,14 @@ impl GenerateOptions {
 fn run_sat(args: &[String]) -> Result<(String, i32), SosaError> {
     if args.len() < 2 || args[0] != "solve" {
         return Err(SosaError::Input(
-            "usage: three_col_native sat solve <instance.col> [--backend dimacs-pipe|cadical-rustsat|kissat-rustsat] [--solver-bin <path>] [--timeout-s N]"
+            "usage: three_col_native sat solve <instance.col> [--backend cadical-rustsat|kissat-rustsat] [--timeout-s N]"
                 .to_string(),
         ));
     }
 
     let path = PathBuf::from(&args[1]);
     let mut config = SatConfig {
-        backend: "dimacs-pipe".to_string(),
-        solver_bin: String::new(),
+        backend: "cadical-rustsat".to_string(),
         timeout_s: None,
     };
     let mut index = 2;
@@ -245,10 +244,6 @@ fn run_sat(args: &[String]) -> Result<(String, i32), SosaError> {
         match args[index].as_str() {
             "--backend" => {
                 config.backend = required_value(args, index, "--backend")?.to_string();
-                index += 2;
-            }
-            "--solver-bin" => {
-                config.solver_bin = required_value(args, index, "--solver-bin")?.to_string();
                 index += 2;
             }
             "--timeout-s" => {
@@ -262,9 +257,6 @@ fn run_sat(args: &[String]) -> Result<(String, i32), SosaError> {
                 return Err(SosaError::Input(format!("unknown argument {unknown:?}")));
             }
         }
-    }
-    if config.backend == "dimacs-pipe" && config.solver_bin.is_empty() {
-        return Err(SosaError::Input("--solver-bin is required".to_string()));
     }
 
     let summary = solve_dimacs_edge_file(&path, config)?;

@@ -70,7 +70,7 @@
   "solvers": [
     {
       "target": "sat-3-col-native",
-      "label": "Native SAT CaDiCaL RustSAT",
+      "label": "SAT CaDiCaL",
       "params": {
         "backend": "cadical-rustsat",
         "timeout_s": 1800
@@ -78,7 +78,7 @@
     },
     {
       "target": "sat-3-col-native",
-      "label": "Native SAT Kissat RustSAT",
+      "label": "SAT Kissat",
       "params": {
         "backend": "kissat-rustsat",
         "timeout_s": 1800
@@ -86,31 +86,24 @@
     },
     {
       "target": "sosa-3-col-native",
-      "label": "SOSA native base 8",
-      "params": {
-        "base_case_n": 8,
-        "timeout_s": 1800
-      }
-    },
-    {
-      "target": "sosa-3-col-native",
-      "label": "SOSA native base 32",
-      "params": {
-        "base_case_n": 32,
-        "timeout_s": 1800
-      }
-    },
-    {
-      "target": "sosa-3-col-native",
-      "label": "SOSA native base 128",
+      "label": "SOSA base=128",
       "params": {
         "base_case_n": 128,
         "timeout_s": 1800
       }
     },
     {
+      "target": "sosa-3-col-native",
+      "label": "SOSA base=512 Kissat",
+      "params": {
+        "base_case_n": 512,
+        "base_case_algorithm": "kissat-rustsat",
+        "timeout_s": 1800
+      }
+    },
+    {
       "target": "zykovcolor",
-      "label": "ZykovColor fixed-k preprocess",
+      "label": "ZykovColor preprocess",
       "params": {
         "mode": "single-k",
         "decision_num_colors": 3,
@@ -130,7 +123,7 @@
     },
     {
       "target": "zykovcolor",
-      "label": "ZykovColor fixed-k minimal",
+      "label": "ZykovColor minimal",
       "params": {
         "mode": "single-k",
         "decision_num_colors": 3,

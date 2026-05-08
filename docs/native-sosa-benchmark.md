@@ -31,8 +31,31 @@ Example solver block:
 ```yaml
 solvers:
   - target: sosa-3-col-native
+    label: SOSA base=128
     params:
       base_case_n: 128
+      timeout_s: 3600
+```
+
+The native solver supports three base-case algorithms:
+
+```text
+backtracking
+cadical-rustsat
+kissat-rustsat
+```
+
+`backtracking` is the default and preserves the original in-process leaf search.
+The RustSAT options solve the reduced SOSA list-coloring leaf directly through
+CaDiCaL or Kissat:
+
+```yaml
+solvers:
+  - target: sosa-3-col-native
+    label: SOSA base=512 Kissat
+    params:
+      base_case_n: 512
+      base_case_algorithm: kissat-rustsat
       timeout_s: 3600
 ```
 
@@ -53,3 +76,13 @@ t core_time_s 0.000123
 
 `core_time_s` is measured inside Rust after file parsing and compact instance
 construction.
+
+Extra native counters are opt-in for profiling:
+
+```bash
+sosa_native solve instance.col --base-case-n 512 --base-case-algorithm kissat-rustsat --stats
+```
+
+With `--stats`, the solver also prints `t` lines for solver calls, base-case
+calls, SAT clause/literal counts, and SAT build/solve time. Leave `--stats` off
+for performance benchmark runs.

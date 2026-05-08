@@ -1,14 +1,11 @@
 pub mod cadical_rustsat;
 pub mod cnf;
-pub mod encode;
-pub mod external;
-pub mod kissat_ffi;
+pub mod kissat_rustsat;
 pub mod solver;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SatConfig {
     pub backend: String,
-    pub solver_bin: String,
     pub timeout_s: Option<u64>,
 }
 

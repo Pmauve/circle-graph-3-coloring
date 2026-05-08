@@ -14,39 +14,20 @@ cargo build --release -p three_col_native
 export THREE_COL_NATIVE_BIN="$PWD/target/release/three_col_native"
 ```
 
-On the TU Wien cluster, keep the native binary and external SAT solver paths in
-`env_cluster.sh` so SGE jobs and interactive smoke tests use the same tools:
+On the TU Wien cluster, keep the native binary path in `env_cluster.sh` so SGE
+jobs and interactive smoke tests use the same build:
 
 ```bash
 export PATH="$HOME/.conda/envs/three-color/bin:$HOME/.cargo/bin:${PATH}"
 export THREE_COL_NATIVE_BIN="$HOME/3-coloring-code/native/target/release/three_col_native"
-export CADICAL_BIN="$HOME/opt/sat-solvers/cadical/build/cadical"
-export KISSAT_BIN="$HOME/opt/sat-solvers/kissat/build/kissat"
 ```
 
-Benchmark specs are JSON, so use absolute solver paths there rather than
-`$CADICAL_BIN` or `$KISSAT_BIN`.
-
-Example external solver block:
+Example CaDiCaL block:
 
 ```json
 {
   "target": "sat-3-col-native",
-  "label": "Native SAT Kissat",
-  "params": {
-    "backend": "dimacs-pipe",
-    "solver_bin": "/path/to/kissat",
-    "timeout_s": 3600
-  }
-}
-```
-
-Example RustSAT CaDiCaL block:
-
-```json
-{
-  "target": "sat-3-col-native",
-  "label": "Native SAT CaDiCaL RustSAT",
+  "label": "SAT CaDiCaL",
   "params": {
     "backend": "cadical-rustsat",
     "timeout_s": 3600
@@ -54,12 +35,12 @@ Example RustSAT CaDiCaL block:
 }
 ```
 
-Example RustSAT Kissat block:
+Example Kissat block:
 
 ```json
 {
   "target": "sat-3-col-native",
-  "label": "Native SAT Kissat 4.0.4 RustSAT",
+  "label": "SAT Kissat",
   "params": {
     "backend": "kissat-rustsat",
     "timeout_s": 3600
@@ -69,25 +50,20 @@ Example RustSAT Kissat block:
 
 The Rust binary reads the benchmark `.col` file as DIMACS edge input, ignores
 circle comments, and builds the fixed 3-color CNF without materializing a
-Python/NetworkX graph. With `backend = "dimacs-pipe"` it streams the CNF to the
-configured SAT solver over stdin and parses the solver's SAT/UNSAT/UNKNOWN
-status. With `backend = "cadical-rustsat"` and `backend = "kissat-rustsat"` it
-adds clauses through RustSAT solver adapters.
-Normal execution does not write a `.cnf` file.
+Python/NetworkX graph. The supported backends are `cadical-rustsat` and
+`kissat-rustsat`; both add clauses through RustSAT solver adapters. Normal
+execution does not write a `.cnf` file.
 
-When the external SAT solver prints a recognized process-time line, the
-`dimacs-pipe` wrapper reports that value as `core_time_s`:
+`core_time_s` is measured around the solver `solve()` call:
 
 ```text
 {"status":"ok","solver_status":"COLORABLE","core_time_s":0.004690}
 ```
 
-For embedded backends, `core_time_s` is measured around the solver `solve()`
-call. `wall_time_s` is always measured by the Python benchmark wrapper and
-includes Rust startup, `.col` parsing, clause construction, and solving. For
-`dimacs-pipe`, `wall_time_s` also includes external solver startup, DIMACS
-parsing, stdout/stderr handling, and process shutdown.
+`wall_time_s` is always measured by the Python benchmark wrapper and includes
+Rust startup, `.col` parsing, clause construction, and solving.
 
-External SAT binaries commonly exit with `10` for SAT and `20` for UNSAT. The
-native wrapper accepts those conventional codes and treats other unexpected
-nonzero exits as solver errors.
+Dense full-sweep instances can exceed an 8 GiB SGE `h_vmem` limit during clause
+construction or solving. Use a larger memory resource for those runs, or split
+the dense cases into a separate benchmark if the low-memory queues are otherwise
+useful.
