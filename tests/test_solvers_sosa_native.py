@@ -77,8 +77,10 @@ class NativeSosaSolverTests(unittest.TestCase):
         self.assertIn("cadical-rustsat", command)
         self.assertIn("--skip-graph-validation", command)
         self.assertNotIn("--stats", command)
+        self.assertNotIn("--lazy-circle-neighbors", command)
         self.assertEqual(result.details["base_case_algorithm"], "cadical-rustsat")
         self.assertFalse(result.details["stats"])
+        self.assertFalse(result.details["lazy_circle_neighbors"])
         self.assertEqual(run.call_args.kwargs["timeout"], 12.0)
 
     def test_stats_flag_is_opt_in(self) -> None:
@@ -101,6 +103,30 @@ class NativeSosaSolverTests(unittest.TestCase):
         self.assertEqual(result.status, SOLVER_STATUS_OK)
         self.assertIn("--stats", run.call_args.args[0])
         self.assertTrue(result.details["stats"])
+
+    def test_lazy_circle_neighbors_flag_is_opt_in(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            binary = Path(tmpdir) / "sosa_native"
+            binary.write_text("", encoding="utf-8")
+            path = _write_col(Path(tmpdir) / "triangle.col")
+            completed = CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout="s COLORABLE\nt core_time_s 0.123\n",
+                stderr="",
+            )
+            with patch.dict(os.environ, {"SOSA_NATIVE_BIN": str(binary)}), patch(
+                "three_col_circle_code.solvers.sosa.native.subprocess.run",
+                return_value=completed,
+            ) as run:
+                result = solve_sosa_3_col_native_from_path(
+                    path,
+                    params={"lazy_circle_neighbors": True},
+                )
+
+        self.assertEqual(result.status, SOLVER_STATUS_OK)
+        self.assertIn("--lazy-circle-neighbors", run.call_args.args[0])
+        self.assertTrue(result.details["lazy_circle_neighbors"])
 
     def test_rejects_unknown_base_case_algorithm(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

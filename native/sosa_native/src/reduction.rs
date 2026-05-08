@@ -175,22 +175,94 @@ fn run_rr_queue(instance: &CircleInstance, state: &mut ReductionState, stats: &m
         state.active_vertices.clear(vertex as usize);
         state.deleted_count += 1;
         stats.rr_steps += 1;
-        for &neighbor in instance.neighbors(vertex) {
-            let neighbor_index = neighbor as usize;
-            if !state.active_vertices.get(neighbor_index) {
-                continue;
-            }
-            if state.allowed[neighbor_index] & color_bit == 0 {
-                continue;
-            }
-            state.allowed[neighbor_index] &= !color_bit;
-            if state.allowed[neighbor_index] == 0 {
+        if !instance.has_adjacency() {
+            if !apply_color_to_lazy_circle_neighbors(instance, vertex, color_bit, state, stats) {
                 return false;
             }
-            if singleton_color(state.allowed[neighbor_index]).is_some() {
-                state.queue.push(neighbor);
+        } else {
+            for &neighbor in instance.neighbors(vertex) {
+                if !apply_color_to_neighbor(neighbor, color_bit, state) {
+                    return false;
+                }
             }
         }
+    }
+    true
+}
+
+fn apply_color_to_lazy_circle_neighbors(
+    instance: &CircleInstance,
+    vertex: u32,
+    color_bit: ColorMask,
+    state: &mut ReductionState,
+    stats: &mut Stats,
+) -> bool {
+    let started_at = stats.start_timer();
+    stats.lazy_neighbor_queries += 1;
+    state.lazy_touched.clear();
+
+    let endpoint_count = instance.endpoint_count();
+    let a = instance.left[vertex as usize] as usize;
+    let b = instance.right[vertex as usize] as usize;
+    let clockwise_len = if a < b {
+        b - a - 1
+    } else {
+        endpoint_count - a - 1 + b
+    };
+    let counterclockwise_len = endpoint_count - 2 - clockwise_len;
+    let (start, len) = if clockwise_len <= counterclockwise_len {
+        ((a + 1) % endpoint_count, clockwise_len)
+    } else {
+        ((b + 1) % endpoint_count, counterclockwise_len)
+    };
+
+    stats.lazy_neighbor_endpoints_scanned += len as u64;
+    for offset in 0..len {
+        let position = (start + offset) % endpoint_count;
+        let neighbor = instance.endpoint_at[position] as usize;
+        if neighbor == vertex as usize || !state.active_vertices.get(neighbor) {
+            continue;
+        }
+        if state.lazy_endpoint_counts[neighbor] == 0 {
+            state.lazy_touched.push(neighbor as u32);
+        }
+        state.lazy_endpoint_counts[neighbor] += 1;
+    }
+
+    let mut ok = true;
+    for index in 0..state.lazy_touched.len() {
+        let neighbor = state.lazy_touched[index];
+        let count = state.lazy_endpoint_counts[neighbor as usize];
+        state.lazy_endpoint_counts[neighbor as usize] = 0;
+        if count == 1 {
+            stats.lazy_neighbor_neighbors_emitted += 1;
+            if !apply_color_to_neighbor(neighbor, color_bit, state) {
+                ok = false;
+            }
+        }
+    }
+    stats.lazy_neighbor_time_ns += Stats::elapsed_ns(started_at);
+    ok
+}
+
+fn apply_color_to_neighbor(
+    neighbor: u32,
+    color_bit: ColorMask,
+    state: &mut ReductionState,
+) -> bool {
+    let neighbor_index = neighbor as usize;
+    if !state.active_vertices.get(neighbor_index) {
+        return true;
+    }
+    if state.allowed[neighbor_index] & color_bit == 0 {
+        return true;
+    }
+    state.allowed[neighbor_index] &= !color_bit;
+    if state.allowed[neighbor_index] == 0 {
+        return false;
+    }
+    if singleton_color(state.allowed[neighbor_index]).is_some() {
+        state.queue.push(neighbor);
     }
     true
 }
@@ -199,6 +271,8 @@ struct ReductionState {
     active_vertices: BitSet,
     allowed: Vec<ColorMask>,
     queue: Vec<u32>,
+    lazy_endpoint_counts: Vec<u8>,
+    lazy_touched: Vec<u32>,
     deleted_count: usize,
 }
 
@@ -226,6 +300,12 @@ impl ReductionState {
             active_vertices: BitSet::full(instance.n),
             allowed,
             queue,
+            lazy_endpoint_counts: if instance.has_adjacency() {
+                Vec::new()
+            } else {
+                vec![0; instance.n]
+            },
+            lazy_touched: Vec::new(),
             deleted_count: 0,
         }
     }

@@ -7,7 +7,7 @@ use crate::lemma_38::{visit_lemma_33_family, FullySeparatedInstance};
 use crate::reduction::{reduce_exhaustively, ReductionOutcome};
 use crate::stats::Stats;
 use crate::{SolveConfig, SolveStatus, SolveSummary};
-use circle_core::dimacs_circle::{read_dimacs_circle, read_dimacs_circle_geometry};
+use circle_core::dimacs_circle::{read_dimacs_circle, read_dimacs_circle_geometry_skip_edges};
 use circle_core::error::SosaError;
 use circle_core::instance::CircleInstance;
 
@@ -16,25 +16,27 @@ pub fn solve_dimacs_circle_file(
     config: SolveConfig,
 ) -> Result<SolveSummary, SosaError> {
     let parse_started = Instant::now();
-    let dimacs = if config.validate_graph {
+    let geometry = if !config.validate_graph && config.lazy_circle_neighbors {
+        Some(read_dimacs_circle_geometry_skip_edges(path)?)
+    } else {
+        None
+    };
+    let dimacs = if geometry.is_none() {
         Some(read_dimacs_circle(path)?)
     } else {
         None
     };
-    let geometry = if config.validate_graph {
-        None
-    } else {
-        Some(read_dimacs_circle_geometry(path)?)
-    };
     let parse_time_s = parse_started.elapsed().as_secs_f64();
 
     let build_started = Instant::now();
-    let instance = if let Some(dimacs) = dimacs {
-        CircleInstance::from_dimacs_with_crossing_validation(dimacs, true)?
-    } else {
-        CircleInstance::from_dimacs_geometry_and_edge_file(
+    let instance = if config.lazy_circle_neighbors && geometry.is_some() {
+        CircleInstance::from_dimacs_geometry_without_adjacency(
             geometry.expect("geometry must be parsed when validation is disabled"),
-            path,
+        )?
+    } else {
+        CircleInstance::from_dimacs_with_crossing_validation(
+            dimacs.expect("DIMACS instance must be parsed when lazy geometry is disabled"),
+            config.validate_graph,
         )?
     };
     let build_time_s = build_started.elapsed().as_secs_f64();
@@ -42,6 +44,7 @@ pub fn solve_dimacs_circle_file(
     let started = Instant::now();
     let mut stats = Stats::with_profile_timers(config.profile);
     stats.set_disable_branch_dedup(config.disable_branch_dedup);
+    stats.set_lazy_circle_neighbors(config.lazy_circle_neighbors);
     let status = if solve_instance_recursively(instance, config, &mut stats, 0)? {
         SolveStatus::Colorable
     } else {
@@ -70,11 +73,16 @@ fn solve_instance_recursively(
     stats.solver_calls += 1;
     stats.max_recursion_depth = stats.max_recursion_depth.max(depth);
 
-    let reduced = match reduce_exhaustively(instance, stats)? {
+    let mut reduced = match reduce_exhaustively(instance, stats)? {
         ReductionOutcome::Conflict => return Ok(false),
         ReductionOutcome::Consistent(reduced) => reduced,
     };
     if reduced.n <= config.base_case_n {
+        if !reduced.has_adjacency() {
+            let started_at = stats.start_timer();
+            reduced.materialize_crossing_adjacency()?;
+            stats.adjacency_materialize_time_ns += Stats::elapsed_ns(started_at);
+        }
         let started_at = stats.start_timer();
         let is_colorable = solve_base_case(&reduced, config.base_case_algorithm, stats)?;
         stats.base_case_time_ns += Stats::elapsed_ns(started_at);
@@ -156,6 +164,7 @@ e 2 3
                 validate_graph: true,
                 profile: false,
                 disable_branch_dedup: false,
+                lazy_circle_neighbors: false,
             },
         )
         .unwrap();
@@ -190,6 +199,7 @@ e 3 4
                 validate_graph: true,
                 profile: false,
                 disable_branch_dedup: false,
+                lazy_circle_neighbors: false,
             },
         )
         .unwrap();
@@ -221,6 +231,7 @@ e 2 3
                 validate_graph: true,
                 profile: false,
                 disable_branch_dedup: false,
+                lazy_circle_neighbors: false,
             },
         )
         .unwrap();
@@ -250,6 +261,7 @@ e 1 2
                 validate_graph: true,
                 profile: false,
                 disable_branch_dedup: false,
+                lazy_circle_neighbors: false,
             },
         );
         assert!(strict.unwrap_err().to_string().contains("does not match"));
@@ -262,6 +274,7 @@ e 1 2
                 validate_graph: false,
                 profile: false,
                 disable_branch_dedup: false,
+                lazy_circle_neighbors: false,
             },
         )
         .unwrap();

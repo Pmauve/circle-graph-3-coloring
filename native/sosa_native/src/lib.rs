@@ -44,6 +44,7 @@ pub struct SolveConfig {
     pub validate_graph: bool,
     pub profile: bool,
     pub disable_branch_dedup: bool,
+    pub lazy_circle_neighbors: bool,
 }
 
 impl Default for SolveConfig {
@@ -54,6 +55,7 @@ impl Default for SolveConfig {
             validate_graph: true,
             profile: false,
             disable_branch_dedup: false,
+            lazy_circle_neighbors: false,
         }
     }
 }

@@ -25,17 +25,18 @@ pub fn read_dimacs_circle(path: &Path) -> Result<DimacsCircle, SosaError> {
     parse_dimacs_circle(&text)
 }
 
-pub fn read_dimacs_circle_geometry(path: &Path) -> Result<DimacsCircleGeometry, SosaError> {
+pub fn read_dimacs_circle_geometry_skip_edges(
+    path: &Path,
+) -> Result<DimacsCircleGeometry, SosaError> {
     let file = File::open(path)?;
-    parse_dimacs_circle_geometry(BufReader::new(file))
+    parse_dimacs_circle_geometry_skip_edges(BufReader::new(file))
 }
 
-pub fn parse_dimacs_circle_geometry<R: BufRead>(
+fn parse_dimacs_circle_geometry_skip_edges<R: BufRead>(
     reader: R,
 ) -> Result<DimacsCircleGeometry, SosaError> {
     let mut n: Option<usize> = None;
     let mut m_declared: Option<usize> = None;
-    let mut edge_count = 0usize;
     let mut circle_order = Vec::new();
     let mut in_circle_block = false;
     let mut saw_circle_block = false;
@@ -97,34 +98,11 @@ pub fn parse_dimacs_circle_geometry<R: BufRead>(
                 }
                 n = Some(parse_usize(parts[2], line_number, "vertex count")?);
                 m_declared = Some(parse_usize(parts[3], line_number, "edge count")?);
+                if saw_circle_block && !in_circle_block {
+                    break;
+                }
             }
-            "e" => {
-                if parts.len() != 3 {
-                    return input_error(format!(
-                        "malformed edge line at line {line_number}: {line}"
-                    ));
-                }
-                let n = n.ok_or_else(|| {
-                    SosaError::Input(format!(
-                        "edge line before problem line at line {line_number}"
-                    ))
-                })?;
-                let u = parse_positive_u32(parts[1], line_number)?;
-                let v = parse_positive_u32(parts[2], line_number)?;
-                let n_u32 = u32::try_from(n).map_err(|_| {
-                    SosaError::Input(format!("vertex count {n} does not fit into u32"))
-                })?;
-                if u > n_u32 {
-                    return input_error(format!("edge vertex id {u} out of range 1..{n}"));
-                }
-                if v > n_u32 {
-                    return input_error(format!("edge vertex id {v} out of range 1..{n}"));
-                }
-                if u == v {
-                    return input_error(format!("self-loop on vertex {u} at line {line_number}"));
-                }
-                edge_count += 1;
-            }
+            "e" => {}
             _ => {
                 return input_error(format!(
                     "unsupported DIMACS line at line {line_number}: {line}"
@@ -141,11 +119,6 @@ pub fn parse_dimacs_circle_geometry<R: BufRead>(
     let m_declared = m_declared.expect("m_declared must be present when n is present");
     if !saw_circle_block {
         return input_error("DIMACS file is missing a circle representation block".to_string());
-    }
-    if edge_count != m_declared {
-        return input_error(format!(
-            "problem line declares {m_declared} edge(s), but {edge_count} were read"
-        ));
     }
     validate_vertex_ranges(n, &[], &circle_order)?;
     validate_circle_order(n, &circle_order)?;

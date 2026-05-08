@@ -4,6 +4,7 @@ use std::time::Instant;
 pub struct Stats {
     pub profile_timers: bool,
     pub disable_branch_dedup: bool,
+    pub lazy_circle_neighbors: bool,
     pub rr_steps: u64,
     pub rr_deleted_vertices: u64,
     pub rr_rebuilds: u64,
@@ -26,6 +27,11 @@ pub struct Stats {
     pub branch_candidates_generated: u64,
     pub branch_candidates_unique: u64,
     pub branch_candidates_duplicates: u64,
+    pub lazy_neighbor_queries: u64,
+    pub lazy_neighbor_endpoints_scanned: u64,
+    pub lazy_neighbor_neighbors_emitted: u64,
+    pub lazy_neighbor_time_ns: u128,
+    pub adjacency_materialize_time_ns: u128,
     pub max_recursion_depth: u64,
     pub base_case_time_ns: u128,
     pub arc_restriction_time_ns: u128,
@@ -49,6 +55,10 @@ impl Stats {
 
     pub fn set_disable_branch_dedup(&mut self, disable_branch_dedup: bool) {
         self.disable_branch_dedup = disable_branch_dedup;
+    }
+
+    pub fn set_lazy_circle_neighbors(&mut self, lazy_circle_neighbors: bool) {
+        self.lazy_circle_neighbors = lazy_circle_neighbors;
     }
 
     pub fn start_timer(&self) -> Option<Instant> {

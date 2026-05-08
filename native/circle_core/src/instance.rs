@@ -1,12 +1,8 @@
 use std::collections::HashSet;
-use std::fs::File;
-use std::io::BufReader;
-use std::path::Path;
 
 use crate::bitset::BitSet;
 use crate::colors::{ColorMask, ALL_COLORS};
 use crate::dimacs_circle::{DimacsCircle, DimacsCircleGeometry};
-use crate::dimacs_edge::stream_dimacs_edges;
 use crate::error::SosaError;
 use crate::partition::CirclePartition;
 
@@ -65,21 +61,19 @@ impl CircleInstance {
         Ok(instance)
     }
 
-    pub fn from_dimacs_geometry_and_edge_file(
+    pub fn from_dimacs_geometry_without_adjacency(
         geometry: DimacsCircleGeometry,
-        path: &Path,
     ) -> Result<Self, SosaError> {
         let (endpoint_at, left, right) =
             build_endpoint_geometry(geometry.n, &geometry.circle_order)?;
-        let (adj_offsets, adj) = build_csr_from_dimacs_edge_file(path, geometry.n)?;
 
         Ok(Self {
             n: geometry.n,
             endpoint_at,
             left,
             right,
-            adj_offsets,
-            adj,
+            adj_offsets: Vec::new(),
+            adj: Vec::new(),
             allowed: vec![ALL_COLORS; geometry.n],
         })
     }
@@ -142,9 +136,32 @@ impl CircleInstance {
     }
 
     pub fn neighbors(&self, vertex: u32) -> &[u32] {
+        assert!(self.has_adjacency(), "adjacency has not been materialized");
         let start = self.adj_offsets[vertex as usize] as usize;
         let end = self.adj_offsets[vertex as usize + 1] as usize;
         &self.adj[start..end]
+    }
+
+    pub fn has_adjacency(&self) -> bool {
+        self.adj_offsets.len() == self.n + 1
+    }
+
+    pub fn materialize_crossing_adjacency(&mut self) -> Result<(), SosaError> {
+        if self.has_adjacency() {
+            return Ok(());
+        }
+        let mut edges = Vec::new();
+        for u in 0..self.n as u32 {
+            for v in (u + 1)..self.n as u32 {
+                if self.crosses(u, v) {
+                    edges.push((u, v));
+                }
+            }
+        }
+        let (adj_offsets, adj) = build_csr(self.n, &edges)?;
+        self.adj_offsets = adj_offsets;
+        self.adj = adj;
+        Ok(())
     }
 
     pub fn degree(&self, vertex: u32) -> usize {
@@ -204,7 +221,11 @@ impl CircleInstance {
             }
         }
 
-        let (adj_offsets, adj) = self.rebuild_csr_from_active(active, &old_to_new, new_n)?;
+        let (adj_offsets, adj) = if self.has_adjacency() {
+            self.rebuild_csr_from_active(active, &old_to_new, new_n)?
+        } else {
+            (Vec::new(), Vec::new())
+        };
         let mut rebuilt_allowed = Vec::with_capacity(new_n);
         for old_vertex in active.iter_ones() {
             rebuilt_allowed.push(allowed[old_vertex]);
@@ -295,7 +316,11 @@ impl CircleInstance {
             }
         }
 
-        let (adj_offsets, adj) = self.rebuild_csr_from_active(active, &old_to_new, new_n)?;
+        let (adj_offsets, adj) = if self.has_adjacency() {
+            self.rebuild_csr_from_active(active, &old_to_new, new_n)?
+        } else {
+            (Vec::new(), Vec::new())
+        };
         let mut rebuilt_allowed = Vec::with_capacity(new_n);
         for old_vertex in active.iter_ones() {
             rebuilt_allowed.push(allowed[old_vertex]);
@@ -422,64 +447,6 @@ fn build_csr(n: usize, edges: &[(u32, u32)]) -> Result<(Vec<u32>, Vec<u32>), Sos
         let end = adj_offsets[vertex + 1] as usize;
         adj[start..end].sort_unstable();
     }
-    Ok((adj_offsets, adj))
-}
-
-fn build_csr_from_dimacs_edge_file(
-    path: &Path,
-    expected_n: usize,
-) -> Result<(Vec<u32>, Vec<u32>), SosaError> {
-    let mut degree = vec![0usize; expected_n];
-    stream_dimacs_edges(
-        BufReader::new(File::open(path)?),
-        |problem| {
-            if problem.n != expected_n {
-                return Err(SosaError::Input(format!(
-                    "problem line vertex count {} changed while building CSR; expected {expected_n}",
-                    problem.n
-                )));
-            }
-            Ok(())
-        },
-        |u, v| {
-            degree[u - 1] += 1;
-            degree[v - 1] += 1;
-            Ok(())
-        },
-    )?;
-
-    let mut adj_offsets = Vec::with_capacity(expected_n + 1);
-    adj_offsets.push(0);
-    for count in degree {
-        let next = *adj_offsets.last().unwrap() as usize + count;
-        let next = u32::try_from(next)
-            .map_err(|_| SosaError::Input("adjacency does not fit into u32 offsets".to_string()))?;
-        adj_offsets.push(next);
-    }
-
-    let mut cursor = adj_offsets[..expected_n].to_vec();
-    let mut adj = vec![0u32; *adj_offsets.last().unwrap() as usize];
-    stream_dimacs_edges(
-        BufReader::new(File::open(path)?),
-        |_problem| Ok(()),
-        |u, v| {
-            let u = u - 1;
-            let v = v - 1;
-            let v_u32 = u32::try_from(v)
-                .map_err(|_| SosaError::Input("edge endpoint does not fit into u32".to_string()))?;
-            let u_u32 = u32::try_from(u)
-                .map_err(|_| SosaError::Input("edge endpoint does not fit into u32".to_string()))?;
-
-            let u_index = cursor[u] as usize;
-            adj[u_index] = v_u32;
-            cursor[u] += 1;
-            let v_index = cursor[v] as usize;
-            adj[v_index] = u_u32;
-            cursor[v] += 1;
-            Ok(())
-        },
-    )?;
-
     Ok((adj_offsets, adj))
 }
 

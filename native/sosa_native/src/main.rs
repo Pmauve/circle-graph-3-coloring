@@ -41,7 +41,7 @@ fn run() -> Result<CliRun, SosaError> {
     }
     if args.len() < 2 || args[0] != "solve" {
         return Err(SosaError::Input(
-            "usage: sosa_native solve <instance.col> [--base-case-n N] [--base-case-algorithm backtracking|cadical-rustsat|kissat-rustsat] [--skip-graph-validation] [--stats] [--disable-branch-dedup]"
+            "usage: sosa_native solve <instance.col> [--base-case-n N] [--base-case-algorithm backtracking|cadical-rustsat|kissat-rustsat] [--skip-graph-validation] [--stats] [--disable-branch-dedup] [--lazy-circle-neighbors]"
                 .to_string(),
         ));
     }
@@ -81,6 +81,10 @@ fn run() -> Result<CliRun, SosaError> {
                 config.disable_branch_dedup = true;
                 index += 1;
             }
+            "--lazy-circle-neighbors" => {
+                config.lazy_circle_neighbors = true;
+                index += 1;
+            }
             unknown => {
                 return Err(SosaError::Input(format!("unknown argument {unknown:?}")));
             }
@@ -94,7 +98,7 @@ fn run() -> Result<CliRun, SosaError> {
 }
 
 fn print_help() {
-    println!("usage: sosa_native solve <instance.col> [--base-case-n N] [--base-case-algorithm backtracking|cadical-rustsat|kissat-rustsat] [--skip-graph-validation] [--stats] [--disable-branch-dedup]");
+    println!("usage: sosa_native solve <instance.col> [--base-case-n N] [--base-case-algorithm backtracking|cadical-rustsat|kissat-rustsat] [--skip-graph-validation] [--stats] [--disable-branch-dedup] [--lazy-circle-neighbors]");
 }
 
 fn print_summary(summary: &SolveSummary, print_stats: bool) {
@@ -178,6 +182,15 @@ fn print_profile(stats: &Stats) {
         "p branch_candidates_duplicates {}",
         stats.branch_candidates_duplicates
     );
+    println!("p lazy_neighbor_queries {}", stats.lazy_neighbor_queries);
+    println!(
+        "p lazy_neighbor_endpoints_scanned {}",
+        stats.lazy_neighbor_endpoints_scanned
+    );
+    println!(
+        "p lazy_neighbor_neighbors_emitted {}",
+        stats.lazy_neighbor_neighbors_emitted
+    );
     println!("p max_recursion_depth {}", stats.max_recursion_depth);
     println!("p base_case_time_s {:.6}", ns_to_s(stats.base_case_time_ns));
     println!(
@@ -207,6 +220,14 @@ fn print_profile(stats: &Stats) {
         ns_to_s(stats.lemma_36_dedup_time_ns)
     );
     println!("p lemma_38_time_s {:.6}", ns_to_s(stats.lemma_38_time_ns));
+    println!(
+        "p lazy_neighbor_time_s {:.6}",
+        ns_to_s(stats.lazy_neighbor_time_ns)
+    );
+    println!(
+        "p adjacency_materialize_time_s {:.6}",
+        ns_to_s(stats.adjacency_materialize_time_ns)
+    );
 }
 
 fn ns_to_s(nanos: u128) -> f64 {

@@ -329,6 +329,17 @@ fn record_lemma_36_dedup_time(stats: &mut Stats, started_at: Option<std::time::I
 }
 
 fn contains_internal_edge(instance: &CircleInstance, vertices: &BitSet) -> bool {
+    if !instance.has_adjacency() {
+        let vertex_list = vertices.iter_ones().collect::<Vec<_>>();
+        for (index, &u) in vertex_list.iter().enumerate() {
+            for &v in &vertex_list[index + 1..] {
+                if instance.crosses(u as u32, v as u32) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
     for vertex in vertices.iter_ones() {
         for &neighbor in instance.neighbors(vertex as u32) {
             if vertices.get(neighbor as usize) {
