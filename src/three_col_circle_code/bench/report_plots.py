@@ -79,6 +79,7 @@ def runtime_vs_size_figure(data: BenchmarkReportData, *, metric: str = "wall") -
                 },
                 customdata=[_row_hover_data(row) for row in solver_rows],
                 hovertemplate=_runtime_scatter_hovertemplate(metric),
+                hoverlabel={"align": "left"},
             )
         )
 
@@ -143,7 +144,7 @@ def runtime_vs_size_figure(data: BenchmarkReportData, *, metric: str = "wall") -
 
 
 def runtime_vs_memory_figure(data: BenchmarkReportData) -> go.Figure:
-    """Build a runtime-vs-peak-memory scatter plot for rows with RSS data."""
+    """Build a size-vs-peak-memory scatter plot for rows with RSS data."""
     figure = go.Figure()
     families = sorted({row.family or "unknown" for row in data.rows})
     family_symbols = {
@@ -153,7 +154,7 @@ def runtime_vs_memory_figure(data: BenchmarkReportData) -> go.Figure:
     grouped: dict[str, list[ReportRow]] = defaultdict(list)
     variant_labels: dict[str, str] = {}
     for row in data.rows:
-        if row.mean_wall_time_s is None or row.max_peak_rss_kb is None:
+        if row.n is None or row.max_peak_rss_kb is None:
             continue
         variant_key = solver_variant_key(row.solver_target, row.solver_params)
         grouped[variant_key].append(row)
@@ -169,14 +170,14 @@ def runtime_vs_memory_figure(data: BenchmarkReportData) -> go.Figure:
         solver_rows = tuple(
             sorted(
                 grouped[variant_key],
-                key=lambda row: (row.mean_wall_time_s, row.max_peak_rss_kb, row.instance_id),
+                key=lambda row: (row.n, row.max_peak_rss_kb, row.instance_id),
             )
         )
         trace_rows_by_variant.append(solver_rows)
         variant_label = variant_labels[variant_key]
         figure.add_trace(
             go.Scatter(
-                x=[row.mean_wall_time_s for row in solver_rows],
+                x=[row.n for row in solver_rows],
                 y=[_kb_to_mb(row.max_peak_rss_kb) for row in solver_rows],
                 mode="markers",
                 name=variant_label,
@@ -187,7 +188,8 @@ def runtime_vs_memory_figure(data: BenchmarkReportData) -> go.Figure:
                     "line": {"color": "#ffffff", "width": 0.8},
                 },
                 customdata=[_memory_hover_data(row) for row in solver_rows],
-                hovertemplate=_runtime_memory_hovertemplate(),
+                hovertemplate=_memory_hovertemplate(),
+                hoverlabel={"align": "left"},
             )
         )
 
@@ -211,10 +213,21 @@ def runtime_vs_memory_figure(data: BenchmarkReportData) -> go.Figure:
                 "y": 1.16,
                 "yanchor": "top",
                 "buttons": _axis_scale_buttons(axis_name="xaxis"),
+                "active": 0,
+            },
+            {
+                "type": "buttons",
+                "direction": "right",
+                "showactive": True,
+                "x": 0.24,
+                "xanchor": "left",
+                "y": 1.16,
+                "yanchor": "top",
+                "buttons": _axis_scale_buttons(axis_name="yaxis"),
                 "active": 1,
             },
         ],
-        xaxis_title="mean_wall_time_s",
+        xaxis_title="n",
         yaxis_title="max_peak_rss_mb",
         legend={
             "orientation": "h",
@@ -245,7 +258,16 @@ def runtime_vs_memory_figure(data: BenchmarkReportData) -> go.Figure:
         showarrow=False,
         font={"color": "#5d6470", "size": 12},
     )
-    figure.update_xaxes(type="log")
+    figure.add_annotation(
+        text="Y scale",
+        x=0.16,
+        y=1.17,
+        xref="paper",
+        yref="paper",
+        showarrow=False,
+        font={"color": "#5d6470", "size": 12},
+    )
+    figure.update_yaxes(type="log")
     return figure
 
 
@@ -262,7 +284,7 @@ def _row_hover_data(row: ReportRow) -> list[object]:
         row.instance_id,
         row.solver_target,
         solver_variant_label(row.solver_target, row.solver_params, row.solver_label),
-        _render_solver_params(row.solver_params),
+        _render_solver_params_for_hover(row.solver_params),
         row.family,
         row.n,
         row.m,
@@ -275,9 +297,8 @@ def _row_hover_data(row: ReportRow) -> list[object]:
 def _runtime_scatter_hovertemplate(metric: str) -> str:
     return (
         "instance_id=%{customdata[0]}<br>"
-        "solver_target=%{customdata[1]}<br>"
-        "solver_variant=%{customdata[2]}<br>"
-        "solver_params=%{customdata[3]}<br>"
+        "solver=%{customdata[2]}<br>"
+        "%{customdata[3]}"
         "family=%{customdata[4]}<br>"
         "n=%{customdata[5]}<br>"
         "m=%{customdata[6]}<br>"
@@ -293,7 +314,7 @@ def _memory_hover_data(row: ReportRow) -> list[object]:
         row.instance_id,
         row.solver_target,
         solver_variant_label(row.solver_target, row.solver_params, row.solver_label),
-        _render_solver_params(row.solver_params),
+        _render_solver_params_for_hover(row.solver_params),
         row.family,
         row.n,
         row.m,
@@ -305,12 +326,11 @@ def _memory_hover_data(row: ReportRow) -> list[object]:
     ]
 
 
-def _runtime_memory_hovertemplate() -> str:
+def _memory_hovertemplate() -> str:
     return (
         "instance_id=%{customdata[0]}<br>"
-        "solver_target=%{customdata[1]}<br>"
-        "solver_variant=%{customdata[2]}<br>"
-        "solver_params=%{customdata[3]}<br>"
+        "solver=%{customdata[2]}<br>"
+        "%{customdata[3]}"
         "family=%{customdata[4]}<br>"
         "n=%{customdata[5]}<br>"
         "m=%{customdata[6]}<br>"
@@ -428,7 +448,7 @@ def _memory_family_filter_button(
         "method": "restyle",
         "args": [
             {
-                "x": [[row.mean_wall_time_s for row in rows] for rows in filtered_rows],
+                "x": [[row.n for row in rows] for rows in filtered_rows],
                 "y": [[_kb_to_mb(row.max_peak_rss_kb) for row in rows] for rows in filtered_rows],
                 "customdata": [[_memory_hover_data(row) for row in rows] for rows in filtered_rows],
                 "marker.symbol": [
@@ -459,6 +479,35 @@ def _render_solver_params(params: dict[str, Any]) -> str:
     if not params:
         return "{}"
     return json.dumps(params, sort_keys=True)
+
+
+def _render_solver_params_for_hover(params: dict[str, Any]) -> str:
+    if not params:
+        return ""
+    parts = [
+        f"{key}={_short_param_value(value)}"
+        for key, value in sorted(params.items())
+    ]
+    return "params:<br>" + "<br>".join(f"  {part}" for part in parts) + "<br>"
+
+
+def _short_param_value(value: Any) -> str:
+    if isinstance(value, (list, tuple)):
+        items = [_short_param_value(item) for item in value]
+        if len(items) <= 4:
+            return "[" + ", ".join(items) + "]"
+        return "[" + ", ".join(items[:4]) + f", ... +{len(items) - 4}]"
+    if isinstance(value, dict):
+        items = sorted(value.items())
+        if not items:
+            return "{}"
+        rendered = [f"{key}: {_short_param_value(item)}" for key, item in items[:4]]
+        suffix = "" if len(items) <= 4 else f", ... +{len(items) - 4}"
+        return "{" + ", ".join(rendered) + suffix + "}"
+    rendered = str(value)
+    if len(rendered) > 80:
+        return rendered[:77] + "..."
+    return rendered
 
 
 def _row_metric_value(row: ReportRow, metric: str) -> Optional[float]:

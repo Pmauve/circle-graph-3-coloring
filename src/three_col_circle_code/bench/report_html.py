@@ -87,6 +87,24 @@ _TEMPLATE = """
       .table-wrap {
         overflow-x: auto;
       }
+      .solver-summary {
+        table-layout: fixed;
+        font-size: 0.88rem;
+      }
+      .solver-summary th,
+      .solver-summary td {
+        white-space: nowrap;
+      }
+      .solver-summary .solver-label {
+        white-space: normal;
+        width: 32%;
+      }
+      .solver-summary .status-cell {
+        width: 16%;
+      }
+      .solver-summary .numeric {
+        text-align: right;
+      }
       .plot-wrap {
         overflow-x: auto;
       }
@@ -161,7 +179,7 @@ _TEMPLATE = """
         <div class="plot-wrap">{{ runtime_vs_size_wall_html | safe }}</div>
         <h3 class="plot-title">Core Time</h3>
         <div class="plot-wrap">{{ runtime_vs_size_core_html | safe }}</div>
-        <h3 class="plot-title">Runtime vs Peak Memory</h3>
+        <h3 class="plot-title">Peak Memory vs Size</h3>
         <div class="plot-wrap">{{ runtime_vs_memory_html | safe }}</div>
       </section>
 
@@ -170,40 +188,24 @@ _TEMPLATE = """
         <h2>Solver Summary</h2>
         </div>
         <div class="table-wrap">
-        <table>
+        <table class="solver-summary">
           <thead>
             <tr>
-              <th>Solver Variant</th>
-              <th>ok</th>
-              <th>error</th>
-              <th>invalid</th>
-              <th>Measured</th>
-              <th>ok Measurements</th>
-              <th>Mean Wall</th>
-              <th>Median Wall</th>
-              <th>Mean Core</th>
-              <th>Median Core</th>
-              <th>Mean Peak RSS</th>
-              <th>Median Peak RSS</th>
-              <th>Max Peak RSS</th>
+              <th class="solver-label">Solver Variant</th>
+              <th class="status-cell">ok/error/invalid</th>
+              <th class="numeric">Wall med</th>
+              <th class="numeric">Core med</th>
+              <th class="numeric">RSS max</th>
             </tr>
           </thead>
           <tbody>
             {% for row in solver_summary_rows %}
             <tr>
-              <td class="mono">{{ row.solver_target }}</td>
-              <td>{{ row.n_ok }}</td>
-              <td>{{ row.n_error }}</td>
-              <td>{{ row.n_invalid }}</td>
-              <td>{{ row.repetitions }}</td>
-              <td>{{ row.ok_repetitions }}</td>
-              <td>{{ "%.6f"|format(row.mean_wall_time_s) if row.mean_wall_time_s is not none else "n/a" }}</td>
-              <td>{{ "%.6f"|format(row.median_wall_time_s) if row.median_wall_time_s is not none else "n/a" }}</td>
-              <td>{{ "%.6f"|format(row.mean_core_time_s) if row.mean_core_time_s is not none else "n/a" }}</td>
-              <td>{{ "%.6f"|format(row.median_core_time_s) if row.median_core_time_s is not none else "n/a" }}</td>
-              <td>{{ ("%.1f MB"|format(row.mean_peak_rss_kb / 1024.0)) if row.mean_peak_rss_kb is not none else "n/a" }}</td>
-              <td>{{ ("%.1f MB"|format(row.median_peak_rss_kb / 1024.0)) if row.median_peak_rss_kb is not none else "n/a" }}</td>
-              <td>{{ ("%.1f MB"|format(row.max_peak_rss_kb / 1024.0)) if row.max_peak_rss_kb is not none else "n/a" }}</td>
+              <td class="mono solver-label">{{ row.solver_target }}</td>
+              <td class="status-cell">{{ row.n_ok }}/{{ row.n_error }}/{{ row.n_invalid }}</td>
+              <td class="numeric">{{ format_seconds(row.median_wall_time_s) }}</td>
+              <td class="numeric">{{ format_seconds(row.median_core_time_s) }}</td>
+              <td class="numeric">{{ format_mb(row.max_peak_rss_kb) }}</td>
             </tr>
             {% endfor %}
           </tbody>
@@ -279,6 +281,8 @@ def render_report_html(
         runtime_vs_memory_html=_figure_html(runtime_vs_memory_figure, include_plotlyjs=False),
         solver_summary_rows=data.solver_summary_rows,
         disagreement_rows=data.disagreement_rows,
+        format_seconds=_format_seconds,
+        format_mb=_format_mb,
     )
 
 
@@ -295,3 +299,20 @@ def _figure_html(figure: object, *, include_plotlyjs: object) -> str:
         },
         default_width="100%",
     )
+
+
+def _format_seconds(value: object) -> str:
+    if value is None:
+        return "n/a"
+    seconds = float(value)
+    if seconds < 1.0:
+        return f"{seconds:.3f}s"
+    if seconds < 10.0:
+        return f"{seconds:.2f}s"
+    return f"{seconds:.1f}s"
+
+
+def _format_mb(value: object) -> str:
+    if value is None:
+        return "n/a"
+    return f"{float(value) / 1024.0:.1f} MB"

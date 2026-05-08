@@ -242,7 +242,7 @@ class BenchReportHtmlTests(unittest.TestCase):
         self.assertNotIn("X scale", html)
         self.assertIn("sosa-3-col-exact [base_case_n=8]", html)
         self.assertIn("sosa-3-col-exact [base_case_n=64]", html)
-        self.assertIn("solver_params", html)
+        self.assertIn("params:", html)
         self.assertIn("scrollZoom", html)
         self.assertIn("displayModeBar", html)
         self.assertNotIn("data-runtime-metric", html)
