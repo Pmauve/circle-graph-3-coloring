@@ -79,15 +79,17 @@ For SGE, prefer the guarded staged submit helper when launching a full run:
 
 ```bash
 RUN_ID=pipeline-smoke \
-INSTANCE_TASK=run_instance_task_bc5.sh \
-TRIAL_TASK=run_trial_task_bc5.sh \
+SGE_RESOURCE=bc5 \
 scripts/benchmark_cluster/sge_staged_submit.sh
 ```
 
-This uses `qsub -sync y` and gates each stage with `benchmark_status`. This is
-stricter than `-hold_jid`: scheduler holds wait for predecessor jobs to finish,
-but they do not assert that every array task produced successful benchmark
-outputs.
+This uses the tracked generic task scripts and passes SGE resource, memory, log,
+restart, environment, and working-directory options through `qsub`. The defaults
+are `SGE_RESOURCE=bc1`, `INSTANCE_H_VMEM=2G`, `TRIAL_H_VMEM=8G`, and
+`SGE_LOG_DIR=logs`. It also uses `qsub -sync y` and gates each stage with
+`benchmark_status`. This is stricter than `-hold_jid`: scheduler holds wait for
+predecessor jobs to finish, but they do not assert that every array task
+produced successful benchmark outputs.
 
 ## Outputs
 
