@@ -50,8 +50,12 @@ class ReportRow:
     median_wall_time_s: Optional[float]
     mean_core_time_s: Optional[float]
     median_core_time_s: Optional[float]
+    mean_peak_rss_kb: Optional[float]
+    median_peak_rss_kb: Optional[float]
+    max_peak_rss_kb: Optional[float]
     measurement_wall_times: tuple[float, ...]
     measurement_core_times: tuple[float, ...]
+    measurement_peak_rss_kb: tuple[float, ...]
     is_colorable: Optional[bool]
     validation_ok: bool
     error: Optional[str]
@@ -97,6 +101,9 @@ class SolverSummaryRow:
     median_wall_time_s: Optional[float]
     mean_core_time_s: Optional[float]
     median_core_time_s: Optional[float]
+    mean_peak_rss_kb: Optional[float]
+    median_peak_rss_kb: Optional[float]
+    max_peak_rss_kb: Optional[float]
 
 
 @dataclass(frozen=True)
@@ -238,8 +245,12 @@ def _normalize_report_row(row: Mapping[str, Any]) -> ReportRow:
         median_wall_time_s=_optional_float(row.get("median_wall_time_s", row.get("wall_time_s"))),
         mean_core_time_s=_optional_float(row.get("mean_core_time_s", row.get("core_time_s"))),
         median_core_time_s=_optional_float(row.get("median_core_time_s", row.get("core_time_s"))),
+        mean_peak_rss_kb=_optional_float(row.get("mean_peak_rss_kb", row.get("peak_rss_kb"))),
+        median_peak_rss_kb=_optional_float(row.get("median_peak_rss_kb", row.get("peak_rss_kb"))),
+        max_peak_rss_kb=_optional_float(row.get("max_peak_rss_kb", row.get("peak_rss_kb"))),
         measurement_wall_times=_measurement_wall_times(row),
         measurement_core_times=_measurement_core_times(row),
+        measurement_peak_rss_kb=_measurement_peak_rss_kb(row),
         is_colorable=_optional_bool(row.get("is_colorable")),
         validation_ok=bool(row.get("validation_ok", False)),
         error=_optional_str(row.get("error")),
@@ -379,6 +390,11 @@ def _build_solver_summary_rows(
             for row in target_rows
             for core_time in row.measurement_core_times
         ]
+        peak_rss_values = [
+            peak_rss_kb
+            for row in target_rows
+            for peak_rss_kb in row.measurement_peak_rss_kb
+        ]
         summary_rows.append(
             SolverSummaryRow(
                 solver_target=solver_target,
@@ -392,6 +408,9 @@ def _build_solver_summary_rows(
                 median_wall_time_s=None if not wall_times else median(wall_times),
                 mean_core_time_s=None if not core_times else mean(core_times),
                 median_core_time_s=None if not core_times else median(core_times),
+                mean_peak_rss_kb=None if not peak_rss_values else mean(peak_rss_values),
+                median_peak_rss_kb=None if not peak_rss_values else median(peak_rss_values),
+                max_peak_rss_kb=None if not peak_rss_values else max(peak_rss_values),
             )
         )
     return tuple(summary_rows)
@@ -446,6 +465,9 @@ def _write_summary_csv(
         "median_wall_time_s",
         "mean_core_time_s",
         "median_core_time_s",
+        "mean_peak_rss_kb",
+        "median_peak_rss_kb",
+        "max_peak_rss_kb",
     ]
     with Path(path).open("w", encoding="utf-8", newline="") as outfile:
         writer = csv.DictWriter(outfile, fieldnames=fieldnames)
@@ -471,6 +493,11 @@ def _build_summary_row(
         for item in rows
         for core_time in item.measurement_core_times
     ]
+    peak_rss_values = [
+        peak_rss_kb
+        for item in rows
+        for peak_rss_kb in item.measurement_peak_rss_kb
+    ]
     average_degrees = [
         item.average_degree
         for item in rows
@@ -489,6 +516,9 @@ def _build_summary_row(
             "median_wall_time_s": None if not wall_times else median(wall_times),
             "mean_core_time_s": None if not core_times else mean(core_times),
             "median_core_time_s": None if not core_times else median(core_times),
+            "mean_peak_rss_kb": None if not peak_rss_values else mean(peak_rss_values),
+            "median_peak_rss_kb": None if not peak_rss_values else median(peak_rss_values),
+            "max_peak_rss_kb": None if not peak_rss_values else max(peak_rss_values),
         }
     )
     return row
@@ -591,4 +621,24 @@ def _measurement_core_times(row: Mapping[str, Any]) -> tuple[float, ...]:
     legacy_core_time_s = row.get("core_time_s")
     if legacy_core_time_s is not None:
         return (float(legacy_core_time_s),)
+    return ()
+
+
+def _measurement_peak_rss_kb(row: Mapping[str, Any]) -> tuple[float, ...]:
+    measurements = row.get("measurements")
+    if isinstance(measurements, list):
+        return tuple(
+            float(item["peak_rss_kb"])
+            for item in measurements
+            if isinstance(item, Mapping)
+            and item.get("status") == "ok"
+            and item.get("peak_rss_kb") is not None
+        )
+    mean_peak_rss_kb = row.get("mean_peak_rss_kb")
+    if mean_peak_rss_kb is not None:
+        repetitions = int(row.get("ok_repetitions", row.get("repetitions", 1)))
+        return tuple(float(mean_peak_rss_kb) for _ in range(repetitions))
+    legacy_peak_rss_kb = row.get("peak_rss_kb")
+    if legacy_peak_rss_kb is not None:
+        return (float(legacy_peak_rss_kb),)
     return ()

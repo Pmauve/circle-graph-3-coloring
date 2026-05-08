@@ -16,6 +16,7 @@ from three_col_circle_code.solvers.common import (
     SOLVER_STATUS_OK,
     SolverResult,
 )
+from three_col_circle_code.solvers.resource_usage import run_with_resource_usage
 
 
 ZYKOVCOLOR_SOLVER = "zykovcolor"
@@ -134,7 +135,7 @@ def _run_zykovcolor_on_path(
 
     try:
         started_at = perf_counter()
-        completed = subprocess.run(
+        completed, resource_usage = run_with_resource_usage(
             command,
             capture_output=True,
             text=True,
@@ -169,6 +170,8 @@ def _run_zykovcolor_on_path(
         "returncode": completed.returncode,
         "stdout_tail": _tail(completed.stdout),
         "stderr_tail": _tail(completed.stderr),
+        "peak_rss_kb": resource_usage.peak_rss_kb,
+        "resource_usage_source": resource_usage.method,
         "decision_num_colors": decision_num_colors,
         "configuration": configuration,
         "requested_mode": mode,
@@ -187,6 +190,7 @@ def _run_zykovcolor_on_path(
             error=f"ZykovColor exited with code {completed.returncode}",
             wall_time_s=wall_time_s,
             details=details,
+            peak_rss_kb=resource_usage.peak_rss_kb,
         )
     if validation_error is not None:
         return _error_result(
@@ -195,6 +199,7 @@ def _run_zykovcolor_on_path(
             error=validation_error,
             wall_time_s=wall_time_s,
             details=details,
+            peak_rss_kb=resource_usage.peak_rss_kb,
         )
 
     parsed = parse_zykovcolor_output(
@@ -208,6 +213,7 @@ def _run_zykovcolor_on_path(
             error="could not parse ZykovColor result",
             wall_time_s=wall_time_s,
             details=details,
+            peak_rss_kb=resource_usage.peak_rss_kb,
         )
     is_colorable, parsed_details = parsed
     details.update(parsed_details)
@@ -222,6 +228,7 @@ def _run_zykovcolor_on_path(
         m_edges=record.graph.number_of_edges(),
         details=details,
         error=None,
+        peak_rss_kb=resource_usage.peak_rss_kb,
     )
 
 
@@ -343,6 +350,7 @@ def _error_result(
     error: str,
     wall_time_s: Optional[float] = None,
     details: Optional[dict[str, Any]] = None,
+    peak_rss_kb: Optional[int] = None,
 ) -> SolverResult:
     merged_details = {"requested_params": requested_params}
     if details:
@@ -358,6 +366,7 @@ def _error_result(
         m_edges=record.graph.number_of_edges(),
         details=merged_details,
         error=error,
+        peak_rss_kb=peak_rss_kb,
     )
 
 

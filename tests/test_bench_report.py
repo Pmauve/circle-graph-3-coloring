@@ -86,6 +86,9 @@ class BenchReportDataTests(unittest.TestCase):
         self.assertEqual(rc_sat["ok_repetitions"], "2")
         self.assertEqual(rc_sat["mean_wall_time_s"], "2.0")
         self.assertEqual(rc_sat["median_wall_time_s"], "2.0")
+        self.assertEqual(rc_sat["mean_peak_rss_kb"], "2048.0")
+        self.assertEqual(rc_sat["median_peak_rss_kb"], "2048.0")
+        self.assertEqual(rc_sat["max_peak_rss_kb"], "3072.0")
 
         rc_sosa_small = next(
             row
@@ -449,6 +452,7 @@ def _write_summary_run(run_dir: Path) -> Path:
             "solver_params": {},
             "status": "ok",
             "wall_time_s": 1.0,
+            "peak_rss_kb": 1024,
         },
         {
             "instance_id": "b",
@@ -459,6 +463,7 @@ def _write_summary_run(run_dir: Path) -> Path:
             "solver_params": {},
             "status": "ok",
             "wall_time_s": 3.0,
+            "peak_rss_kb": 3072,
         },
         {
             "instance_id": "c",

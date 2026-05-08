@@ -13,6 +13,7 @@ from three_col_circle_code.solvers.common import (
     SOLVER_STATUS_OK,
     SolverResult,
 )
+from three_col_circle_code.solvers.resource_usage import run_with_resource_usage
 from three_col_circle_code.instances.native import THREE_COL_NATIVE_BIN_ENV
 
 
@@ -78,7 +79,7 @@ def solve_sat_3_col_native_from_path(
     ]
     started_at = perf_counter()
     try:
-        completed = subprocess.run(
+        completed, resource_usage = run_with_resource_usage(
             command,
             check=False,
             capture_output=True,
@@ -115,6 +116,8 @@ def solve_sat_3_col_native_from_path(
             "returncode": completed.returncode,
             "stdout_tail": _tail(completed.stdout),
             "stderr_tail": _tail(completed.stderr),
+            "peak_rss_kb": resource_usage.peak_rss_kb,
+            "resource_usage_source": resource_usage.method,
         }
     )
     details.update(timings)
@@ -144,6 +147,7 @@ def solve_sat_3_col_native_from_path(
             error="; ".join(error_parts) or "native SAT failed",
             wall_time_s=wall_time_s,
             core_time_s=core_time_s,
+            peak_rss_kb=resource_usage.peak_rss_kb,
         )
 
     if status_line == "COLORABLE":
@@ -160,6 +164,7 @@ def solve_sat_3_col_native_from_path(
             error=f"unsupported native SAT status {status_line!r}",
             wall_time_s=wall_time_s,
             core_time_s=core_time_s,
+            peak_rss_kb=resource_usage.peak_rss_kb,
         )
 
     return SolverResult(
@@ -173,6 +178,7 @@ def solve_sat_3_col_native_from_path(
         m_edges=m_edges,
         details=details,
         error=None,
+        peak_rss_kb=resource_usage.peak_rss_kb,
     )
 
 
@@ -283,6 +289,7 @@ def _error_result(
     error: str,
     wall_time_s: Optional[float] = None,
     core_time_s: Optional[float] = None,
+    peak_rss_kb: Optional[int] = None,
 ) -> SolverResult:
     return SolverResult(
         solver=SAT_3_COL_NATIVE_SOLVER,
@@ -295,4 +302,5 @@ def _error_result(
         m_edges=m_edges,
         details=details,
         error=error,
+        peak_rss_kb=peak_rss_kb,
     )

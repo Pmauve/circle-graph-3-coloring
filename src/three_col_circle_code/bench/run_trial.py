@@ -262,6 +262,9 @@ def _build_invalid_result_record(
             "median_wall_time_s": None,
             "mean_core_time_s": None,
             "median_core_time_s": None,
+            "mean_peak_rss_kb": None,
+            "median_peak_rss_kb": None,
+            "max_peak_rss_kb": None,
             "average_degree": None,
             "warmup_measurements": [],
             "measurements": [],
@@ -298,6 +301,7 @@ def _run_measurements(
                     "status": "error",
                     "wall_time_s": None,
                     "core_time_s": None,
+                    "peak_rss_kb": None,
                     "is_colorable": None,
                     "error": f"{type(exc).__name__}: {exc}",
                 }
@@ -310,6 +314,7 @@ def _run_measurements(
                 "status": solve_result.status,
                 "wall_time_s": solve_result.wall_time_s,
                 "core_time_s": solve_result.core_time_s,
+                "peak_rss_kb": solve_result.peak_rss_kb,
                 "is_colorable": solve_result.is_colorable,
                 "error": solve_result.error,
             }
@@ -341,6 +346,11 @@ def _build_repeated_result_record(
         float(item["core_time_s"])
         for item in ok_measurements
         if item.get("core_time_s") is not None
+    ]
+    peak_rss_values = [
+        int(item["peak_rss_kb"])
+        for item in ok_measurements
+        if item.get("peak_rss_kb") is not None
     ]
     answer_values = {
         item.get("is_colorable")
@@ -381,6 +391,9 @@ def _build_repeated_result_record(
         "median_wall_time_s": None if not wall_times else median(wall_times),
         "mean_core_time_s": None if not core_times else mean(core_times),
         "median_core_time_s": None if not core_times else median(core_times),
+        "mean_peak_rss_kb": None if not peak_rss_values else mean(peak_rss_values),
+        "median_peak_rss_kb": None if not peak_rss_values else median(peak_rss_values),
+        "max_peak_rss_kb": None if not peak_rss_values else max(peak_rss_values),
         "is_colorable": next(iter(answer_values)) if len(answer_values) == 1 else None,
         "validation_ok": validation_ok,
         "validation_errors": validation_errors,

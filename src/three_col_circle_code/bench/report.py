@@ -3,7 +3,7 @@ from typing import Optional
 
 from three_col_circle_code.bench.report_data import load_benchmark_report_data
 from three_col_circle_code.bench.report_html import render_report_html
-from three_col_circle_code.bench.report_plots import runtime_vs_size_figure
+from three_col_circle_code.bench.report_plots import runtime_vs_memory_figure, runtime_vs_size_figure
 
 
 def build_benchmark_report(run_dir: Path, output_path: Optional[Path] = None) -> Path:
@@ -13,6 +13,7 @@ def build_benchmark_report(run_dir: Path, output_path: Optional[Path] = None) ->
         data=report_data,
         runtime_vs_size_wall_figure=runtime_vs_size_figure(report_data, metric="wall"),
         runtime_vs_size_core_figure=runtime_vs_size_figure(report_data, metric="core"),
+        runtime_vs_memory_figure=runtime_vs_memory_figure(report_data),
     )
     resolved_output_path = Path(output_path) if output_path is not None else Path(run_dir) / "report.html"
     resolved_output_path.parent.mkdir(parents=True, exist_ok=True)

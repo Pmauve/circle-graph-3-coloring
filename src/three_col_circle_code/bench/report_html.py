@@ -161,6 +161,8 @@ _TEMPLATE = """
         <div class="plot-wrap">{{ runtime_vs_size_wall_html | safe }}</div>
         <h3 class="plot-title">Core Time</h3>
         <div class="plot-wrap">{{ runtime_vs_size_core_html | safe }}</div>
+        <h3 class="plot-title">Runtime vs Peak Memory</h3>
+        <div class="plot-wrap">{{ runtime_vs_memory_html | safe }}</div>
       </section>
 
       <section class="section">
@@ -181,6 +183,9 @@ _TEMPLATE = """
               <th>Median Wall</th>
               <th>Mean Core</th>
               <th>Median Core</th>
+              <th>Mean Peak RSS</th>
+              <th>Median Peak RSS</th>
+              <th>Max Peak RSS</th>
             </tr>
           </thead>
           <tbody>
@@ -196,6 +201,9 @@ _TEMPLATE = """
               <td>{{ "%.6f"|format(row.median_wall_time_s) if row.median_wall_time_s is not none else "n/a" }}</td>
               <td>{{ "%.6f"|format(row.mean_core_time_s) if row.mean_core_time_s is not none else "n/a" }}</td>
               <td>{{ "%.6f"|format(row.median_core_time_s) if row.median_core_time_s is not none else "n/a" }}</td>
+              <td>{{ ("%.1f MB"|format(row.mean_peak_rss_kb / 1024.0)) if row.mean_peak_rss_kb is not none else "n/a" }}</td>
+              <td>{{ ("%.1f MB"|format(row.median_peak_rss_kb / 1024.0)) if row.median_peak_rss_kb is not none else "n/a" }}</td>
+              <td>{{ ("%.1f MB"|format(row.max_peak_rss_kb / 1024.0)) if row.max_peak_rss_kb is not none else "n/a" }}</td>
             </tr>
             {% endfor %}
           </tbody>
@@ -249,6 +257,7 @@ def render_report_html(
     data: BenchmarkReportData,
     runtime_vs_size_wall_figure: object = None,
     runtime_vs_size_core_figure: object = None,
+    runtime_vs_memory_figure: object = None,
     runtime_vs_size_figure: object = None,
 ) -> str:
     """Render the benchmark report HTML document."""
@@ -256,6 +265,8 @@ def render_report_html(
         runtime_vs_size_wall_figure = runtime_vs_size_figure
     if runtime_vs_size_core_figure is None:
         runtime_vs_size_core_figure = runtime_vs_size_wall_figure
+    if runtime_vs_memory_figure is None:
+        runtime_vs_memory_figure = runtime_vs_size_wall_figure
     template = Environment(
         autoescape=select_autoescape(default_for_string=True, enabled_extensions=("html",)),
     ).from_string(_TEMPLATE)
@@ -265,6 +276,7 @@ def render_report_html(
         headline=data.headline_metrics,
         runtime_vs_size_wall_html=_figure_html(runtime_vs_size_wall_figure, include_plotlyjs="inline"),
         runtime_vs_size_core_html=_figure_html(runtime_vs_size_core_figure, include_plotlyjs=False),
+        runtime_vs_memory_html=_figure_html(runtime_vs_memory_figure, include_plotlyjs=False),
         solver_summary_rows=data.solver_summary_rows,
         disagreement_rows=data.disagreement_rows,
     )
