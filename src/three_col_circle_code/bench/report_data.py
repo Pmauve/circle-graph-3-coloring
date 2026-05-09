@@ -50,11 +50,17 @@ class ReportRow:
     median_wall_time_s: Optional[float]
     mean_core_time_s: Optional[float]
     median_core_time_s: Optional[float]
+    mean_load_prepare_time_s: Optional[float]
+    median_load_prepare_time_s: Optional[float]
+    mean_solve_time_s: Optional[float]
+    median_solve_time_s: Optional[float]
     mean_peak_rss_kb: Optional[float]
     median_peak_rss_kb: Optional[float]
     max_peak_rss_kb: Optional[float]
     measurement_wall_times: tuple[float, ...]
     measurement_core_times: tuple[float, ...]
+    measurement_load_prepare_times: tuple[float, ...]
+    measurement_solve_times: tuple[float, ...]
     measurement_peak_rss_kb: tuple[float, ...]
     is_colorable: Optional[bool]
     validation_ok: bool
@@ -101,6 +107,10 @@ class SolverSummaryRow:
     median_wall_time_s: Optional[float]
     mean_core_time_s: Optional[float]
     median_core_time_s: Optional[float]
+    mean_load_prepare_time_s: Optional[float]
+    median_load_prepare_time_s: Optional[float]
+    mean_solve_time_s: Optional[float]
+    median_solve_time_s: Optional[float]
     mean_peak_rss_kb: Optional[float]
     median_peak_rss_kb: Optional[float]
     max_peak_rss_kb: Optional[float]
@@ -193,6 +203,53 @@ def write_summary_csvs(run_dir: Path) -> None:
     )
 
 
+def build_report_plot_payload(data: BenchmarkReportData) -> dict[str, Any]:
+    """Build compact JSON data for the interactive report plots."""
+    rows: list[dict[str, Any]] = []
+    families: set[str] = set()
+    solver_labels: set[str] = set()
+    for row in data.rows:
+        if row.n is None:
+            continue
+        family = row.family or "unknown"
+        solver_label = solver_variant_label(row.solver_target, row.solver_params, row.solver_label)
+        families.add(family)
+        solver_labels.add(solver_label)
+        rows.append(
+            {
+                "instance_id": row.instance_id,
+                "family": family,
+                "bucket": row.bucket,
+                "n": row.n,
+                "m": row.m,
+                "average_degree": row.average_degree,
+                "solver": solver_label,
+                "solver_target": row.solver_target,
+                "solver_params": row.solver_params,
+                "status": row.status,
+                "is_colorable": row.is_colorable,
+                "metrics": {
+                    "wall_time_s": row.mean_wall_time_s,
+                    "native_total_time_s": row.mean_core_time_s,
+                    "load_prepare_time_s": row.mean_load_prepare_time_s,
+                    "solve_time_s": row.mean_solve_time_s,
+                    "max_peak_rss_mb": None if row.max_peak_rss_kb is None else row.max_peak_rss_kb / 1024.0,
+                },
+            }
+        )
+    return {
+        "families": sorted(families),
+        "solvers": sorted(solver_labels),
+        "metrics": [
+            {"key": "wall_time_s", "label": "Wall time", "y_axis": "mean_wall_time_s"},
+            {"key": "native_total_time_s", "label": "Native total", "y_axis": "mean_core_time_s"},
+            {"key": "load_prepare_time_s", "label": "Load + prepare", "y_axis": "mean_load_prepare_time_s"},
+            {"key": "solve_time_s", "label": "Solve", "y_axis": "mean_solve_time_s"},
+        ],
+        "rows": rows,
+    }
+
+
 def _load_manifest(run_dir: Path) -> Optional[dict[str, Any]]:
     manifest_path = Path(run_dir) / MANIFEST_FILENAME
     if not manifest_path.exists():
@@ -245,11 +302,27 @@ def _normalize_report_row(row: Mapping[str, Any]) -> ReportRow:
         median_wall_time_s=_optional_float(row.get("median_wall_time_s", row.get("wall_time_s"))),
         mean_core_time_s=_optional_float(row.get("mean_core_time_s", row.get("core_time_s"))),
         median_core_time_s=_optional_float(row.get("median_core_time_s", row.get("core_time_s"))),
+        mean_load_prepare_time_s=_optional_float(row.get("mean_load_prepare_time_s", row.get("load_prepare_time_s"))),
+        median_load_prepare_time_s=_optional_float(
+            row.get("median_load_prepare_time_s", row.get("load_prepare_time_s"))
+        ),
+        mean_solve_time_s=_optional_float(row.get("mean_solve_time_s", row.get("solve_time_s"))),
+        median_solve_time_s=_optional_float(row.get("median_solve_time_s", row.get("solve_time_s"))),
         mean_peak_rss_kb=_optional_float(row.get("mean_peak_rss_kb", row.get("peak_rss_kb"))),
         median_peak_rss_kb=_optional_float(row.get("median_peak_rss_kb", row.get("peak_rss_kb"))),
         max_peak_rss_kb=_optional_float(row.get("max_peak_rss_kb", row.get("peak_rss_kb"))),
         measurement_wall_times=_measurement_wall_times(row),
         measurement_core_times=_measurement_core_times(row),
+        measurement_load_prepare_times=_measurement_float_values(
+            row,
+            measurement_field="load_prepare_time_s",
+            mean_field="mean_load_prepare_time_s",
+        ),
+        measurement_solve_times=_measurement_float_values(
+            row,
+            measurement_field="solve_time_s",
+            mean_field="mean_solve_time_s",
+        ),
         measurement_peak_rss_kb=_measurement_peak_rss_kb(row),
         is_colorable=_optional_bool(row.get("is_colorable")),
         validation_ok=bool(row.get("validation_ok", False)),
@@ -390,6 +463,16 @@ def _build_solver_summary_rows(
             for row in target_rows
             for core_time in row.measurement_core_times
         ]
+        load_prepare_times = [
+            load_prepare_time
+            for row in target_rows
+            for load_prepare_time in row.measurement_load_prepare_times
+        ]
+        solve_times = [
+            solve_time
+            for row in target_rows
+            for solve_time in row.measurement_solve_times
+        ]
         peak_rss_values = [
             peak_rss_kb
             for row in target_rows
@@ -408,6 +491,10 @@ def _build_solver_summary_rows(
                 median_wall_time_s=None if not wall_times else median(wall_times),
                 mean_core_time_s=None if not core_times else mean(core_times),
                 median_core_time_s=None if not core_times else median(core_times),
+                mean_load_prepare_time_s=None if not load_prepare_times else mean(load_prepare_times),
+                median_load_prepare_time_s=None if not load_prepare_times else median(load_prepare_times),
+                mean_solve_time_s=None if not solve_times else mean(solve_times),
+                median_solve_time_s=None if not solve_times else median(solve_times),
                 mean_peak_rss_kb=None if not peak_rss_values else mean(peak_rss_values),
                 median_peak_rss_kb=None if not peak_rss_values else median(peak_rss_values),
                 max_peak_rss_kb=None if not peak_rss_values else max(peak_rss_values),
@@ -465,6 +552,10 @@ def _write_summary_csv(
         "median_wall_time_s",
         "mean_core_time_s",
         "median_core_time_s",
+        "mean_load_prepare_time_s",
+        "median_load_prepare_time_s",
+        "mean_solve_time_s",
+        "median_solve_time_s",
         "mean_peak_rss_kb",
         "median_peak_rss_kb",
         "max_peak_rss_kb",
@@ -493,6 +584,16 @@ def _build_summary_row(
         for item in rows
         for core_time in item.measurement_core_times
     ]
+    load_prepare_times = [
+        load_prepare_time
+        for item in rows
+        for load_prepare_time in item.measurement_load_prepare_times
+    ]
+    solve_times = [
+        solve_time
+        for item in rows
+        for solve_time in item.measurement_solve_times
+    ]
     peak_rss_values = [
         peak_rss_kb
         for item in rows
@@ -516,6 +617,10 @@ def _build_summary_row(
             "median_wall_time_s": None if not wall_times else median(wall_times),
             "mean_core_time_s": None if not core_times else mean(core_times),
             "median_core_time_s": None if not core_times else median(core_times),
+            "mean_load_prepare_time_s": None if not load_prepare_times else mean(load_prepare_times),
+            "median_load_prepare_time_s": None if not load_prepare_times else median(load_prepare_times),
+            "mean_solve_time_s": None if not solve_times else mean(solve_times),
+            "median_solve_time_s": None if not solve_times else median(solve_times),
             "mean_peak_rss_kb": None if not peak_rss_values else mean(peak_rss_values),
             "median_peak_rss_kb": None if not peak_rss_values else median(peak_rss_values),
             "max_peak_rss_kb": None if not peak_rss_values else max(peak_rss_values),
@@ -605,22 +710,41 @@ def _measurement_wall_times(row: Mapping[str, Any]) -> tuple[float, ...]:
 
 
 def _measurement_core_times(row: Mapping[str, Any]) -> tuple[float, ...]:
-    measurements = row.get("measurements")
-    if isinstance(measurements, list):
-        return tuple(
-            float(item["core_time_s"])
-            for item in measurements
-            if isinstance(item, Mapping)
-            and item.get("status") == "ok"
-            and item.get("core_time_s") is not None
-        )
-    mean_core_time_s = row.get("mean_core_time_s")
-    if mean_core_time_s is not None:
-        repetitions = int(row.get("ok_repetitions", row.get("repetitions", 1)))
-        return tuple(float(mean_core_time_s) for _ in range(repetitions))
+    values = _measurement_float_values(
+        row,
+        measurement_field="core_time_s",
+        mean_field="mean_core_time_s",
+    )
+    if values:
+        return values
     legacy_core_time_s = row.get("core_time_s")
     if legacy_core_time_s is not None:
         return (float(legacy_core_time_s),)
+    return ()
+
+
+def _measurement_float_values(
+    row: Mapping[str, Any],
+    *,
+    measurement_field: str,
+    mean_field: str,
+) -> tuple[float, ...]:
+    measurements = row.get("measurements")
+    if isinstance(measurements, list):
+        return tuple(
+            float(item[measurement_field])
+            for item in measurements
+            if isinstance(item, Mapping)
+            and item.get("status") == "ok"
+            and item.get(measurement_field) is not None
+        )
+    mean_value = row.get(mean_field)
+    if mean_value is not None:
+        repetitions = int(row.get("ok_repetitions", row.get("repetitions", 1)))
+        return tuple(float(mean_value) for _ in range(repetitions))
+    legacy_value = row.get(measurement_field)
+    if legacy_value is not None:
+        return (float(legacy_value),)
     return ()
 
 

@@ -56,6 +56,10 @@ class BenchRunTrialTests(unittest.TestCase):
         self.assertEqual(result["ok_repetitions"], 1)
         self.assertEqual(result["mean_wall_time_s"], 0.25)
         self.assertEqual(result["median_wall_time_s"], 0.25)
+        self.assertEqual(result["mean_load_prepare_time_s"], 0.04)
+        self.assertEqual(result["median_load_prepare_time_s"], 0.04)
+        self.assertEqual(result["mean_solve_time_s"], 0.21)
+        self.assertEqual(result["median_solve_time_s"], 0.21)
         self.assertEqual(result["mean_peak_rss_kb"], 1024)
         self.assertEqual(result["median_peak_rss_kb"], 1024)
         self.assertEqual(result["max_peak_rss_kb"], 1024)
@@ -95,6 +99,8 @@ class BenchRunTrialTests(unittest.TestCase):
         self.assertEqual(result["max_peak_rss_kb"], 3072)
         self.assertEqual([row["wall_time_s"] for row in result["warmup_measurements"]], [9.0])
         self.assertEqual([row["wall_time_s"] for row in result["measurements"]], [0.3, 0.1, 0.2])
+        self.assertEqual([row["load_prepare_time_s"] for row in result["measurements"]], [0.04, 0.04, 0.04])
+        self.assertEqual([row["solve_time_s"] for row in result["measurements"]], [0.21, 0.21, 0.21])
         self.assertEqual([row["peak_rss_kb"] for row in result["measurements"]], [3072, 1024, 2048])
         self.assertEqual(run_solver.call_count, 4)
 
@@ -552,7 +558,7 @@ def _fake_solver_result(
         is_colorable=is_colorable,
         n_vertices=2,
         m_edges=1,
-        details={"stats": {}},
+        details={"stats": {}, "load_prepare_time_s": 0.04, "solve_time_s": 0.21},
         error=None,
         peak_rss_kb=int(round(wall_time_s * 10240)) if wall_time_s != 0.25 else 1024,
     )

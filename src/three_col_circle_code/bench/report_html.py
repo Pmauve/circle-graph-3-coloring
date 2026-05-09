@@ -1,7 +1,10 @@
+import json
+
 from jinja2 import Environment, select_autoescape
+import plotly.graph_objects as go
 from plotly.io import to_html
 
-from three_col_circle_code.bench.report_data import BenchmarkReportData
+from three_col_circle_code.bench.report_data import BenchmarkReportData, build_report_plot_payload
 
 
 _TEMPLATE = """
@@ -30,7 +33,7 @@ _TEMPLATE = """
         font-family: "Segoe UI", Tahoma, sans-serif;
         line-height: 1.5;
       }
-      main { max-width: 980px; margin: 0 auto; }
+      main { max-width: 1640px; margin: 0 auto; }
       h1, h2 { margin: 0; }
       h1 { font-size: 1.8rem; }
       h2 { font-size: 1.1rem; color: var(--accent); }
@@ -108,22 +111,106 @@ _TEMPLATE = """
       .plot-wrap {
         overflow-x: auto;
       }
-      .metric-toggle {
-        display: inline-flex;
-        gap: 6px;
-        margin: 8px 0 12px;
+      #runtime-vs-size-plot,
+      #memory-vs-size-plot {
+        width: 100%;
+        min-height: 680px;
       }
-      .metric-toggle button {
-        border: 1px solid var(--border);
-        border-radius: 6px;
-        background: #ffffff;
+      .plot-controls {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 12px 22px;
+        align-items: start;
+        margin: 8px 0 16px;
+      }
+      .control-stack {
+        display: grid;
+        gap: 8px;
+      }
+      .families-control {
+        justify-content: flex-end;
+        max-width: min(720px, 100%);
+      }
+      .control-group {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        align-items: center;
+      }
+      .control-label {
+        color: var(--muted);
+        font-size: 0.92rem;
+        font-weight: 600;
+        margin-right: 6px;
+      }
+      .control-option {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
         color: var(--text);
         cursor: pointer;
-        padding: 6px 10px;
+        font-size: 0.92rem;
+        white-space: nowrap;
       }
-      .metric-toggle button.active {
+      .control-option input {
+        position: absolute;
+        opacity: 0;
+        pointer-events: none;
+      }
+      .control-text {
+        border: 1px solid var(--border);
+        background: #ffffff;
+        color: var(--text);
+        min-height: 32px;
+        padding: 5px 10px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        line-height: 1.2;
+        pointer-events: none;
+      }
+      .family-symbol {
+        display: inline-block;
+        margin-right: 6px;
+        font-size: 0.9em;
+        line-height: 1;
+      }
+      .segmented-control {
+        gap: 0;
+      }
+      .segmented-option .control-text {
+        border-left-width: 0;
+      }
+      .segmented-option:first-of-type .control-text {
+        border-left-width: 1px;
+        border-radius: 6px 0 0 6px;
+      }
+      .segmented-option:last-child .control-text {
+        border-radius: 0 6px 6px 0;
+      }
+      .chip-control {
+        gap: 8px;
+      }
+      .chip-option .control-text {
+        border-radius: 999px;
+        padding-inline: 11px;
+      }
+      .control-option input:checked + .control-text {
+        border-color: var(--accent);
         background: var(--accent);
         color: #ffffff;
+      }
+      .control-option input:focus-visible + .control-text {
+        outline: 2px solid #7aa7d9;
+        outline-offset: 2px;
+      }
+      .control-option:has(input:disabled) {
+        color: var(--muted);
+        cursor: default;
+        opacity: 0.55;
+      }
+      .control-option:has(input:disabled) .control-text {
+        background: #f3f5f7;
       }
       .plot-title {
         margin: 10px 0 4px;
@@ -131,9 +218,14 @@ _TEMPLATE = """
         font-size: 0.95rem;
         font-weight: 600;
       }
+      .plotly-bootstrap {
+        display: none;
+      }
       @media (max-width: 720px) {
         body { padding: 16px; }
         .section { padding: 14px; }
+        .plot-controls { grid-template-columns: 1fr; }
+        .families-control { justify-content: flex-start; }
       }
     </style>
   </head>
@@ -175,12 +267,32 @@ _TEMPLATE = """
         <div class="section-header">
         <h2>Runtime vs Size</h2>
         </div>
-        <h3 class="plot-title">Wall Time</h3>
-        <div class="plot-wrap">{{ runtime_vs_size_wall_html | safe }}</div>
-        <h3 class="plot-title">Core Time</h3>
-        <div class="plot-wrap">{{ runtime_vs_size_core_html | safe }}</div>
+        <div class="plot-controls" id="runtime-controls">
+          <div class="control-stack">
+            <div class="control-group segmented-control" id="runtime-metric-controls">
+              <span class="control-label">Metric</span>
+            </div>
+            <div class="control-group segmented-control" id="runtime-scale-controls">
+              <span class="control-label">Y scale</span>
+            </div>
+          </div>
+          <div class="control-group chip-control families-control" id="runtime-family-controls">
+            <span class="control-label">Families</span>
+          </div>
+        </div>
+        <div class="plot-wrap"><div id="runtime-vs-size-plot"></div></div>
         <h3 class="plot-title">Peak Memory vs Size</h3>
-        <div class="plot-wrap">{{ runtime_vs_memory_html | safe }}</div>
+        <div class="plot-controls" id="memory-controls">
+          <div class="control-stack">
+            <div class="control-group segmented-control" id="memory-scale-controls">
+              <span class="control-label">Y scale</span>
+            </div>
+          </div>
+          <div class="control-group chip-control families-control" id="memory-family-controls">
+            <span class="control-label">Families</span>
+          </div>
+        </div>
+        <div class="plot-wrap"><div id="memory-vs-size-plot"></div></div>
       </section>
 
       <section class="section">
@@ -249,6 +361,317 @@ _TEMPLATE = """
         {% endif %}
       </section>
     </main>
+    <div class="plotly-bootstrap">{{ plotly_bootstrap_html | safe }}</div>
+    <script id="benchmark-plot-data" type="application/json">{{ plot_payload_json | safe }}</script>
+    <script>
+      (function () {
+        const dataElement = document.getElementById("benchmark-plot-data");
+        const plotElement = document.getElementById("runtime-vs-size-plot");
+        const memoryPlotElement = document.getElementById("memory-vs-size-plot");
+        const metricControls = document.getElementById("runtime-metric-controls");
+        const scaleControls = document.getElementById("runtime-scale-controls");
+        const familyControls = document.getElementById("runtime-family-controls");
+        const memoryScaleControls = document.getElementById("memory-scale-controls");
+        const memoryFamilyControls = document.getElementById("memory-family-controls");
+        if (!dataElement || !plotElement || !memoryPlotElement || !window.Plotly) {
+          return;
+        }
+        const payload = JSON.parse(dataElement.textContent);
+        const colors = {{ solver_colors_json | safe }};
+        const familySymbols = {{ family_symbols_json | safe }};
+        let selectedMetric = "wall_time_s";
+        let selectedYScale = "log";
+        let selectedMemoryYScale = "log";
+        const selectedFamilies = new Set(payload.families);
+        const selectedMemoryFamilies = new Set(payload.families);
+
+        function metricHasData(metricKey) {
+          return payload.rows.some((row) => row.metrics[metricKey] !== null && row.metrics[metricKey] !== undefined);
+        }
+
+        function addMetricControls() {
+          payload.metrics.forEach((metric) => {
+            const hasData = metricHasData(metric.key);
+            const label = document.createElement("label");
+            label.className = "control-option segmented-option";
+            const input = document.createElement("input");
+            input.type = "radio";
+            input.name = "runtime_metric";
+            input.value = metric.key;
+            input.disabled = !hasData;
+            input.checked = metric.key === selectedMetric;
+            if (!hasData) {
+              label.title = "No measurements available in this run";
+            }
+            input.addEventListener("change", () => {
+              selectedMetric = metric.key;
+              renderRuntimePlot();
+            });
+            const text = document.createElement("span");
+            text.className = "control-text";
+            text.textContent = metric.label;
+            label.appendChild(input);
+            label.appendChild(text);
+            metricControls.appendChild(label);
+          });
+        }
+
+        function addScaleControls(container, selectedValue, onChange) {
+          [
+            { key: "linear", label: "Linear" },
+            { key: "log", label: "Log" }
+          ].forEach((scale) => {
+            const label = document.createElement("label");
+            label.className = "control-option segmented-option";
+            const input = document.createElement("input");
+            input.type = "radio";
+            input.name = container.id + "_value";
+            input.value = scale.key;
+            input.checked = scale.key === selectedValue;
+            input.addEventListener("change", () => {
+              onChange(scale.key);
+            });
+            const text = document.createElement("span");
+            text.className = "control-text";
+            text.textContent = scale.label;
+            label.appendChild(input);
+            label.appendChild(text);
+            container.appendChild(label);
+          });
+        }
+
+        function addFamilyControls(container, selectedSet, onChange) {
+          payload.families.forEach((family) => {
+            const label = document.createElement("label");
+            label.className = "control-option chip-option";
+            const input = document.createElement("input");
+            input.type = "checkbox";
+            input.value = family;
+            input.checked = true;
+            input.addEventListener("change", () => {
+              if (input.checked) {
+                selectedSet.add(family);
+              } else if (selectedSet.size === 1 && selectedSet.has(family)) {
+                input.checked = true;
+                return;
+              } else {
+                selectedSet.delete(family);
+              }
+              onChange();
+            });
+            const text = document.createElement("span");
+            text.className = "control-text";
+            const symbol = document.createElement("span");
+            symbol.className = "family-symbol";
+            symbol.textContent = familySymbols[family] || "●";
+            text.appendChild(symbol);
+            text.appendChild(document.createTextNode(family));
+            label.appendChild(input);
+            label.appendChild(text);
+            container.appendChild(label);
+          });
+        }
+
+        function currentMetric() {
+          return payload.metrics.find((metric) => metric.key === selectedMetric) || payload.metrics[0];
+        }
+
+        function currentVisibilityBySolver() {
+          const visibility = {};
+          if (!plotElement.data) {
+            return visibility;
+          }
+          plotElement.data.forEach((trace) => {
+            visibility[trace.name] = trace.visible;
+          });
+          return visibility;
+        }
+
+        function renderRuntimePlot() {
+          const metric = currentMetric();
+          const previousVisibility = currentVisibilityBySolver();
+          let plottedRows = 0;
+          const traces = payload.solvers.map((solver) => {
+            const rows = payload.rows
+              .filter((row) => row.solver === solver)
+              .filter((row) => selectedFamilies.has(row.family))
+              .filter((row) => row.metrics[metric.key] !== null && row.metrics[metric.key] !== undefined)
+              .sort((left, right) => {
+                if (left.n !== right.n) {
+                  return left.n - right.n;
+                }
+                return String(left.instance_id).localeCompare(String(right.instance_id));
+              });
+            plottedRows += rows.length;
+            return {
+              type: "scatter",
+              mode: "markers",
+              name: solver,
+              visible: previousVisibility[solver],
+              x: rows.map((row) => row.n),
+              y: rows.map((row) => row.metrics[metric.key]),
+              marker: {
+                color: colors[solver] || "#2f4f6f",
+                size: 10,
+                symbol: rows.map((row) => row.marker_symbol),
+                line: { color: "#ffffff", width: 0.8 }
+              },
+              customdata: rows.map((row) => [
+                row.instance_id,
+                row.family,
+                row.m,
+                row.average_degree,
+                row.is_colorable,
+                row.status
+              ]),
+              hovertemplate:
+                "instance_id=%{customdata[0]}<br>" +
+                "solver=" + solver + "<br>" +
+                "family=%{customdata[1]}<br>" +
+                "n=%{x}<br>" +
+                "m=%{customdata[2]}<br>" +
+                "average_degree=%{customdata[3]:.4f}<br>" +
+                metric.y_axis + "=%{y:.6f}<br>" +
+                "is_colorable=%{customdata[4]}<br>" +
+                "status=%{customdata[5]}<extra></extra>",
+              hoverlabel: { align: "left" }
+            };
+          });
+          const layout = {
+            autosize: true,
+            height: 680,
+            xaxis: { title: "n", autorange: true },
+            yaxis: { title: metric.y_axis, type: selectedYScale, autorange: true },
+            legend: {
+              orientation: "h",
+              x: 0.0,
+              xanchor: "left",
+              y: -0.22,
+              yanchor: "top",
+              title: { text: "Solver Variant" }
+            },
+            template: "plotly_white",
+            margin: { l: 56, r: 24, t: 36, b: 112 },
+            annotations: plottedRows > 0 ? [] : [
+              {
+                text: "No measurements available for this metric/filter selection",
+                x: 0.5,
+                y: 0.5,
+                xref: "paper",
+                yref: "paper",
+                showarrow: false,
+                font: { color: "#5d6470", size: 14 }
+              }
+            ],
+            uirevision: "runtime-vs-size"
+          };
+          Plotly.react(plotElement, traces, layout, {
+            responsive: true,
+            scrollZoom: true,
+            displayModeBar: true,
+            displaylogo: false
+          }).then(() => Plotly.Plots.resize(plotElement));
+        }
+
+        function renderMemoryPlot() {
+          let plottedRows = 0;
+          const traces = payload.solvers.map((solver) => {
+            const rows = payload.rows
+              .filter((row) => row.solver === solver)
+              .filter((row) => selectedMemoryFamilies.has(row.family))
+              .filter((row) => row.metrics.max_peak_rss_mb !== null && row.metrics.max_peak_rss_mb !== undefined)
+              .sort((left, right) => {
+                if (left.n !== right.n) {
+                  return left.n - right.n;
+                }
+                return String(left.instance_id).localeCompare(String(right.instance_id));
+              });
+            plottedRows += rows.length;
+            return {
+              type: "scatter",
+              mode: "markers",
+              name: solver,
+              x: rows.map((row) => row.n),
+              y: rows.map((row) => row.metrics.max_peak_rss_mb),
+              marker: {
+                color: colors[solver] || "#2f4f6f",
+                size: 10,
+                symbol: rows.map((row) => row.marker_symbol),
+                line: { color: "#ffffff", width: 0.8 }
+              },
+              customdata: rows.map((row) => [
+                row.instance_id,
+                row.family,
+                row.m,
+                row.average_degree,
+                row.metrics.wall_time_s,
+                row.is_colorable,
+                row.status
+              ]),
+              hovertemplate:
+                "instance_id=%{customdata[0]}<br>" +
+                "solver=" + solver + "<br>" +
+                "family=%{customdata[1]}<br>" +
+                "n=%{x}<br>" +
+                "m=%{customdata[2]}<br>" +
+                "average_degree=%{customdata[3]:.4f}<br>" +
+                "mean_wall_time_s=%{customdata[4]:.6f}<br>" +
+                "max_peak_rss_mb=%{y:.3f}<br>" +
+                "is_colorable=%{customdata[5]}<br>" +
+                "status=%{customdata[6]}<extra></extra>",
+              hoverlabel: { align: "left" }
+            };
+          });
+          const layout = {
+            autosize: true,
+            height: 680,
+            xaxis: { title: "n", autorange: true },
+            yaxis: { title: "max_peak_rss_mb", type: selectedMemoryYScale, autorange: true },
+            legend: {
+              orientation: "h",
+              x: 0.0,
+              xanchor: "left",
+              y: -0.22,
+              yanchor: "top",
+              title: { text: "Solver Variant" }
+            },
+            template: "plotly_white",
+            margin: { l: 64, r: 24, t: 36, b: 112 },
+            annotations: plottedRows > 0 ? [] : [
+              {
+                text: "No memory measurements available for this filter selection",
+                x: 0.5,
+                y: 0.5,
+                xref: "paper",
+                yref: "paper",
+                showarrow: false,
+                font: { color: "#5d6470", size: 14 }
+              }
+            ]
+          };
+          Plotly.react(memoryPlotElement, traces, layout, {
+            responsive: true,
+            scrollZoom: true,
+            displayModeBar: true,
+            displaylogo: false
+          }).then(() => Plotly.Plots.resize(memoryPlotElement));
+        }
+
+        addMetricControls();
+        addScaleControls(scaleControls, selectedYScale, (scale) => {
+          selectedYScale = scale;
+          renderRuntimePlot();
+        });
+        addFamilyControls(familyControls, selectedFamilies, renderRuntimePlot);
+        addScaleControls(memoryScaleControls, selectedMemoryYScale, (scale) => {
+          selectedMemoryYScale = scale;
+          renderMemoryPlot();
+        });
+        addFamilyControls(memoryFamilyControls, selectedMemoryFamilies, renderMemoryPlot);
+        renderRuntimePlot();
+        renderMemoryPlot();
+      }());
+    </script>
   </body>
 </html>
 """
@@ -257,28 +680,32 @@ _TEMPLATE = """
 def render_report_html(
     *,
     data: BenchmarkReportData,
-    runtime_vs_size_wall_figure: object = None,
-    runtime_vs_size_core_figure: object = None,
-    runtime_vs_memory_figure: object = None,
-    runtime_vs_size_figure: object = None,
 ) -> str:
     """Render the benchmark report HTML document."""
-    if runtime_vs_size_wall_figure is None:
-        runtime_vs_size_wall_figure = runtime_vs_size_figure
-    if runtime_vs_size_core_figure is None:
-        runtime_vs_size_core_figure = runtime_vs_size_wall_figure
-    if runtime_vs_memory_figure is None:
-        runtime_vs_memory_figure = runtime_vs_size_wall_figure
     template = Environment(
         autoescape=select_autoescape(default_for_string=True, enabled_extensions=("html",)),
     ).from_string(_TEMPLATE)
+    plot_payload = build_report_plot_payload(data)
+    solver_colors = {
+        solver: _solver_color(solver)
+        for solver in plot_payload["solvers"]
+    }
+    family_symbols = _family_symbols(plot_payload["families"])
+    for row in plot_payload["rows"]:
+        row["marker_symbol"] = family_symbols.get(row["family"], "circle")
     return template.render(
         title=data.metadata.run_id,
         metadata=data.metadata,
         headline=data.headline_metrics,
-        runtime_vs_size_wall_html=_figure_html(runtime_vs_size_wall_figure, include_plotlyjs="inline"),
-        runtime_vs_size_core_html=_figure_html(runtime_vs_size_core_figure, include_plotlyjs=False),
-        runtime_vs_memory_html=_figure_html(runtime_vs_memory_figure, include_plotlyjs=False),
+        plot_payload_json=_safe_json(plot_payload),
+        solver_colors_json=_safe_json(solver_colors),
+        family_symbols_json=_safe_json(
+            {
+                family: _marker_symbol_label(marker_symbol)
+                for family, marker_symbol in family_symbols.items()
+            }
+        ),
+        plotly_bootstrap_html=_figure_html(go.Figure(), include_plotlyjs="inline"),
         solver_summary_rows=data.solver_summary_rows,
         disagreement_rows=data.disagreement_rows,
         format_seconds=_format_seconds,
@@ -316,3 +743,51 @@ def _format_mb(value: object) -> str:
     if value is None:
         return "n/a"
     return f"{float(value) / 1024.0:.1f} MB"
+
+
+def _safe_json(value: object) -> str:
+    return json.dumps(value, sort_keys=True).replace("</", "<\\/")
+
+
+def _solver_color(solver_target: str) -> str:
+    from three_col_circle_code.bench.report_plots import solver_target_color
+
+    return solver_target_color(solver_target)
+
+
+def _family_symbols(families: list[str]) -> dict[str, str]:
+    symbols = (
+        "circle",
+        "square",
+        "diamond",
+        "cross",
+        "x",
+        "triangle-up",
+        "triangle-down",
+        "triangle-left",
+        "triangle-right",
+        "pentagon",
+        "hexagon",
+        "star",
+    )
+    return {
+        family: symbols[index % len(symbols)]
+        for index, family in enumerate(families)
+    }
+
+
+def _marker_symbol_label(marker_symbol: str) -> str:
+    return {
+        "circle": "●",
+        "square": "■",
+        "diamond": "◆",
+        "cross": "+",
+        "x": "×",
+        "triangle-up": "▲",
+        "triangle-down": "▼",
+        "triangle-left": "◀",
+        "triangle-right": "▶",
+        "pentagon": "⬟",
+        "hexagon": "⬢",
+        "star": "★",
+    }.get(marker_symbol, "●")

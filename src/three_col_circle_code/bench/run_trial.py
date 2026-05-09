@@ -262,6 +262,10 @@ def _build_invalid_result_record(
             "median_wall_time_s": None,
             "mean_core_time_s": None,
             "median_core_time_s": None,
+            "mean_load_prepare_time_s": None,
+            "median_load_prepare_time_s": None,
+            "mean_solve_time_s": None,
+            "median_solve_time_s": None,
             "mean_peak_rss_kb": None,
             "median_peak_rss_kb": None,
             "max_peak_rss_kb": None,
@@ -301,6 +305,8 @@ def _run_measurements(
                     "status": "error",
                     "wall_time_s": None,
                     "core_time_s": None,
+                    "load_prepare_time_s": None,
+                    "solve_time_s": None,
                     "peak_rss_kb": None,
                     "is_colorable": None,
                     "error": f"{type(exc).__name__}: {exc}",
@@ -308,12 +314,16 @@ def _run_measurements(
             )
             continue
         last_details = dict(solve_result.details)
+        load_prepare_time_s = _optional_float_from_mapping(last_details, "load_prepare_time_s")
+        solve_time_s = _optional_float_from_mapping(last_details, "solve_time_s")
         measurements.append(
             {
                 "repetition": repetition,
                 "status": solve_result.status,
                 "wall_time_s": solve_result.wall_time_s,
                 "core_time_s": solve_result.core_time_s,
+                "load_prepare_time_s": load_prepare_time_s,
+                "solve_time_s": solve_time_s,
                 "peak_rss_kb": solve_result.peak_rss_kb,
                 "is_colorable": solve_result.is_colorable,
                 "error": solve_result.error,
@@ -346,6 +356,16 @@ def _build_repeated_result_record(
         float(item["core_time_s"])
         for item in ok_measurements
         if item.get("core_time_s") is not None
+    ]
+    load_prepare_times = [
+        float(item["load_prepare_time_s"])
+        for item in ok_measurements
+        if item.get("load_prepare_time_s") is not None
+    ]
+    solve_times = [
+        float(item["solve_time_s"])
+        for item in ok_measurements
+        if item.get("solve_time_s") is not None
     ]
     peak_rss_values = [
         int(item["peak_rss_kb"])
@@ -391,6 +411,10 @@ def _build_repeated_result_record(
         "median_wall_time_s": None if not wall_times else median(wall_times),
         "mean_core_time_s": None if not core_times else mean(core_times),
         "median_core_time_s": None if not core_times else median(core_times),
+        "mean_load_prepare_time_s": None if not load_prepare_times else mean(load_prepare_times),
+        "median_load_prepare_time_s": None if not load_prepare_times else median(load_prepare_times),
+        "mean_solve_time_s": None if not solve_times else mean(solve_times),
+        "median_solve_time_s": None if not solve_times else median(solve_times),
         "mean_peak_rss_kb": None if not peak_rss_values else mean(peak_rss_values),
         "median_peak_rss_kb": None if not peak_rss_values else median(peak_rss_values),
         "max_peak_rss_kb": None if not peak_rss_values else max(peak_rss_values),
@@ -426,6 +450,13 @@ def _existing_result_matches_plan(result: dict[str, Any], *, trial: Any) -> bool
 
 def _uses_path_without_python_graph(solver_config: SolverConfig) -> bool:
     return solver_config.solver in {SAT_3_COL_NATIVE_SOLVER, SOSA_3_COL_NATIVE_SOLVER, ZYKOVCOLOR_SOLVER}
+
+
+def _optional_float_from_mapping(values: dict[str, Any], key: str) -> Optional[float]:
+    value = values.get(key)
+    if value is None:
+        return None
+    return float(value)
 
 
 def _load_path_solver_metadata(trial: Any) -> InstanceMetadata:

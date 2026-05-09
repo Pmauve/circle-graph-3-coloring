@@ -12,12 +12,13 @@ from three_col_circle_code.bench.report_data import (
     SUMMARY_BY_BUCKET_FILENAME,
     SUMMARY_BY_N_FILENAME,
     SUMMARY_OVERALL_FILENAME,
+    build_report_plot_payload,
     load_benchmark_report_data,
     solver_variant_label,
     write_summary_csvs,
 )
 from three_col_circle_code.bench.report_html import render_report_html
-from three_col_circle_code.bench.report_plots import runtime_vs_size_figure, solver_target_color
+from three_col_circle_code.bench.report_plots import solver_target_color
 from three_col_circle_code.bench.results import MANIFEST_FILENAME, RESULTS_FILENAME
 
 
@@ -58,6 +59,9 @@ class BenchReportDataTests(unittest.TestCase):
         self.assertEqual(data.headline_metrics.n_invalid, 0)
         self.assertEqual(data.headline_metrics.best_median_runtime_solver_target, "sosa-3-col-exact [base_case_n=64]")
         self.assertEqual(len(data.disagreement_rows), 1)
+        sat_row = next(row for row in data.rows if row.solver_target == "sat-baseline:pysat-cadical")
+        self.assertEqual(sat_row.mean_load_prepare_time_s, 0.25)
+        self.assertEqual(sat_row.mean_solve_time_s, 0.75)
         disagreement = data.disagreement_rows[0]
         self.assertEqual(disagreement.instance_id, "rcy_fast-k03-n0003-seed2")
         self.assertEqual({label for label, _ in disagreement.statuses}, set(data.metadata.solver_targets))
@@ -89,6 +93,8 @@ class BenchReportDataTests(unittest.TestCase):
         self.assertEqual(rc_sat["mean_peak_rss_kb"], "2048.0")
         self.assertEqual(rc_sat["median_peak_rss_kb"], "2048.0")
         self.assertEqual(rc_sat["max_peak_rss_kb"], "3072.0")
+        self.assertEqual(rc_sat["mean_load_prepare_time_s"], "0.25")
+        self.assertEqual(rc_sat["median_solve_time_s"], "0.75")
 
         rc_sosa_small = next(
             row
@@ -191,32 +197,25 @@ class BenchReportDataTests(unittest.TestCase):
         self.assertEqual(sosa_small.n_rows, 1)
         self.assertEqual(sosa_small.median_wall_time_s, 9.0)
 
-
-class BenchReportHtmlTests(unittest.TestCase):
-    def test_runtime_vs_size_figure_exposes_family_and_y_axis_controls(self) -> None:
+    def test_build_report_plot_payload_contains_report_metrics(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             run_dir = _write_sample_run(Path(tmpdir) / "sample-run", with_manifest=True)
             data = load_benchmark_report_data(run_dir)
 
-        figure = runtime_vs_size_figure(data)
+        payload = build_report_plot_payload(data)
 
-        self.assertEqual(figure.layout.yaxis.type, "log")
-        self.assertEqual(len(figure.layout.updatemenus), 2)
-        self.assertEqual(figure.layout.updatemenus[0].buttons[0].label, "All families")
-        self.assertEqual(figure.layout.updatemenus[1].buttons[0].label, "Linear")
-        self.assertEqual(figure.layout.updatemenus[1].buttons[1].label, "Log")
-        self.assertIsNone(figure.layout.title.text)
-        self.assertEqual(figure.layout.updatemenus[0].y, 1.16)
-        self.assertEqual(figure.layout.updatemenus[1].y, 1.16)
-        self.assertEqual(figure.layout.legend.orientation, "h")
-        self.assertEqual(figure.layout.legend.y, -0.22)
-        self.assertEqual(figure.layout.margin.t, 96)
-        self.assertEqual(figure.layout.margin.b, 112)
+        self.assertIn("rcy_fast", payload["families"])
+        self.assertIn("sat-baseline:pysat-cadical", payload["solvers"])
         self.assertEqual(
-            tuple(annotation.text for annotation in figure.layout.annotations),
-            ("Family", "Y scale"),
+            [metric["key"] for metric in payload["metrics"]],
+            ["wall_time_s", "native_total_time_s", "load_prepare_time_s", "solve_time_s"],
         )
+        sat_row = next(row for row in payload["rows"] if row["solver"] == "sat-baseline:pysat-cadical")
+        self.assertEqual(sat_row["metrics"]["load_prepare_time_s"], 0.25)
+        self.assertEqual(sat_row["metrics"]["solve_time_s"], 0.75)
 
+
+class BenchReportHtmlTests(unittest.TestCase):
     def test_render_report_html_contains_key_sections(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             run_dir = _write_sample_run(Path(tmpdir) / "sample-run", with_manifest=True)
@@ -224,25 +223,33 @@ class BenchReportHtmlTests(unittest.TestCase):
 
         html = render_report_html(
             data=data,
-            runtime_vs_size_figure=runtime_vs_size_figure(data),
         )
 
         self.assertIn("Headline Stats", html)
         self.assertIn("Runtime vs Size", html)
-        self.assertIn("Wall Time", html)
-        self.assertIn("Core Time", html)
+        self.assertIn("Wall time", html)
+        self.assertIn("Native total", html)
+        self.assertIn("Load + prepare", html)
+        self.assertIn("Solve", html)
+        self.assertIn("Y scale", html)
+        self.assertIn("Linear", html)
+        self.assertIn("Log", html)
         self.assertIn("Solver Summary", html)
         self.assertIn("Disagreements", html)
         self.assertIn("Plotly.newPlot", html)
+        self.assertIn("benchmark-plot-data", html)
+        self.assertIn("runtime-vs-size-plot", html)
+        self.assertIn("max-width: 1640px", html)
+        self.assertIn("min-height: 680px", html)
+        self.assertIn("height: 680", html)
+        self.assertIn("segmented-control", html)
+        self.assertIn("chip-control", html)
         self.assertIn(solver_target_color("sosa-3-col-exact [base_case_n=8]"), html)
         self.assertIn(solver_target_color("sosa-3-col-exact [base_case_n=64]"), html)
         self.assertIn("rcy_fast", html)
-        self.assertIn("All families", html)
-        self.assertIn("Y scale", html)
         self.assertNotIn("X scale", html)
         self.assertIn("sosa-3-col-exact [base_case_n=8]", html)
         self.assertIn("sosa-3-col-exact [base_case_n=64]", html)
-        self.assertIn("params:", html)
         self.assertIn("scrollZoom", html)
         self.assertIn("displayModeBar", html)
         self.assertNotIn("data-runtime-metric", html)
@@ -302,6 +309,9 @@ def _write_sample_run(run_dir: Path, *, with_manifest: bool) -> Path:
             "solver_params": {},
             "status": "ok",
             "wall_time_s": 1.0,
+            "mean_core_time_s": 1.0,
+            "mean_load_prepare_time_s": 0.25,
+            "mean_solve_time_s": 0.75,
             "is_colorable": True,
             "validation_ok": True,
             "validation_errors": [],
@@ -452,6 +462,8 @@ def _write_summary_run(run_dir: Path) -> Path:
             "solver_params": {},
             "status": "ok",
             "wall_time_s": 1.0,
+            "load_prepare_time_s": 0.2,
+            "solve_time_s": 0.8,
             "peak_rss_kb": 1024,
         },
         {
@@ -463,6 +475,8 @@ def _write_summary_run(run_dir: Path) -> Path:
             "solver_params": {},
             "status": "ok",
             "wall_time_s": 3.0,
+            "load_prepare_time_s": 0.3,
+            "solve_time_s": 0.7,
             "peak_rss_kb": 3072,
         },
         {
