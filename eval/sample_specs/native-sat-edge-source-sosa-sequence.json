@@ -1,0 +1,149 @@
+{
+  "instance_pool_root": "eval/instances",
+  "instances": [
+    {
+      "family": "rcy_fast",
+      "num_colors": 3,
+      "n": {
+        "start": 1000,
+        "stop": 8000,
+        "step": 1000
+      },
+      "seeds": [
+        314159
+      ]
+    },
+    {
+      "family": "rccy_tuned",
+      "num_colors": 3,
+      "n": {
+        "start": 2000,
+        "stop": 10000,
+        "step": 2000
+      },
+      "seeds": [
+        314159
+      ]
+    },
+    {
+      "family": "rccy_tuned",
+      "num_colors": 3,
+      "n": {
+        "start": 12000,
+        "stop": 16000,
+        "step": 2000
+      },
+      "seeds": [
+        314159
+      ]
+    },
+    {
+      "family": "rccy_full_sweep_weighted_active",
+      "num_colors": 3,
+      "n": {
+        "start": 2000,
+        "stop": 6000,
+        "step": 2000
+      },
+      "seeds": [
+        314159
+      ]
+    },
+    {
+      "family": "rccy_full_sweep_weighted_active",
+      "num_colors": 3,
+      "n": {
+        "start": 8000,
+        "stop": 8000,
+        "step": 1
+      },
+      "seeds": [
+        314159
+      ]
+    },
+    {
+      "family": "rccy_full_sweep_weighted_active",
+      "num_colors": 3,
+      "n": {
+        "start": 10000,
+        "stop": 10000,
+        "step": 1
+      },
+      "seeds": [
+        314159
+      ]
+    },
+    {
+      "family": "rccy_full_sweep_weighted_active",
+      "num_colors": 3,
+      "n": {
+        "start": 12000,
+        "stop": 12000,
+        "step": 1
+      },
+      "seeds": [
+        314159
+      ]
+    }
+  ],
+  "solvers": [
+    {
+      "target": "sat-3-col-native",
+      "label": "SAT CaDiCaL listed",
+      "params": {
+        "backend": "cadical-rustsat",
+        "edge_source": "listed_edges",
+        "timeout_s": 1800
+      }
+    },
+    {
+      "target": "sat-3-col-native",
+      "label": "SAT CaDiCaL crossings",
+      "params": {
+        "backend": "cadical-rustsat",
+        "edge_source": "circle_crossings",
+        "timeout_s": 1800
+      }
+    },
+    {
+      "target": "sat-3-col-native",
+      "label": "SAT Kissat listed",
+      "params": {
+        "backend": "kissat-rustsat",
+        "edge_source": "listed_edges",
+        "timeout_s": 1800
+      }
+    },
+    {
+      "target": "sat-3-col-native",
+      "label": "SAT Kissat crossings",
+      "params": {
+        "backend": "kissat-rustsat",
+        "edge_source": "circle_crossings",
+        "timeout_s": 1800
+      }
+    },
+    {
+      "target": "sosa-3-col-native",
+      "label": "SOSA base=128",
+      "params": {
+        "base_case_n": 128,
+        "base_case_algorithm": "backtracking",
+        "lazy_circle_neighbors": false,
+        "timeout_s": 1800
+      }
+    },
+    {
+      "target": "sosa-3-col-native",
+      "label": "SOSA base=128 lazy",
+      "params": {
+        "base_case_n": 128,
+        "base_case_algorithm": "backtracking",
+        "lazy_circle_neighbors": true,
+        "timeout_s": 1800
+      }
+    }
+  ],
+  "repetitions": 1,
+  "warmup_repetitions": 0
+}
