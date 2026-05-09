@@ -309,7 +309,7 @@ def _write_sample_run(run_dir: Path, *, with_manifest: bool) -> Path:
             "solver_params": {},
             "status": "ok",
             "wall_time_s": 1.0,
-            "mean_core_time_s": 1.0,
+            "mean_total_native_time_s": 1.0,
             "mean_load_prepare_time_s": 0.25,
             "mean_solve_time_s": 0.75,
             "is_colorable": True,

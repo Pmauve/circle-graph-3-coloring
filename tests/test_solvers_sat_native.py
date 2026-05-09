@@ -74,7 +74,7 @@ class NativeSatSolverTests(unittest.TestCase):
 
         self.assertEqual(result.status, SOLVER_STATUS_OK)
         self.assertTrue(result.is_colorable)
-        self.assertEqual(result.core_time_s, 0.05)
+        self.assertEqual(result.total_native_time_s, 0.05)
         self.assertEqual(result.details["load_prepare_time_s"], 0.02)
         self.assertEqual(result.details["solve_time_s"], 0.03)
         command = run.call_args.args[0]
@@ -115,7 +115,7 @@ class NativeSatSolverTests(unittest.TestCase):
 
         self.assertEqual(result.status, SOLVER_STATUS_OK)
         self.assertTrue(result.is_colorable)
-        self.assertEqual(result.core_time_s, 0.02)
+        self.assertEqual(result.total_native_time_s, 0.02)
         command = run.call_args.args[0]
         self.assertIn(backend, command)
         self.assertNotIn("--solver-bin", command)
@@ -179,7 +179,7 @@ class NativeSatSolverTests(unittest.TestCase):
 
         self.assertEqual(result.status, SOLVER_STATUS_OK)
         self.assertFalse(result.is_colorable)
-        self.assertEqual(result.core_time_s, 0.456)
+        self.assertEqual(result.total_native_time_s, 0.456)
 
     def test_accepts_unknown_status_exit_code(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -203,7 +203,7 @@ class NativeSatSolverTests(unittest.TestCase):
 
         self.assertEqual(result.status, SOLVER_STATUS_OK)
         self.assertIsNone(result.is_colorable)
-        self.assertEqual(result.core_time_s, 1.25)
+        self.assertEqual(result.total_native_time_s, 1.25)
 
     def test_nonzero_exit_returns_error(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

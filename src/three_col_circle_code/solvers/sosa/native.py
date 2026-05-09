@@ -165,7 +165,13 @@ def _run_native_binary(
     wall_time_s = perf_counter() - started_at
 
     status_line, timings, parse_error = _parse_native_stdout(completed.stdout)
-    core_time_s = timings.get("core_time_s")
+    native_solve_time_s = timings.get("solve_time_s", timings.get("core_time_s"))
+    load_prepare_time_s = _sum_optional_timings(
+        timings.get("parse_time_s"),
+        timings.get("build_time_s"),
+    )
+    total_native_time_s = _sum_optional_timings(load_prepare_time_s, native_solve_time_s)
+    legacy_core_time_s = timings.get("core_time_s")
     details.update(
         {
             "command": command,
@@ -177,7 +183,15 @@ def _run_native_binary(
         }
     )
     details.update(timings)
-    if core_time_s is not None:
+    if native_solve_time_s is not None:
+        details["solve_time_s"] = native_solve_time_s
+    if load_prepare_time_s is not None:
+        details["load_prepare_time_s"] = load_prepare_time_s
+    if total_native_time_s is not None:
+        details["total_native_time_s"] = total_native_time_s
+    if total_native_time_s is not None:
+        details["native_time_source"] = "sosa_native_total"
+    elif legacy_core_time_s is not None:
         details["core_time_source"] = "sosa_native_reported"
 
     if completed.returncode != 0 or status_line == "ERROR" or parse_error is not None:
@@ -196,7 +210,8 @@ def _run_native_binary(
             details=details,
             error="; ".join(error_parts) or "native SOSA failed",
             wall_time_s=wall_time_s,
-            core_time_s=core_time_s,
+            core_time_s=legacy_core_time_s,
+            total_native_time_s=total_native_time_s,
             peak_rss_kb=resource_usage.peak_rss_kb,
         )
 
@@ -211,7 +226,8 @@ def _run_native_binary(
             details=details,
             error=f"unsupported native SOSA status {status_line!r}",
             wall_time_s=wall_time_s,
-            core_time_s=core_time_s,
+            core_time_s=legacy_core_time_s,
+            total_native_time_s=total_native_time_s,
             peak_rss_kb=resource_usage.peak_rss_kb,
         )
 
@@ -220,7 +236,8 @@ def _run_native_binary(
         backend=None,
         status=SOLVER_STATUS_OK,
         wall_time_s=wall_time_s,
-        core_time_s=core_time_s,
+        core_time_s=legacy_core_time_s,
+        total_native_time_s=total_native_time_s,
         is_colorable=is_colorable,
         n_vertices=n_vertices,
         m_edges=m_edges,
@@ -339,6 +356,12 @@ def _parse_native_stdout(stdout: str) -> tuple[Optional[str], dict[str, float], 
     return status, timings, None
 
 
+def _sum_optional_timings(*values: Optional[float]) -> Optional[float]:
+    if any(value is None for value in values):
+        return None
+    return sum(float(value) for value in values if value is not None)
+
+
 def _read_problem_size(instance_path: str | Path) -> tuple[int, int]:
     path = Path(instance_path)
     if path.suffix != ".col":
@@ -372,6 +395,7 @@ def _error_result(
     error: str,
     wall_time_s: Optional[float] = None,
     core_time_s: Optional[float] = None,
+    total_native_time_s: Optional[float] = None,
     peak_rss_kb: Optional[int] = None,
 ) -> SolverResult:
     return SolverResult(
@@ -380,6 +404,7 @@ def _error_result(
         status=SOLVER_STATUS_ERROR,
         wall_time_s=wall_time_s,
         core_time_s=core_time_s,
+        total_native_time_s=total_native_time_s,
         is_colorable=None,
         n_vertices=n_vertices,
         m_edges=m_edges,

@@ -558,7 +558,13 @@ def _fake_solver_result(
         is_colorable=is_colorable,
         n_vertices=2,
         m_edges=1,
-        details={"stats": {}, "load_prepare_time_s": 0.04, "solve_time_s": 0.21},
+        details={
+            "stats": {},
+            "load_prepare_time_s": 0.04,
+            "solve_time_s": 0.21,
+            "total_native_time_s": 0.25,
+        },
+        total_native_time_s=0.25,
         error=None,
         peak_rss_kb=int(round(wall_time_s * 10240)) if wall_time_s != 0.25 else 1024,
     )

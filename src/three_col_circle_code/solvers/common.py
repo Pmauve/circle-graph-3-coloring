@@ -52,6 +52,7 @@ class SolverResult:
     details: dict[str, Any] = field(default_factory=dict)
     error: Optional[str] = None
     core_time_s: Optional[float] = None
+    total_native_time_s: Optional[float] = None
     peak_rss_kb: Optional[int] = None
 
 

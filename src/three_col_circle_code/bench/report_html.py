@@ -306,7 +306,7 @@ _TEMPLATE = """
               <th class="solver-label">Solver Variant</th>
               <th class="status-cell">ok/error/invalid</th>
               <th class="numeric">Wall med</th>
-              <th class="numeric">Core med</th>
+              <th class="numeric">Native med</th>
               <th class="numeric">RSS max</th>
             </tr>
           </thead>
@@ -316,7 +316,7 @@ _TEMPLATE = """
               <td class="mono solver-label">{{ row.solver_target }}</td>
               <td class="status-cell">{{ row.n_ok }}/{{ row.n_error }}/{{ row.n_invalid }}</td>
               <td class="numeric">{{ format_seconds(row.median_wall_time_s) }}</td>
-              <td class="numeric">{{ format_seconds(row.median_core_time_s) }}</td>
+              <td class="numeric">{{ format_seconds(row.median_total_native_time_s) }}</td>
               <td class="numeric">{{ format_mb(row.max_peak_rss_kb) }}</td>
             </tr>
             {% endfor %}

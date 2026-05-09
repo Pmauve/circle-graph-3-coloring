@@ -260,8 +260,8 @@ def _build_invalid_result_record(
             "ok_repetitions": 0,
             "mean_wall_time_s": None,
             "median_wall_time_s": None,
-            "mean_core_time_s": None,
-            "median_core_time_s": None,
+            "mean_total_native_time_s": None,
+            "median_total_native_time_s": None,
             "mean_load_prepare_time_s": None,
             "median_load_prepare_time_s": None,
             "mean_solve_time_s": None,
@@ -304,7 +304,7 @@ def _run_measurements(
                     "repetition": repetition,
                     "status": "error",
                     "wall_time_s": None,
-                    "core_time_s": None,
+                    "total_native_time_s": None,
                     "load_prepare_time_s": None,
                     "solve_time_s": None,
                     "peak_rss_kb": None,
@@ -316,12 +316,15 @@ def _run_measurements(
         last_details = dict(solve_result.details)
         load_prepare_time_s = _optional_float_from_mapping(last_details, "load_prepare_time_s")
         solve_time_s = _optional_float_from_mapping(last_details, "solve_time_s")
+        total_native_time_s = solve_result.total_native_time_s
+        if total_native_time_s is None:
+            total_native_time_s = _optional_float_from_mapping(last_details, "total_native_time_s")
         measurements.append(
             {
                 "repetition": repetition,
                 "status": solve_result.status,
                 "wall_time_s": solve_result.wall_time_s,
-                "core_time_s": solve_result.core_time_s,
+                "total_native_time_s": total_native_time_s,
                 "load_prepare_time_s": load_prepare_time_s,
                 "solve_time_s": solve_time_s,
                 "peak_rss_kb": solve_result.peak_rss_kb,
@@ -352,10 +355,10 @@ def _build_repeated_result_record(
         for item in ok_measurements
         if item.get("wall_time_s") is not None
     ]
-    core_times = [
-        float(item["core_time_s"])
+    total_native_times = [
+        float(item["total_native_time_s"])
         for item in ok_measurements
-        if item.get("core_time_s") is not None
+        if item.get("total_native_time_s") is not None
     ]
     load_prepare_times = [
         float(item["load_prepare_time_s"])
@@ -409,8 +412,8 @@ def _build_repeated_result_record(
         "ok_repetitions": len(ok_measurements),
         "mean_wall_time_s": None if not wall_times else mean(wall_times),
         "median_wall_time_s": None if not wall_times else median(wall_times),
-        "mean_core_time_s": None if not core_times else mean(core_times),
-        "median_core_time_s": None if not core_times else median(core_times),
+        "mean_total_native_time_s": None if not total_native_times else mean(total_native_times),
+        "median_total_native_time_s": None if not total_native_times else median(total_native_times),
         "mean_load_prepare_time_s": None if not load_prepare_times else mean(load_prepare_times),
         "median_load_prepare_time_s": None if not load_prepare_times else median(load_prepare_times),
         "mean_solve_time_s": None if not solve_times else mean(solve_times),

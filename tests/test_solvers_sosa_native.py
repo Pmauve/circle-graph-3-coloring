@@ -65,10 +65,13 @@ class NativeSosaSolverTests(unittest.TestCase):
 
         self.assertEqual(result.status, SOLVER_STATUS_OK)
         self.assertTrue(result.is_colorable)
-        self.assertEqual(result.core_time_s, 0.123)
+        self.assertAlmostEqual(result.total_native_time_s or 0.0, 0.153)
         self.assertEqual(result.details["parse_time_s"], 0.01)
         self.assertEqual(result.details["build_time_s"], 0.02)
+        self.assertAlmostEqual(result.details["load_prepare_time_s"], 0.03)
         self.assertEqual(result.details["solve_time_s"], 0.123)
+        self.assertAlmostEqual(result.details["total_native_time_s"], 0.153)
+        self.assertEqual(result.details["native_time_source"], "sosa_native_total")
         command = run.call_args.args[0]
         self.assertEqual(command[:2], [str(binary), "solve"])
         self.assertIn("--base-case-n", command)
@@ -103,6 +106,7 @@ class NativeSosaSolverTests(unittest.TestCase):
         self.assertEqual(result.status, SOLVER_STATUS_OK)
         self.assertIn("--stats", run.call_args.args[0])
         self.assertTrue(result.details["stats"])
+        self.assertEqual(result.details["core_time_source"], "sosa_native_reported")
 
     def test_lazy_circle_neighbors_flag_is_opt_in(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -127,9 +127,9 @@ def solve_sat_3_col_native_from_path(
         }
     )
     details.update(timings)
-    core_time_s = timings.get("total_native_time_s")
-    if core_time_s is not None:
-        details["core_time_source"] = "sat_native_total"
+    total_native_time_s = timings.get("total_native_time_s")
+    if total_native_time_s is not None:
+        details["native_time_source"] = "sat_native_total"
 
     allowed_unknown_exit = completed.returncode == 3 and status_line == "UNKNOWN"
     if (
@@ -152,7 +152,7 @@ def solve_sat_3_col_native_from_path(
             details=details,
             error="; ".join(error_parts) or "native SAT failed",
             wall_time_s=wall_time_s,
-            core_time_s=core_time_s,
+            total_native_time_s=total_native_time_s,
             peak_rss_kb=resource_usage.peak_rss_kb,
         )
 
@@ -169,7 +169,7 @@ def solve_sat_3_col_native_from_path(
             details=details,
             error=f"unsupported native SAT status {status_line!r}",
             wall_time_s=wall_time_s,
-            core_time_s=core_time_s,
+            total_native_time_s=total_native_time_s,
             peak_rss_kb=resource_usage.peak_rss_kb,
         )
 
@@ -178,7 +178,7 @@ def solve_sat_3_col_native_from_path(
         backend=None,
         status=SOLVER_STATUS_OK,
         wall_time_s=wall_time_s,
-        core_time_s=core_time_s,
+        total_native_time_s=total_native_time_s,
         is_colorable=is_colorable,
         n_vertices=n_vertices,
         m_edges=m_edges,
@@ -308,7 +308,7 @@ def _error_result(
     details: dict[str, Any],
     error: str,
     wall_time_s: Optional[float] = None,
-    core_time_s: Optional[float] = None,
+    total_native_time_s: Optional[float] = None,
     peak_rss_kb: Optional[int] = None,
 ) -> SolverResult:
     return SolverResult(
@@ -316,7 +316,7 @@ def _error_result(
         backend=None,
         status=SOLVER_STATUS_ERROR,
         wall_time_s=wall_time_s,
-        core_time_s=core_time_s,
+        total_native_time_s=total_native_time_s,
         is_colorable=None,
         n_vertices=n_vertices,
         m_edges=m_edges,
