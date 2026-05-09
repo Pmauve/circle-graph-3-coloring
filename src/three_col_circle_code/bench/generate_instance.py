@@ -11,6 +11,7 @@ from three_col_circle_code.bench.plan_io import (
     load_instance_plan,
     load_plan_manifest,
 )
+from three_col_circle_code.bench.sequences import native_sequence_groups, sequence_bounds
 from three_col_circle_code.generation.random_instances import generate_instance, write_instance_to_path
 from three_col_circle_code.instances.io import load_instance
 from three_col_circle_code.instances.model import InstanceFormatError, InstanceRecord
@@ -129,7 +130,7 @@ def run_instance_sequence_generation(
 ) -> list[Path]:
     """Generate one grouped native instance sequence and write per-instance result files."""
     rows = load_instance_plan(plan_dir)
-    groups = _native_sequence_groups(rows)
+    groups = native_sequence_groups(rows)
     if index < 1 or index > len(groups):
         raise ValueError(f"instance sequence plan does not contain index {index}")
     group = groups[index - 1]
@@ -148,7 +149,7 @@ def run_instance_sequence_generation(
     result_paths: list[Path] = []
     try:
         first = group[0]
-        start_n, stop_n, step_n = _sequence_bounds(group)
+        start_n, stop_n, step_n = sequence_bounds(group)
         generate_col_sequence_with_native(
             output_dir=_instance_pool_root_from_path(first.instance_path, first.family),
             family=first.family,
@@ -197,14 +198,14 @@ def run_instance_sequence_generation(
 
 def planned_instance_sequence_count(plan_dir: Path) -> int:
     """Return how many spec-declared native instance sequences are in a plan."""
-    return len(_native_sequence_groups(load_instance_plan(plan_dir)))
+    return len(native_sequence_groups(load_instance_plan(plan_dir)))
 
 
 def planned_instance_sequence_indices(plan_dir: Path) -> set[int]:
     """Return instance row indices covered by spec-declared native sequences."""
     return {
         row.index
-        for group in _native_sequence_groups(load_instance_plan(plan_dir))
+        for group in native_sequence_groups(load_instance_plan(plan_dir))
         for row in group
     }
 
@@ -359,40 +360,6 @@ def _write_result(path: Path, result: dict[str, Any]) -> None:
 def _now() -> str:
     """Return the current UTC timestamp in ISO format."""
     return datetime.now(UTC).isoformat()
-
-
-def _native_sequence_groups(rows: tuple[Any, ...]) -> list[tuple[Any, ...]]:
-    """Group native .col instance rows by one growable trajectory."""
-    candidates = [
-        row
-        for row in rows
-        if Path(row.instance_path).suffix == ".col" and getattr(row, "sequence_id", None) is not None
-    ]
-    grouped: dict[str, list[Any]] = {}
-    for row in candidates:
-        grouped.setdefault(str(row.sequence_id), []).append(row)
-    groups: list[tuple[Any, ...]] = []
-    for group_rows in grouped.values():
-        ordered = tuple(sorted(group_rows, key=lambda row: row.n))
-        if len(ordered) < 2:
-            groups.append(ordered)
-            continue
-        _sequence_bounds(ordered)
-        groups.append(ordered)
-    return sorted(groups, key=lambda group: min(row.index for row in group))
-
-
-def _sequence_bounds(rows: tuple[Any, ...]) -> tuple[int, int, int]:
-    n_values = [row.n for row in rows]
-    if len(n_values) == 1:
-        return n_values[0], n_values[0], 1
-    step = n_values[1] - n_values[0]
-    if step < 1:
-        raise ValueError("sequence n values must be strictly increasing")
-    expected = list(range(n_values[0], n_values[-1] + 1, step))
-    if n_values != expected:
-        raise ValueError(f"sequence n values must form an arithmetic range; got {n_values}")
-    return n_values[0], n_values[-1], step
 
 
 def _instance_pool_root_from_path(instance_path: Path, family: str) -> Path:
