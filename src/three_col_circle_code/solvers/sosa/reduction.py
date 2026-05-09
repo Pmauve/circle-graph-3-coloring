@@ -16,7 +16,7 @@ def apply_rr_step(
     stats: SosaStats,
     active_vertices_mask: int,
     allowed_color_masks: list[int],
-    singleton_queue: deque[int] | None = None,
+    singleton_worklist: deque[int] | None = None,
 ) -> int | None:
     """Apply one step of the paper's Reduction Rule (RR).
 
@@ -47,8 +47,8 @@ def apply_rr_step(
         if updated_mask == 0:
             return None
         allowed_color_masks[neighbor_index] = updated_mask
-        if singleton_queue is not None and mask_is_singleton(updated_mask):
-            singleton_queue.append(neighbor_index)
+        if singleton_worklist is not None and mask_is_singleton(updated_mask):
+            singleton_worklist.append(neighbor_index)
 
     return next_active_vertices_mask
 
@@ -63,14 +63,14 @@ def apply_rr_exhaustively(
     active_vertices_mask = state.active_vertices_mask
     allowed_color_masks = list(state.allowed_color_masks)
     fixed_colors: list[tuple[int, int]] = []
-    queue: deque[int] = deque(
+    worklist: deque[int] = deque(
         vertex_index
         for vertex_index in iter_mask_indices(active_vertices_mask)
         if mask_is_singleton(allowed_color_masks[vertex_index])
     )
 
-    while queue:
-        vertex_index = queue.popleft()
+    while worklist:
+        vertex_index = worklist.popleft()
         vertex_bit = 1 << vertex_index
         if not (active_vertices_mask & vertex_bit):
             continue
@@ -86,7 +86,7 @@ def apply_rr_exhaustively(
             stats=stats,
             active_vertices_mask=active_vertices_mask,
             allowed_color_masks=allowed_color_masks,
-            singleton_queue=queue,
+            singleton_worklist=worklist,
         )
         if next_active_vertices_mask is None:
             return None

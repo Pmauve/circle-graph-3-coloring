@@ -35,7 +35,7 @@ pub struct Stats {
     pub max_recursion_depth: u64,
     pub base_case_time_ns: u128,
     pub arc_restriction_time_ns: u128,
-    pub rr_queue_time_ns: u128,
+    pub rr_worklist_time_ns: u128,
     pub rr_rebuild_time_ns: u128,
     pub partitioned_rr_rebuild_time_ns: u128,
     pub lemma_36_time_ns: u128,

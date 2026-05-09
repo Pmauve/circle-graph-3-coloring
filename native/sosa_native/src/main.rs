@@ -197,7 +197,10 @@ fn print_profile(stats: &Stats) {
         "p arc_restriction_time_s {:.6}",
         ns_to_s(stats.arc_restriction_time_ns)
     );
-    println!("p rr_queue_time_s {:.6}", ns_to_s(stats.rr_queue_time_ns));
+    println!(
+        "p rr_worklist_time_s {:.6}",
+        ns_to_s(stats.rr_worklist_time_ns)
+    );
     println!(
         "p rr_rebuild_time_s {:.6}",
         ns_to_s(stats.rr_rebuild_time_ns)

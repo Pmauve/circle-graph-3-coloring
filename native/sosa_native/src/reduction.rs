@@ -42,11 +42,11 @@ fn reduce_state(
     stats: &mut Stats,
 ) -> Result<ReductionOutcome, SosaError> {
     let started_at = stats.start_timer();
-    if !run_rr_queue(&instance, &mut state, stats) {
-        stats.rr_queue_time_ns += Stats::elapsed_ns(started_at);
+    if !run_rr_worklist(&instance, &mut state, stats) {
+        stats.rr_worklist_time_ns += Stats::elapsed_ns(started_at);
         return Ok(ReductionOutcome::Conflict);
     }
-    stats.rr_queue_time_ns += Stats::elapsed_ns(started_at);
+    stats.rr_worklist_time_ns += Stats::elapsed_ns(started_at);
 
     if state.deleted_count > 0 {
         stats.rr_deleted_vertices += state.deleted_count as u64;
@@ -68,11 +68,11 @@ fn reduce_borrowed_state(
     stats: &mut Stats,
 ) -> Result<ReductionOutcome, SosaError> {
     let started_at = stats.start_timer();
-    if !run_rr_queue(instance, &mut state, stats) {
-        stats.rr_queue_time_ns += Stats::elapsed_ns(started_at);
+    if !run_rr_worklist(instance, &mut state, stats) {
+        stats.rr_worklist_time_ns += Stats::elapsed_ns(started_at);
         return Ok(ReductionOutcome::Conflict);
     }
-    stats.rr_queue_time_ns += Stats::elapsed_ns(started_at);
+    stats.rr_worklist_time_ns += Stats::elapsed_ns(started_at);
 
     if state.deleted_count > 0 {
         stats.rr_deleted_vertices += state.deleted_count as u64;
@@ -95,11 +95,11 @@ pub fn reduce_exhaustively_with_partition(
 ) -> Result<PartitionedReductionOutcome, SosaError> {
     let mut state = ReductionState::from_instance(&instance);
     let started_at = stats.start_timer();
-    if !run_rr_queue(&instance, &mut state, stats) {
-        stats.rr_queue_time_ns += Stats::elapsed_ns(started_at);
+    if !run_rr_worklist(&instance, &mut state, stats) {
+        stats.rr_worklist_time_ns += Stats::elapsed_ns(started_at);
         return Ok(PartitionedReductionOutcome::Conflict);
     }
-    stats.rr_queue_time_ns += Stats::elapsed_ns(started_at);
+    stats.rr_worklist_time_ns += Stats::elapsed_ns(started_at);
 
     if state.deleted_count > 0 {
         stats.rr_deleted_vertices += state.deleted_count as u64;
@@ -133,11 +133,11 @@ pub fn reduce_allowed_with_partition(
 ) -> Result<PartitionedReductionOutcome, SosaError> {
     let mut state = ReductionState::from_allowed(instance, allowed)?;
     let started_at = stats.start_timer();
-    if !run_rr_queue(instance, &mut state, stats) {
-        stats.rr_queue_time_ns += Stats::elapsed_ns(started_at);
+    if !run_rr_worklist(instance, &mut state, stats) {
+        stats.rr_worklist_time_ns += Stats::elapsed_ns(started_at);
         return Ok(PartitionedReductionOutcome::Conflict);
     }
-    stats.rr_queue_time_ns += Stats::elapsed_ns(started_at);
+    stats.rr_worklist_time_ns += Stats::elapsed_ns(started_at);
 
     if state.deleted_count > 0 {
         stats.rr_deleted_vertices += state.deleted_count as u64;
@@ -163,8 +163,12 @@ pub fn reduce_allowed_with_partition(
     }
 }
 
-fn run_rr_queue(instance: &CircleInstance, state: &mut ReductionState, stats: &mut Stats) -> bool {
-    while let Some(vertex) = state.queue.pop() {
+fn run_rr_worklist(
+    instance: &CircleInstance,
+    state: &mut ReductionState,
+    stats: &mut Stats,
+) -> bool {
+    while let Some(vertex) = state.worklist.pop() {
         if !state.active_vertices.get(vertex as usize) {
             continue;
         }
@@ -262,7 +266,7 @@ fn apply_color_to_neighbor(
         return false;
     }
     if singleton_color(state.allowed[neighbor_index]).is_some() {
-        state.queue.push(neighbor);
+        state.worklist.push(neighbor);
     }
     true
 }
@@ -270,7 +274,7 @@ fn apply_color_to_neighbor(
 struct ReductionState {
     active_vertices: BitSet,
     allowed: Vec<ColorMask>,
-    queue: Vec<u32>,
+    worklist: Vec<u32>,
     lazy_endpoint_counts: Vec<u8>,
     lazy_touched: Vec<u32>,
     deleted_count: usize,
@@ -291,7 +295,7 @@ impl ReductionState {
     }
 
     fn from_allowed_unchecked(instance: &CircleInstance, allowed: Vec<ColorMask>) -> Self {
-        let queue = allowed
+        let worklist = allowed
             .iter()
             .enumerate()
             .filter_map(|(vertex, &mask)| singleton_color(mask).map(|_| vertex as u32))
@@ -299,7 +303,7 @@ impl ReductionState {
         Self {
             active_vertices: BitSet::full(instance.n),
             allowed,
-            queue,
+            worklist,
             lazy_endpoint_counts: if instance.has_adjacency() {
                 Vec::new()
             } else {
