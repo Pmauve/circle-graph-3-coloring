@@ -91,6 +91,41 @@ are `SGE_RESOURCE=bc1`, `INSTANCE_H_VMEM=2G`, `TRIAL_H_VMEM=8G`, and
 predecessor jobs to finish, but they do not assert that every array task
 produced successful benchmark outputs.
 
+### Sequence Runs
+
+Large native `.col` instances can exceed user quota if all generated artifacts
+are kept until the end of the run. For plans whose instance rows have
+`sequence_id`, use the sequence task instead of separate instance and trial
+arrays:
+
+```bash
+RUN_ID=my-sequence-run
+SEQUENCE_COUNT="$(python - <<'PY'
+from pathlib import Path
+from three_col_circle_code.bench.generate_instance import planned_instance_sequence_count
+print(planned_instance_sequence_count(Path("eval/benchmark_plans") / "my-sequence-run"))
+PY
+)"
+
+qsub -N "${RUN_ID}-seq" \
+  -cwd -V -o logs -e logs -r y \
+  -l bc1 -l h_vmem=16G \
+  -t "1-${SEQUENCE_COUNT}:1" \
+  -v RUN_ID="$RUN_ID" \
+  scripts/benchmark_cluster/sequence_task.sh
+```
+
+Each sequence task generates one native sequence, runs all planned trials for
+the instances in that sequence, then deletes the generated `.col` files and
+their `.validation.json` sidecars. It keeps `eval/benchmark_plans/<run-id>` and
+`eval/benchmark_work/<run-id>` intact so `benchmark_status`, `benchmark_merge`,
+and failure diagnostics still work normally. Set `KEEP_INSTANCES=1` to keep the
+generated `.col` files for debugging.
+
+The current native sequence generator writes the full sequence before Python can
+delete individual instances, so peak disk usage is still one sequence. Keep each
+`sequence_id` group small enough to fit quota.
+
 ## Outputs
 
 ```text
