@@ -16,7 +16,7 @@ where
     let mut tail = 0usize;
     let mut emitted = 0usize;
 
-    for &raw_vertex in &geometry.circle_order {
+    for &raw_vertex in &geometry.chord_endpoint_order {
         let vertex = raw_vertex as usize;
         if !seen_once[vertex] {
             seen_once[vertex] = true;
@@ -75,7 +75,7 @@ mod tests {
         let geometry = DimacsCircleGeometry {
             n: 3,
             m_declared: 3,
-            circle_order: vec![1, 2, 3, 1, 2, 3],
+            chord_endpoint_order: vec![1, 2, 3, 1, 2, 3],
         };
         let mut edges = Vec::new();
 
@@ -94,7 +94,7 @@ mod tests {
         let geometry = DimacsCircleGeometry {
             n: 2,
             m_declared: 1,
-            circle_order: vec![1, 1, 2, 2],
+            chord_endpoint_order: vec![1, 1, 2, 2],
         };
 
         let error = visit_circle_crossing_edges(&geometry, |_u, _v| Ok(())).unwrap_err();
