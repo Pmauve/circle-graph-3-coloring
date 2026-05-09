@@ -9,14 +9,19 @@ use crate::stats::Stats;
 use crate::{SolveConfig, SolveStatus, SolveSummary};
 use circle_core::dimacs_circle::{read_dimacs_circle, read_dimacs_circle_geometry_skip_edges};
 use circle_core::error::SosaError;
-use circle_core::instance::CircleInstance;
+use circle_core::instance::{CircleInstance, ListedEdgeMode};
 
 pub fn solve_dimacs_circle_file(
     path: &Path,
     config: SolveConfig,
 ) -> Result<SolveSummary, SosaError> {
     let parse_started = Instant::now();
-    let geometry = if !config.validate_graph && config.lazy_circle_neighbors {
+    let geometry = if config.input_mode == crate::SosaInputMode::LazyCircleNeighbors {
+        if config.validate_graph {
+            return Err(SosaError::Input(
+                "lazy-circle-neighbors requires --skip-graph-validation".to_string(),
+            ));
+        }
         Some(read_dimacs_circle_geometry_skip_edges(path)?)
     } else {
         None
@@ -29,14 +34,14 @@ pub fn solve_dimacs_circle_file(
     let parse_time_s = parse_started.elapsed().as_secs_f64();
 
     let build_started = Instant::now();
-    let instance = if config.lazy_circle_neighbors && geometry.is_some() {
-        CircleInstance::from_dimacs_geometry_without_adjacency(
-            geometry.expect("geometry must be parsed when validation is disabled"),
-        )?
+    let instance = if let Some(geometry) = geometry {
+        debug_assert_eq!(config.input_mode, crate::SosaInputMode::LazyCircleNeighbors);
+        CircleInstance::from_dimacs_geometry_without_adjacency(geometry)?
     } else {
-        CircleInstance::from_dimacs_with_crossing_validation(
+        CircleInstance::from_dimacs_with_listed_edge_mode(
             dimacs.expect("DIMACS instance must be parsed when lazy geometry is disabled"),
             config.validate_graph,
+            listed_edge_mode(config),
         )?
     };
     let build_time_s = build_started.elapsed().as_secs_f64();
@@ -44,7 +49,7 @@ pub fn solve_dimacs_circle_file(
     let started = Instant::now();
     let mut stats = Stats::with_profile_timers(config.profile);
     stats.set_disable_branch_dedup(config.disable_branch_dedup);
-    stats.set_lazy_circle_neighbors(config.lazy_circle_neighbors);
+    stats.set_lazy_circle_neighbors(config.input_mode == crate::SosaInputMode::LazyCircleNeighbors);
     let status = if solve_instance_recursively(instance, config, &mut stats, 0)? {
         SolveStatus::Colorable
     } else {
@@ -62,6 +67,16 @@ pub fn solve_dimacs_circle_file(
         stats,
         error: None,
     })
+}
+
+fn listed_edge_mode(config: SolveConfig) -> ListedEdgeMode {
+    match config.input_mode {
+        crate::SosaInputMode::StrictListedEdges => ListedEdgeMode::Strict,
+        crate::SosaInputMode::TrustedListedEdges => ListedEdgeMode::Trusted,
+        crate::SosaInputMode::LazyCircleNeighbors => {
+            unreachable!("lazy circle-neighbor mode does not build listed-edge adjacency")
+        }
+    }
 }
 
 fn solve_instance_recursively(
@@ -161,10 +176,10 @@ e 2 3
             SolveConfig {
                 base_case_n: 3,
                 base_case_algorithm: crate::BaseCaseAlgorithm::Backtracking,
+                input_mode: crate::SosaInputMode::StrictListedEdges,
                 validate_graph: true,
                 profile: false,
                 disable_branch_dedup: false,
-                lazy_circle_neighbors: false,
             },
         )
         .unwrap();
@@ -196,10 +211,10 @@ e 3 4
             SolveConfig {
                 base_case_n: 4,
                 base_case_algorithm: crate::BaseCaseAlgorithm::Backtracking,
+                input_mode: crate::SosaInputMode::StrictListedEdges,
                 validate_graph: true,
                 profile: false,
                 disable_branch_dedup: false,
-                lazy_circle_neighbors: false,
             },
         )
         .unwrap();
@@ -228,10 +243,10 @@ e 2 3
             SolveConfig {
                 base_case_n: 2,
                 base_case_algorithm: crate::BaseCaseAlgorithm::Backtracking,
+                input_mode: crate::SosaInputMode::StrictListedEdges,
                 validate_graph: true,
                 profile: false,
                 disable_branch_dedup: false,
-                lazy_circle_neighbors: false,
             },
         )
         .unwrap();
@@ -258,10 +273,10 @@ e 1 2
             SolveConfig {
                 base_case_n: 2,
                 base_case_algorithm: crate::BaseCaseAlgorithm::Backtracking,
+                input_mode: crate::SosaInputMode::StrictListedEdges,
                 validate_graph: true,
                 profile: false,
                 disable_branch_dedup: false,
-                lazy_circle_neighbors: false,
             },
         );
         assert!(strict.unwrap_err().to_string().contains("does not match"));
@@ -271,10 +286,10 @@ e 1 2
             SolveConfig {
                 base_case_n: 2,
                 base_case_algorithm: crate::BaseCaseAlgorithm::Backtracking,
+                input_mode: crate::SosaInputMode::StrictListedEdges,
                 validate_graph: false,
                 profile: false,
                 disable_branch_dedup: false,
-                lazy_circle_neighbors: false,
             },
         )
         .unwrap();

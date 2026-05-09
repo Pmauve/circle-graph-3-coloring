@@ -34,6 +34,7 @@ solvers:
     label: SOSA base=128
     params:
       base_case_n: 128
+      input_mode: trusted-listed-edges
       timeout_s: 3600
 ```
 
@@ -65,6 +66,28 @@ benchmark artifacts should already have been validated. The Rust solver still
 performs syntax, range, and circle-shape checks; the skipped part is the
 expensive crossing/edge consistency validation.
 
+The native solver supports three input modes:
+
+```text
+strict-listed-edges
+trusted-listed-edges
+lazy-circle-neighbors
+```
+
+`strict-listed-edges` is the safety/debug path. It parses listed edges,
+normalizes them, checks duplicates, sorts globally, builds CSR adjacency, and
+can run crossing validation.
+
+`trusted-listed-edges` is the optimized materialized-adjacency path for
+generator-canonical files. It requires listed edges to be strictly
+lexicographically sorted with `u < v`; non-canonical input fails instead of
+silently falling back.
+
+`lazy-circle-neighbors` parses only the circle geometry, skips listed edge
+parsing, and derives reduction-rule neighbors from endpoint order. It requires
+trial-time graph validation to be skipped and is the preferred SOSA wall-time
+benchmark mode on dense generated instances.
+
 Legacy JSON instance paths are exported to a temporary DIMACS-circle file before
 the Rust binary is invoked.
 
@@ -80,7 +103,7 @@ construction.
 Extra native counters are opt-in for profiling:
 
 ```bash
-sosa_native solve instance.col --base-case-n 512 --base-case-algorithm kissat-rustsat --stats
+sosa_native solve instance.col --base-case-n 512 --base-case-algorithm kissat-rustsat --input-mode trusted-listed-edges --skip-graph-validation --stats
 ```
 
 With `--stats`, the solver also prints `t` lines for solver calls, base-case

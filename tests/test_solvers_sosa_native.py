@@ -78,12 +78,14 @@ class NativeSosaSolverTests(unittest.TestCase):
         self.assertIn("8", command)
         self.assertIn("--base-case-algorithm", command)
         self.assertIn("cadical-rustsat", command)
+        self.assertIn("--input-mode", command)
+        self.assertIn("strict-listed-edges", command)
         self.assertIn("--skip-graph-validation", command)
         self.assertNotIn("--stats", command)
         self.assertNotIn("--lazy-circle-neighbors", command)
         self.assertEqual(result.details["base_case_algorithm"], "cadical-rustsat")
+        self.assertEqual(result.details["input_mode"], "strict-listed-edges")
         self.assertFalse(result.details["stats"])
-        self.assertFalse(result.details["lazy_circle_neighbors"])
         self.assertEqual(run.call_args.kwargs["timeout"], 12.0)
 
     def test_stats_flag_is_opt_in(self) -> None:
@@ -108,7 +110,7 @@ class NativeSosaSolverTests(unittest.TestCase):
         self.assertTrue(result.details["stats"])
         self.assertEqual(result.details["core_time_source"], "sosa_native_reported")
 
-    def test_lazy_circle_neighbors_flag_is_opt_in(self) -> None:
+    def test_input_mode_is_passed_to_native_binary(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             binary = Path(tmpdir) / "sosa_native"
             binary.write_text("", encoding="utf-8")
@@ -125,12 +127,13 @@ class NativeSosaSolverTests(unittest.TestCase):
             ) as run:
                 result = solve_sosa_3_col_native_from_path(
                     path,
-                    params={"lazy_circle_neighbors": True},
+                    params={"input_mode": "lazy-circle-neighbors"},
                 )
 
         self.assertEqual(result.status, SOLVER_STATUS_OK)
-        self.assertIn("--lazy-circle-neighbors", run.call_args.args[0])
-        self.assertTrue(result.details["lazy_circle_neighbors"])
+        self.assertIn("--input-mode", run.call_args.args[0])
+        self.assertIn("lazy-circle-neighbors", run.call_args.args[0])
+        self.assertEqual(result.details["input_mode"], "lazy-circle-neighbors")
 
     def test_rejects_unknown_base_case_algorithm(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -145,6 +148,20 @@ class NativeSosaSolverTests(unittest.TestCase):
 
         self.assertEqual(result.status, SOLVER_STATUS_ERROR)
         self.assertIn("base_case_algorithm", result.error or "")
+
+    def test_rejects_unknown_input_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            binary = Path(tmpdir) / "sosa_native"
+            binary.write_text("", encoding="utf-8")
+            path = _write_col(Path(tmpdir) / "triangle.col")
+            with patch.dict(os.environ, {"SOSA_NATIVE_BIN": str(binary)}):
+                result = solve_sosa_3_col_native_from_path(
+                    path,
+                    params={"input_mode": "vecvec"},
+                )
+
+        self.assertEqual(result.status, SOLVER_STATUS_ERROR)
+        self.assertIn("input_mode", result.error or "")
 
     def test_validate_instance_artifact_omits_skip_flag(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

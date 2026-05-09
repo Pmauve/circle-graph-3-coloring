@@ -38,13 +38,41 @@ impl BaseCaseAlgorithm {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SosaInputMode {
+    StrictListedEdges,
+    TrustedListedEdges,
+    LazyCircleNeighbors,
+}
+
+impl SosaInputMode {
+    pub fn parse(value: &str) -> Result<Self, circle_core::error::SosaError> {
+        match value {
+            "strict-listed-edges" => Ok(Self::StrictListedEdges),
+            "trusted-listed-edges" => Ok(Self::TrustedListedEdges),
+            "lazy-circle-neighbors" => Ok(Self::LazyCircleNeighbors),
+            other => Err(circle_core::error::SosaError::Input(format!(
+                "unsupported input mode {other:?}, expected \"strict-listed-edges\", \"trusted-listed-edges\", or \"lazy-circle-neighbors\""
+            ))),
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::StrictListedEdges => "strict-listed-edges",
+            Self::TrustedListedEdges => "trusted-listed-edges",
+            Self::LazyCircleNeighbors => "lazy-circle-neighbors",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SolveConfig {
     pub base_case_n: usize,
     pub base_case_algorithm: BaseCaseAlgorithm,
+    pub input_mode: SosaInputMode,
     pub validate_graph: bool,
     pub profile: bool,
     pub disable_branch_dedup: bool,
-    pub lazy_circle_neighbors: bool,
 }
 
 impl Default for SolveConfig {
@@ -52,10 +80,10 @@ impl Default for SolveConfig {
         Self {
             base_case_n: 128,
             base_case_algorithm: BaseCaseAlgorithm::Backtracking,
+            input_mode: SosaInputMode::StrictListedEdges,
             validate_graph: true,
             profile: false,
             disable_branch_dedup: false,
-            lazy_circle_neighbors: false,
         }
     }
 }

@@ -129,7 +129,7 @@
       "params": {
         "base_case_n": 128,
         "base_case_algorithm": "backtracking",
-        "lazy_circle_neighbors": false,
+        "input_mode": "trusted-listed-edges",
         "timeout_s": 1800
       }
     },
@@ -139,7 +139,7 @@
       "params": {
         "base_case_n": 128,
         "base_case_algorithm": "backtracking",
-        "lazy_circle_neighbors": true,
+        "input_mode": "lazy-circle-neighbors",
         "timeout_s": 1800
       }
     }

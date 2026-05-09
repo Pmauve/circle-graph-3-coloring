@@ -3,7 +3,8 @@ use std::path::PathBuf;
 
 use circle_core::error::SosaError;
 use sosa_native::{
-    solve_dimacs_circle_file, BaseCaseAlgorithm, SolveConfig, SolveStatus, SolveSummary, Stats,
+    solve_dimacs_circle_file, BaseCaseAlgorithm, SolveConfig, SolveStatus, SolveSummary,
+    SosaInputMode, Stats,
 };
 
 struct CliRun {
@@ -41,7 +42,7 @@ fn run() -> Result<CliRun, SosaError> {
     }
     if args.len() < 2 || args[0] != "solve" {
         return Err(SosaError::Input(
-            "usage: sosa_native solve <instance.col> [--base-case-n N] [--base-case-algorithm backtracking|cadical-rustsat|kissat-rustsat] [--skip-graph-validation] [--stats] [--disable-branch-dedup] [--lazy-circle-neighbors]"
+                "usage: sosa_native solve <instance.col> [--base-case-n N] [--base-case-algorithm backtracking|cadical-rustsat|kissat-rustsat] [--input-mode strict-listed-edges|trusted-listed-edges|lazy-circle-neighbors] [--skip-graph-validation] [--stats] [--disable-branch-dedup]"
                 .to_string(),
         ));
     }
@@ -68,6 +69,13 @@ fn run() -> Result<CliRun, SosaError> {
                 config.base_case_algorithm = BaseCaseAlgorithm::parse(raw_value)?;
                 index += 2;
             }
+            "--input-mode" => {
+                let raw_value = args
+                    .get(index + 1)
+                    .ok_or_else(|| SosaError::Input("--input-mode requires a value".to_string()))?;
+                config.input_mode = SosaInputMode::parse(raw_value)?;
+                index += 2;
+            }
             "--skip-graph-validation" => {
                 config.validate_graph = false;
                 index += 1;
@@ -79,10 +87,6 @@ fn run() -> Result<CliRun, SosaError> {
             }
             "--disable-branch-dedup" => {
                 config.disable_branch_dedup = true;
-                index += 1;
-            }
-            "--lazy-circle-neighbors" => {
-                config.lazy_circle_neighbors = true;
                 index += 1;
             }
             unknown => {
@@ -98,7 +102,7 @@ fn run() -> Result<CliRun, SosaError> {
 }
 
 fn print_help() {
-    println!("usage: sosa_native solve <instance.col> [--base-case-n N] [--base-case-algorithm backtracking|cadical-rustsat|kissat-rustsat] [--skip-graph-validation] [--stats] [--disable-branch-dedup] [--lazy-circle-neighbors]");
+    println!("usage: sosa_native solve <instance.col> [--base-case-n N] [--base-case-algorithm backtracking|cadical-rustsat|kissat-rustsat] [--input-mode strict-listed-edges|trusted-listed-edges|lazy-circle-neighbors] [--skip-graph-validation] [--stats] [--disable-branch-dedup]");
 }
 
 fn print_summary(summary: &SolveSummary, print_stats: bool) {

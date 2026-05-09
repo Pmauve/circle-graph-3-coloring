@@ -17,6 +17,12 @@ pub struct CircleInstance {
     pub allowed: Vec<ColorMask>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ListedEdgeMode {
+    Strict,
+    Trusted,
+}
+
 impl CircleInstance {
     pub fn from_dimacs(dimacs: DimacsCircle) -> Result<Self, SosaError> {
         Self::from_dimacs_with_crossing_validation(dimacs, true)
@@ -26,34 +32,30 @@ impl CircleInstance {
         dimacs: DimacsCircle,
         validate_crossings: bool,
     ) -> Result<Self, SosaError> {
-        let (endpoint_at, left, right) = build_endpoint_geometry(dimacs.n, &dimacs.chord_endpoint_order)?;
-        let mut edges = Vec::with_capacity(dimacs.edges.len());
-        let mut seen = HashSet::with_capacity(dimacs.edges.len());
-        for (u_dimacs, v_dimacs) in dimacs.edges {
-            let u = u_dimacs - 1;
-            let v = v_dimacs - 1;
-            if u == v {
-                return Err(SosaError::Input(format!("self-loop on vertex {u_dimacs}")));
-            }
-            let edge = if u < v { (u, v) } else { (v, u) };
-            if !seen.insert(edge) {
-                return Err(SosaError::Input(format!(
-                    "duplicate edge {} {}",
-                    edge.0 + 1,
-                    edge.1 + 1
-                )));
-            }
-            edges.push(edge);
-        }
-        edges.sort_unstable();
+        Self::from_dimacs_with_listed_edge_mode(dimacs, validate_crossings, ListedEdgeMode::Strict)
+    }
 
-        let instance = Self::from_parts(
+    pub fn from_dimacs_with_listed_edge_mode(
+        dimacs: DimacsCircle,
+        validate_crossings: bool,
+        listed_edge_mode: ListedEdgeMode,
+    ) -> Result<Self, SosaError> {
+        let (endpoint_at, left, right) =
+            build_endpoint_geometry(dimacs.n, &dimacs.chord_endpoint_order)?;
+        let edges = match listed_edge_mode {
+            ListedEdgeMode::Strict => normalize_edges_strict(dimacs.n, dimacs.edges)?,
+            ListedEdgeMode::Trusted => normalize_edges_trusted(dimacs.n, dimacs.edges)?,
+        };
+
+        let sort_neighbors = listed_edge_mode == ListedEdgeMode::Strict;
+        let instance = Self::from_parts_with_neighbor_sort(
             dimacs.n,
             endpoint_at,
             left,
             right,
             &edges,
             vec![ALL_COLORS; dimacs.n],
+            sort_neighbors,
         )?;
         if validate_crossings {
             instance.validate_edge_crossings(&edges)?;
@@ -119,7 +121,19 @@ impl CircleInstance {
         edges: &[(u32, u32)],
         allowed: Vec<ColorMask>,
     ) -> Result<Self, SosaError> {
-        let (adj_offsets, adj) = build_csr(n, edges)?;
+        Self::from_parts_with_neighbor_sort(n, endpoint_at, left, right, edges, allowed, true)
+    }
+
+    fn from_parts_with_neighbor_sort(
+        n: usize,
+        endpoint_at: Vec<u32>,
+        left: Vec<u32>,
+        right: Vec<u32>,
+        edges: &[(u32, u32)],
+        allowed: Vec<ColorMask>,
+        sort_neighbors: bool,
+    ) -> Result<Self, SosaError> {
+        let (adj_offsets, adj) = build_csr(n, edges, sort_neighbors)?;
         Ok(Self {
             n,
             endpoint_at,
@@ -158,7 +172,7 @@ impl CircleInstance {
                 }
             }
         }
-        let (adj_offsets, adj) = build_csr(self.n, &edges)?;
+        let (adj_offsets, adj) = build_csr(self.n, &edges, true)?;
         self.adj_offsets = adj_offsets;
         self.adj = adj;
         Ok(())
@@ -413,7 +427,11 @@ impl CircleInstance {
     }
 }
 
-fn build_csr(n: usize, edges: &[(u32, u32)]) -> Result<(Vec<u32>, Vec<u32>), SosaError> {
+fn build_csr(
+    n: usize,
+    edges: &[(u32, u32)],
+    sort_neighbors: bool,
+) -> Result<(Vec<u32>, Vec<u32>), SosaError> {
     let mut degree = vec![0usize; n];
     for &(u, v) in edges {
         if u as usize >= n || v as usize >= n {
@@ -442,12 +460,77 @@ fn build_csr(n: usize, edges: &[(u32, u32)]) -> Result<(Vec<u32>, Vec<u32>), Sos
         adj[v_index] = u;
         cursor[v as usize] += 1;
     }
-    for vertex in 0..n {
-        let start = adj_offsets[vertex] as usize;
-        let end = adj_offsets[vertex + 1] as usize;
-        adj[start..end].sort_unstable();
+    if sort_neighbors {
+        for vertex in 0..n {
+            let start = adj_offsets[vertex] as usize;
+            let end = adj_offsets[vertex + 1] as usize;
+            adj[start..end].sort_unstable();
+        }
     }
     Ok((adj_offsets, adj))
+}
+
+fn normalize_edges_strict(
+    n: usize,
+    raw_edges: Vec<(u32, u32)>,
+) -> Result<Vec<(u32, u32)>, SosaError> {
+    let mut edges = Vec::with_capacity(raw_edges.len());
+    let mut seen = HashSet::with_capacity(raw_edges.len());
+    let n_u32 = n as u32;
+    for (u_dimacs, v_dimacs) in raw_edges {
+        if u_dimacs == 0 || u_dimacs > n_u32 || v_dimacs == 0 || v_dimacs > n_u32 {
+            return Err(SosaError::Input(
+                "edge endpoint outside local vertex range".to_string(),
+            ));
+        }
+        let u = u_dimacs - 1;
+        let v = v_dimacs - 1;
+        if u == v {
+            return Err(SosaError::Input(format!("self-loop on vertex {u_dimacs}")));
+        }
+        let edge = if u < v { (u, v) } else { (v, u) };
+        if !seen.insert(edge) {
+            return Err(SosaError::Input(format!(
+                "duplicate edge {} {}",
+                edge.0 + 1,
+                edge.1 + 1
+            )));
+        }
+        edges.push(edge);
+    }
+    edges.sort_unstable();
+    Ok(edges)
+}
+
+fn normalize_edges_trusted(
+    n: usize,
+    raw_edges: Vec<(u32, u32)>,
+) -> Result<Vec<(u32, u32)>, SosaError> {
+    let mut edges = Vec::with_capacity(raw_edges.len());
+    let mut previous: Option<(u32, u32)> = None;
+    let n_u32 = n as u32;
+    for (u_dimacs, v_dimacs) in raw_edges {
+        if u_dimacs == 0 || u_dimacs > n_u32 || v_dimacs == 0 || v_dimacs > n_u32 {
+            return Err(SosaError::Input(
+                "edge endpoint outside local vertex range".to_string(),
+            ));
+        }
+        if u_dimacs >= v_dimacs {
+            return Err(SosaError::Input(format!(
+                "trusted edge input must use sorted non-loop edges, got {u_dimacs} {v_dimacs}"
+            )));
+        }
+        let edge = (u_dimacs - 1, v_dimacs - 1);
+        if previous.is_some_and(|previous| previous >= edge) {
+            return Err(SosaError::Input(format!(
+                "trusted edge input must be strictly lexicographically sorted at edge {} {}",
+                u_dimacs, v_dimacs
+            )));
+        }
+        previous = Some(edge);
+        edges.push(edge);
+    }
+    Ok(edges)
 }
 
 #[cfg(test)]
@@ -561,6 +644,58 @@ e 1 2
             .unwrap_err()
             .to_string()
             .contains("duplicate"));
+    }
+
+    #[test]
+    fn trusted_listed_edges_reject_non_canonical_order() {
+        let dimacs = parse_dimacs_circle(
+            "\
+c hord endpoint order START
+c 1 2 3 1 2 3
+c hord endpoint order END
+p edge 3 3
+e 1 3
+e 1 2
+e 2 3
+",
+        )
+        .unwrap();
+
+        assert!(CircleInstance::from_dimacs_with_listed_edge_mode(
+            dimacs,
+            false,
+            ListedEdgeMode::Trusted
+        )
+        .unwrap_err()
+        .to_string()
+        .contains("lexicographically sorted"));
+    }
+
+    #[test]
+    fn trusted_listed_edges_build_sorted_neighbors_from_canonical_order() {
+        let dimacs = parse_dimacs_circle(
+            "\
+c hord endpoint order START
+c 1 2 3 1 2 3
+c hord endpoint order END
+p edge 3 3
+e 1 2
+e 1 3
+e 2 3
+",
+        )
+        .unwrap();
+
+        let instance = CircleInstance::from_dimacs_with_listed_edge_mode(
+            dimacs,
+            false,
+            ListedEdgeMode::Trusted,
+        )
+        .unwrap();
+
+        assert_eq!(instance.neighbors(0), &[1, 2]);
+        assert_eq!(instance.neighbors(1), &[0, 2]);
+        assert_eq!(instance.neighbors(2), &[0, 1]);
     }
 
     #[test]

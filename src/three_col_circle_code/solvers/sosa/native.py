@@ -24,9 +24,14 @@ IMPLEMENTATION_STATUS = "native-rust-file-backend"
 DEFAULT_BASE_CASE_N = 128
 DEFAULT_BASE_CASE_ALGORITHM = "backtracking"
 SUPPORTED_BASE_CASE_ALGORITHMS = ("backtracking", "cadical-rustsat", "kissat-rustsat")
+DEFAULT_INPUT_MODE = "strict-listed-edges"
+SUPPORTED_INPUT_MODES = (
+    "strict-listed-edges",
+    "trusted-listed-edges",
+    "lazy-circle-neighbors",
+)
 DEFAULT_TIMEOUT_S = 3600.0
 DEFAULT_STATS = False
-DEFAULT_LAZY_CIRCLE_NEIGHBORS = False
 
 
 def solve_sosa_3_col_native_from_path(
@@ -42,9 +47,9 @@ def solve_sosa_3_col_native_from_path(
     try:
         base_case_n = _parse_base_case_n(config)
         base_case_algorithm = _parse_base_case_algorithm(config)
+        input_mode = _parse_input_mode(config)
         timeout_s = _parse_timeout_s(config)
         stats = _parse_stats(config)
-        lazy_circle_neighbors = _parse_lazy_circle_neighbors(config)
     except ValueError as exc:
         return _error_result(
             n_vertices=n_vertices,
@@ -64,9 +69,9 @@ def solve_sosa_3_col_native_from_path(
         "binary": binary,
         "base_case_n": base_case_n,
         "base_case_algorithm": base_case_algorithm,
+        "input_mode": input_mode,
         "timeout_s": timeout_s,
         "stats": stats,
-        "lazy_circle_neighbors": lazy_circle_neighbors,
         "skip_graph_validation": not validate_instance_artifact,
     }
 
@@ -87,9 +92,9 @@ def solve_sosa_3_col_native_from_path(
                 m_edges=m_edges,
                 base_case_n=base_case_n,
                 base_case_algorithm=base_case_algorithm,
+                input_mode=input_mode,
                 timeout_s=timeout_s,
                 stats=stats,
-                lazy_circle_neighbors=lazy_circle_neighbors,
                 validate_instance_artifact=validate_instance_artifact,
                 details=details,
             )
@@ -110,9 +115,9 @@ def _run_native_binary(
     m_edges: int,
     base_case_n: int,
     base_case_algorithm: str,
+    input_mode: str,
     timeout_s: float,
     stats: bool,
-    lazy_circle_neighbors: bool,
     validate_instance_artifact: bool,
     details: dict[str, Any],
 ) -> SolverResult:
@@ -124,13 +129,13 @@ def _run_native_binary(
         str(base_case_n),
         "--base-case-algorithm",
         base_case_algorithm,
+        "--input-mode",
+        input_mode,
     ]
     if not validate_instance_artifact:
         command.append("--skip-graph-validation")
     if stats:
         command.append("--stats")
-    if lazy_circle_neighbors:
-        command.append("--lazy-circle-neighbors")
 
     started_at = perf_counter()
     try:
@@ -268,6 +273,16 @@ def _parse_base_case_algorithm(config: Mapping[str, Any]) -> str:
     return value
 
 
+def _parse_input_mode(config: Mapping[str, Any]) -> str:
+    value = str(config.get("input_mode", DEFAULT_INPUT_MODE))
+    if value not in SUPPORTED_INPUT_MODES:
+        raise ValueError(
+            "native SOSA parameter 'input_mode' must be one of "
+            f"{SUPPORTED_INPUT_MODES!r}"
+        )
+    return value
+
+
 def _parse_timeout_s(config: Mapping[str, Any]) -> float:
     raw_value = config.get("timeout_s", DEFAULT_TIMEOUT_S)
     try:
@@ -281,14 +296,6 @@ def _parse_timeout_s(config: Mapping[str, Any]) -> float:
 
 def _parse_stats(config: Mapping[str, Any]) -> bool:
     return _parse_bool_param(config, "stats", DEFAULT_STATS)
-
-
-def _parse_lazy_circle_neighbors(config: Mapping[str, Any]) -> bool:
-    return _parse_bool_param(
-        config,
-        "lazy_circle_neighbors",
-        DEFAULT_LAZY_CIRCLE_NEIGHBORS,
-    )
 
 
 def _parse_bool_param(config: Mapping[str, Any], name: str, default: bool) -> bool:
