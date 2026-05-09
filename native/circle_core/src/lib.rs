@@ -1,5 +1,6 @@
 pub mod bitset;
 pub mod colors;
+pub mod crossing_edges;
 pub mod dimacs_circle;
 pub mod dimacs_edge;
 pub mod error;

@@ -53,9 +53,10 @@ class NativeSatSolverTests(unittest.TestCase):
                 returncode=0,
                 stdout=(
                     '{"status":"ok","solver_status":"COLORABLE",'
-                    '"core_time_s":0.030,'
-                    '"build_time_s":0.020,'
-                    '"solve_time_s":0.030}\n'
+                    '"edge_source":"listed_edges",'
+                    '"load_prepare_time_s":0.020,'
+                    '"solve_time_s":0.030,'
+                    '"total_native_time_s":0.050}\n'
                 ),
                 stderr="",
             )
@@ -73,12 +74,14 @@ class NativeSatSolverTests(unittest.TestCase):
 
         self.assertEqual(result.status, SOLVER_STATUS_OK)
         self.assertTrue(result.is_colorable)
-        self.assertEqual(result.core_time_s, 0.03)
-        self.assertEqual(result.details["build_time_s"], 0.02)
+        self.assertEqual(result.core_time_s, 0.05)
+        self.assertEqual(result.details["load_prepare_time_s"], 0.02)
         self.assertEqual(result.details["solve_time_s"], 0.03)
         command = run.call_args.args[0]
         self.assertEqual(command[:4], [str(binary), "sat", "solve", str(path)])
         self.assertIn("cadical-rustsat", command)
+        self.assertIn("--edge-source", command)
+        self.assertIn("listed_edges", command)
         self.assertNotIn("--solver-bin", command)
         self.assertEqual(run.call_args.kwargs["timeout"], 42.0)
 
@@ -97,7 +100,7 @@ class NativeSatSolverTests(unittest.TestCase):
                 returncode=0,
                 stdout=(
                     '{"status":"ok","solver_status":"COLORABLE",'
-                    '"core_time_s":0.020}\n'
+                    '"total_native_time_s":0.020}\n'
                 ),
                 stderr="",
             )
@@ -118,6 +121,42 @@ class NativeSatSolverTests(unittest.TestCase):
         self.assertNotIn("--solver-bin", command)
         self.assertNotIn("solver_bin", result.details)
 
+    def test_circle_crossings_edge_source_is_opt_in(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            binary = Path(tmpdir) / "three_col_native"
+            binary.write_text("", encoding="utf-8")
+            path = _write_col(Path(tmpdir) / "triangle.col")
+            completed = CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout=(
+                    '{"status":"ok","solver_status":"COLORABLE",'
+                    '"edge_source":"circle_crossings",'
+                    '"load_prepare_time_s":0.015,'
+                    '"load_time_s":0.005,'
+                    '"prepare_time_s":0.010,'
+                    '"solve_time_s":0.005,'
+                    '"total_native_time_s":0.020}\n'
+                ),
+                stderr="",
+            )
+            with patch.dict(os.environ, {"THREE_COL_NATIVE_BIN": str(binary)}), patch(
+                "three_col_circle_code.solvers.sat_native.subprocess.run",
+                return_value=completed,
+            ) as run:
+                result = solve_sat_3_col_native_from_path(
+                    path,
+                    params={"edge_source": "circle_crossings"},
+                )
+
+        self.assertEqual(result.status, SOLVER_STATUS_OK)
+        self.assertEqual(result.details["edge_source"], "circle_crossings")
+        self.assertEqual(result.details["load_time_s"], 0.005)
+        self.assertEqual(result.details["prepare_time_s"], 0.01)
+        command = run.call_args.args[0]
+        self.assertIn("--edge-source", command)
+        self.assertIn("circle_crossings", command)
+
     def test_parses_not_colorable_status(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             binary = Path(tmpdir) / "three_col_native"
@@ -126,7 +165,7 @@ class NativeSatSolverTests(unittest.TestCase):
             completed = CompletedProcess(
                 args=[],
                 returncode=0,
-                stdout="s NOT_COLORABLE\nt core_time_s 0.456\n",
+                stdout="s NOT_COLORABLE\nt total_native_time_s 0.456\n",
                 stderr="",
             )
             with patch.dict(os.environ, {"THREE_COL_NATIVE_BIN": str(binary)}), patch(
@@ -150,7 +189,7 @@ class NativeSatSolverTests(unittest.TestCase):
             completed = CompletedProcess(
                 args=[],
                 returncode=3,
-                stdout="s UNKNOWN\nt core_time_s 1.25\n",
+                stdout="s UNKNOWN\nt total_native_time_s 1.25\n",
                 stderr="",
             )
             with patch.dict(os.environ, {"THREE_COL_NATIVE_BIN": str(binary)}), patch(

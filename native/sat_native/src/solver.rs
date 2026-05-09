@@ -8,8 +8,14 @@ use crate::{SatConfig, SatStatus, SatSummary};
 
 pub fn solve_dimacs_edge_file(path: &Path, config: SatConfig) -> Result<SatSummary, SosaError> {
     match config.backend.as_str() {
-        "cadical-rustsat" => solve_dimacs_edge_file_with_rustsat_cadical(path, config.timeout_s),
-        "kissat-rustsat" => solve_dimacs_edge_file_with_kissat(path, config.timeout_s),
+        "cadical-rustsat" => solve_dimacs_edge_file_with_rustsat_cadical(
+            path,
+            config.timeout_s,
+            config.edge_source,
+        ),
+        "kissat-rustsat" => {
+            solve_dimacs_edge_file_with_kissat(path, config.timeout_s, config.edge_source)
+        }
         backend => Err(SosaError::Input(format!(
             "unsupported SAT backend {backend:?}, expected \"cadical-rustsat\" or \"kissat-rustsat\""
         ))),
@@ -31,6 +37,7 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::*;
+    use crate::EdgeSource;
 
     #[test]
     fn maps_status_to_native_output_tokens() {
@@ -47,6 +54,7 @@ mod tests {
             SatConfig {
                 backend: "other".to_string(),
                 timeout_s: None,
+                edge_source: EdgeSource::ListedEdges,
             },
         )
         .unwrap_err();
@@ -73,12 +81,13 @@ e 2 3
             SatConfig {
                 backend: "cadical-rustsat".to_string(),
                 timeout_s: Some(5),
+                edge_source: EdgeSource::ListedEdges,
             },
         )
         .unwrap();
 
         assert_eq!(summary.status, SatStatus::Colorable);
-        assert!(summary.core_time_s.is_some());
+        assert!(summary.total_native_time_s > 0.0);
         let _ = fs::remove_file(instance);
     }
 
@@ -100,12 +109,13 @@ e 2 3
             SatConfig {
                 backend: "kissat-rustsat".to_string(),
                 timeout_s: Some(5),
+                edge_source: EdgeSource::ListedEdges,
             },
         )
         .unwrap();
 
         assert_eq!(summary.status, SatStatus::Colorable);
-        assert!(summary.core_time_s.is_some());
+        assert!(summary.total_native_time_s > 0.0);
         let _ = fs::remove_file(instance);
     }
 

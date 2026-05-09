@@ -18,9 +18,11 @@ from three_col_circle_code.instances.native import THREE_COL_NATIVE_BIN_ENV
 
 
 SAT_3_COL_NATIVE_SOLVER = "sat-3-col-native"
-IMPLEMENTATION_STATUS = "native-rust-sat-v4"
+IMPLEMENTATION_STATUS = "native-rust-sat-v5"
 DEFAULT_BACKEND = "cadical-rustsat"
 SUPPORTED_BACKENDS = ("cadical-rustsat", "kissat-rustsat")
+DEFAULT_EDGE_SOURCE = "listed_edges"
+SUPPORTED_EDGE_SOURCES = ("listed_edges", "circle_crossings")
 DEFAULT_TIMEOUT_S = 3600.0
 PYTHON_TIMEOUT_GRACE_S = 30.0
 
@@ -38,6 +40,7 @@ def solve_sat_3_col_native_from_path(
         _reject_legacy_params(config)
         backend = _parse_backend(config)
         timeout_s = _parse_timeout_s(config)
+        edge_source = _parse_edge_source(config)
     except ValueError as exc:
         return _error_result(
             n_vertices=n_vertices,
@@ -57,6 +60,7 @@ def solve_sat_3_col_native_from_path(
         "binary": binary,
         "backend": backend,
         "timeout_s": timeout_s,
+        "edge_source": edge_source,
         "core_time_source": "missing",
     }
     if not binary or not Path(binary).is_file():
@@ -74,6 +78,8 @@ def solve_sat_3_col_native_from_path(
         str(instance_path),
         "--backend",
         backend,
+        "--edge-source",
+        edge_source,
         "--timeout-s",
         _format_timeout(timeout_s),
     ]
@@ -121,9 +127,9 @@ def solve_sat_3_col_native_from_path(
         }
     )
     details.update(timings)
-    core_time_s = timings.get("core_time_s")
+    core_time_s = timings.get("total_native_time_s")
     if core_time_s is not None:
-        details["core_time_source"] = "sat_native_reported"
+        details["core_time_source"] = "sat_native_total"
 
     allowed_unknown_exit = completed.returncode == 3 and status_line == "UNKNOWN"
     if (
@@ -205,6 +211,13 @@ def _parse_timeout_s(config: Mapping[str, Any]) -> float:
     return value
 
 
+def _parse_edge_source(config: Mapping[str, Any]) -> str:
+    edge_source = str(config.get("edge_source", DEFAULT_EDGE_SOURCE))
+    if edge_source not in SUPPORTED_EDGE_SOURCES:
+        raise ValueError(f"native SAT edge_source must be one of {SUPPORTED_EDGE_SOURCES!r}")
+    return edge_source
+
+
 def _resolve_native_binary() -> Optional[str]:
     configured = os.environ.get(THREE_COL_NATIVE_BIN_ENV)
     if configured:
@@ -227,7 +240,13 @@ def _parse_native_stdout(
         if solver_status is None:
             return None, {}, "native SAT JSON output is missing solver_status"
         timings = {}
-        for key in ("core_time_s", "parse_time_s", "build_time_s", "solve_time_s"):
+        for key in (
+            "load_prepare_time_s",
+            "load_time_s",
+            "prepare_time_s",
+            "solve_time_s",
+            "total_native_time_s",
+        ):
             if key in payload:
                 try:
                     timings[key] = float(payload[key])
@@ -244,10 +263,11 @@ def _parse_native_stdout(
         if parts[:1] == ["s"] and len(parts) == 2:
             status = parts[1]
         elif parts[:1] == ["t"] and len(parts) == 3 and parts[1] in {
-            "core_time_s",
-            "parse_time_s",
-            "build_time_s",
+            "load_prepare_time_s",
+            "load_time_s",
+            "prepare_time_s",
             "solve_time_s",
+            "total_native_time_s",
         }:
             try:
                 timings[parts[1]] = float(parts[2])

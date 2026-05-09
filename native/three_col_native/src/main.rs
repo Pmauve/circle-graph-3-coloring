@@ -9,7 +9,7 @@ use circle_core::instance_check::{
     inspect_dimacs_circle_file, validate_dimacs_circle_file, InstanceSummary,
 };
 use sat_native::solver::status_to_output;
-use sat_native::{solve_dimacs_edge_file, SatConfig, SatStatus, SatSummary};
+use sat_native::{solve_dimacs_edge_file, EdgeSource, SatConfig, SatStatus, SatSummary};
 
 fn main() {
     let exit_code = match run() {
@@ -229,7 +229,7 @@ impl GenerateOptions {
 fn run_sat(args: &[String]) -> Result<(String, i32), SosaError> {
     if args.len() < 2 || args[0] != "solve" {
         return Err(SosaError::Input(
-            "usage: three_col_native sat solve <instance.col> [--backend cadical-rustsat|kissat-rustsat] [--timeout-s N]"
+            "usage: three_col_native sat solve <instance.col> [--backend cadical-rustsat|kissat-rustsat] [--edge-source listed_edges|circle_crossings] [--timeout-s N]"
                 .to_string(),
         ));
     }
@@ -238,6 +238,7 @@ fn run_sat(args: &[String]) -> Result<(String, i32), SosaError> {
     let mut config = SatConfig {
         backend: "cadical-rustsat".to_string(),
         timeout_s: None,
+        edge_source: EdgeSource::ListedEdges,
     };
     let mut index = 2;
     while index < args.len() {
@@ -251,6 +252,11 @@ fn run_sat(args: &[String]) -> Result<(String, i32), SosaError> {
                 config.timeout_s = Some(raw_value.parse::<u64>().map_err(|_| {
                     SosaError::Input(format!("invalid --timeout-s value {raw_value:?}"))
                 })?);
+                index += 2;
+            }
+            "--edge-source" => {
+                config.edge_source =
+                    EdgeSource::parse(required_value(args, index, "--edge-source")?)?;
                 index += 2;
             }
             unknown => {
@@ -306,15 +312,15 @@ fn sat_summary_text(summary: &SatSummary) -> String {
     let mut fields = vec![
         json_pair("status", "ok"),
         json_pair("solver_status", status_to_output(summary.status)),
+        json_pair("edge_source", summary.edge_source.as_str()),
+        format!("\"load_prepare_time_s\":{:.6}", summary.load_prepare_time_s),
+        format!("\"total_native_time_s\":{:.6}", summary.total_native_time_s),
     ];
-    if let Some(core_time_s) = summary.core_time_s {
-        fields.push(format!("\"core_time_s\":{core_time_s:.6}"));
+    if let Some(load_time_s) = summary.load_time_s {
+        fields.push(format!("\"load_time_s\":{load_time_s:.6}"));
     }
-    if let Some(parse_time_s) = summary.parse_time_s {
-        fields.push(format!("\"parse_time_s\":{parse_time_s:.6}"));
-    }
-    if let Some(build_time_s) = summary.build_time_s {
-        fields.push(format!("\"build_time_s\":{build_time_s:.6}"));
+    if let Some(prepare_time_s) = summary.prepare_time_s {
+        fields.push(format!("\"prepare_time_s\":{prepare_time_s:.6}"));
     }
     if let Some(solve_time_s) = summary.solve_time_s {
         fields.push(format!("\"solve_time_s\":{solve_time_s:.6}"));
@@ -432,16 +438,18 @@ mod tests {
     fn renders_sat_summary_text() {
         let summary = SatSummary {
             status: SatStatus::Colorable,
-            core_time_s: Some(0.3),
-            parse_time_s: Some(0.1),
-            build_time_s: Some(0.2),
+            edge_source: EdgeSource::CircleCrossings,
+            load_prepare_time_s: 0.3,
+            load_time_s: Some(0.1),
+            prepare_time_s: Some(0.2),
             solve_time_s: Some(0.3),
+            total_native_time_s: 0.6,
             error: None,
         };
 
         assert_eq!(
             sat_summary_text(&summary),
-            "{\"status\":\"ok\",\"solver_status\":\"COLORABLE\",\"core_time_s\":0.300000,\"parse_time_s\":0.100000,\"build_time_s\":0.200000,\"solve_time_s\":0.300000}"
+            "{\"status\":\"ok\",\"solver_status\":\"COLORABLE\",\"edge_source\":\"circle_crossings\",\"load_prepare_time_s\":0.300000,\"total_native_time_s\":0.600000,\"load_time_s\":0.100000,\"prepare_time_s\":0.200000,\"solve_time_s\":0.300000}"
         );
     }
 }
