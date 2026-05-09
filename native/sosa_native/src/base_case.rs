@@ -289,9 +289,9 @@ mod tests {
     fn solves_triangle() {
         let instance = instance_from_text(
             "\
-c ircle representation START
+c hord endpoint order START
 c 1 2 3 1 2 3
-c ircle representation END
+c hord endpoint order END
 p edge 3 3
 e 1 2
 e 1 3
@@ -311,9 +311,9 @@ e 2 3
     fn rejects_k4() {
         let instance = instance_from_text(
             "\
-c ircle representation START
+c hord endpoint order START
 c 1 2 3 4 1 2 3 4
-c ircle representation END
+c hord endpoint order END
 p edge 4 6
 e 1 2
 e 1 3
@@ -336,9 +336,9 @@ e 3 4
     fn solves_path() {
         let instance = instance_from_text(
             "\
-c ircle representation START
+c hord endpoint order START
 c 1 2 1 3 2 3
-c ircle representation END
+c hord endpoint order END
 p edge 3 2
 e 1 2
 e 2 3
@@ -357,9 +357,9 @@ e 2 3
     fn respects_list_color_restrictions() {
         let mut instance = instance_from_text(
             "\
-c ircle representation START
+c hord endpoint order START
 c 1 2 1 2
-c ircle representation END
+c hord endpoint order END
 p edge 2 1
 e 1 2
 ",
@@ -387,9 +387,9 @@ e 1 2
     fn records_search_stats() {
         let instance = instance_from_text(
             "\
-c ircle representation START
+c hord endpoint order START
 c 1 1
-c ircle representation END
+c hord endpoint order END
 p edge 1 0
 ",
         );
@@ -404,9 +404,9 @@ p edge 1 0
     fn rejects_empty_allowed_mask() {
         let mut instance = instance_from_text(
             "\
-c ircle representation START
+c hord endpoint order START
 c 1 1
-c ircle representation END
+c hord endpoint order END
 p edge 1 0
 ",
         );
@@ -426,9 +426,9 @@ p edge 1 0
         let mut instances = Vec::new();
         instances.push(instance_from_text(
             "\
-c ircle representation START
+c hord endpoint order START
 c 1 2 3 1 2 3
-c ircle representation END
+c hord endpoint order END
 p edge 3 3
 e 1 2
 e 1 3
@@ -437,9 +437,9 @@ e 2 3
         ));
         let mut restricted = instance_from_text(
             "\
-c ircle representation START
+c hord endpoint order START
 c 1 2 1 2
-c ircle representation END
+c hord endpoint order END
 p edge 2 1
 e 1 2
 ",

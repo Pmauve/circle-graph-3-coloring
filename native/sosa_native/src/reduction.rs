@@ -401,9 +401,9 @@ mod tests {
     fn edge_instance() -> CircleInstance {
         let dimacs = parse_dimacs_circle(
             "\
-c ircle representation START
+c hord endpoint order START
 c 1 2 1 2
-c ircle representation END
+c hord endpoint order END
 p edge 2 1
 e 1 2
 ",
@@ -415,9 +415,9 @@ e 1 2
     fn path_instance() -> CircleInstance {
         let dimacs = parse_dimacs_circle(
             "\
-c ircle representation START
+c hord endpoint order START
 c 1 2 1 3 2 3
-c ircle representation END
+c hord endpoint order END
 p edge 3 2
 e 1 2
 e 2 3

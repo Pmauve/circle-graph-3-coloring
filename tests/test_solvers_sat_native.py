@@ -211,9 +211,9 @@ def _write_col(path: Path) -> Path:
     path.write_text(
         "\n".join(
             [
-                "c ircle representation START",
+                "c hord endpoint order START",
                 "c 1 2 3 1 2 3",
-                "c ircle representation END",
+                "c hord endpoint order END",
                 "p edge 3 3",
                 "e 1 2",
                 "e 1 3",

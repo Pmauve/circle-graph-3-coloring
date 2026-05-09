@@ -126,7 +126,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn streams_problem_and_edges_while_ignoring_circle_comments() {
+    fn streams_problem_and_edges_while_ignoring_chord_endpoint_order_comments() {
         let mut problem = None;
         let mut edges = Vec::new();
 
@@ -134,9 +134,9 @@ mod tests {
             Cursor::new(
                 "\
 c format version 1
-c ircle representation START
+c hord endpoint order START
 c 1 2 1 2
-c ircle representation END
+c hord endpoint order END
 p edge 2 1
 e 1 2
 ",

@@ -166,9 +166,9 @@ mod tests {
         CircleInstance::from_dimacs(
             parse_dimacs_circle(
                 "\
-c ircle representation START
+c hord endpoint order START
 c 1 2 3 1 2 3
-c ircle representation END
+c hord endpoint order END
 p edge 3 3
 e 1 2
 e 1 3
@@ -184,9 +184,9 @@ e 2 3
         CircleInstance::from_dimacs(
             parse_dimacs_circle(
                 "\
-c ircle representation START
+c hord endpoint order START
 c 1 1 2 2
-c ircle representation END
+c hord endpoint order END
 p edge 2 0
 ",
             )

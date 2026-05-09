@@ -58,7 +58,7 @@ pub fn inspect_dimacs_circle<R: BufRead>(reader: R) -> Result<InstanceSummary, S
 pub fn validate_dimacs_circle<R: BufRead>(reader: R) -> Result<InstanceSummary, SosaError> {
     let mut parser = ParserState::default();
     let mut edge_count = 0usize;
-    let mut circle_order = Vec::new();
+    let mut chord_endpoint_order = Vec::new();
     let mut edge_list = Vec::new();
     let mut edges = HashSet::new();
 
@@ -71,11 +71,11 @@ pub fn validate_dimacs_circle<R: BufRead>(reader: R) -> Result<InstanceSummary, 
         }
         let parts: Vec<&str> = line.split_whitespace().collect();
         match parts[0] {
-            "c" => match parser.circle_comment_action(&parts[1..], line_number)? {
+            "c" => match parser.chord_endpoint_order_comment_action(&parts[1..], line_number)? {
                 CircleAction::Start | CircleAction::End | CircleAction::Metadata => {}
                 CircleAction::EndpointLine => {
                     for token in &parts[1..] {
-                        circle_order.push(parse_positive_usize(token, line_number)?);
+                        chord_endpoint_order.push(parse_positive_usize(token, line_number)?);
                     }
                 }
             },
@@ -123,11 +123,11 @@ pub fn validate_dimacs_circle<R: BufRead>(reader: R) -> Result<InstanceSummary, 
         }
     }
 
-    if parser.in_circle_block {
-        return input_error("circle representation block is missing END".to_string());
+    if parser.in_chord_endpoint_order_block {
+        return input_error("chord endpoint order block is missing END".to_string());
     }
-    if !parser.saw_circle_block {
-        return input_error("DIMACS file is missing a circle representation block".to_string());
+    if !parser.saw_chord_endpoint_order_block {
+        return input_error("DIMACS file is missing a chord endpoint order block".to_string());
     }
     let problem = parser
         .problem
@@ -139,12 +139,12 @@ pub fn validate_dimacs_circle<R: BufRead>(reader: R) -> Result<InstanceSummary, 
         ));
     }
     validate_metadata_consistency(&parser, problem)?;
-    let endpoints = validate_circle_order(problem.n, &circle_order)?;
+    let endpoints = validate_chord_endpoint_order(problem.n, &chord_endpoint_order)?;
     validate_edges_are_crossings(&edge_list, &endpoints)?;
-    let crossing_count = count_crossings(&circle_order, &endpoints);
+    let crossing_count = count_crossings(&chord_endpoint_order, &endpoints);
     if crossing_count != edge_count as u128 {
         return input_error(format!(
-            "circle representation has {crossing_count} crossing pair(s), but {edge_count} edge(s) were listed"
+            "chord endpoint order has {crossing_count} crossing pair(s), but {edge_count} edge(s) were listed"
         ));
     }
     parser.summary()
@@ -164,80 +164,80 @@ struct ParserState {
     metadata_m: Option<usize>,
     num_colors: Option<usize>,
     problem: Option<Problem>,
-    in_circle_block: bool,
-    saw_circle_block: bool,
+    in_chord_endpoint_order_block: bool,
+    saw_chord_endpoint_order_block: bool,
 }
 
 impl ParserState {
     fn capture_comment(&mut self, parts: &[&str], line_number: usize) -> Result<(), SosaError> {
-        match circle_action(parts) {
+        match chord_endpoint_order_action(parts) {
             Some("START") => {
-                if self.in_circle_block {
+                if self.in_chord_endpoint_order_block {
                     return input_error(format!(
-                        "nested circle representation block at line {line_number}"
+                        "nested chord endpoint order block at line {line_number}"
                     ));
                 }
-                if self.saw_circle_block {
+                if self.saw_chord_endpoint_order_block {
                     return input_error(format!(
-                        "duplicate circle representation block at line {line_number}"
+                        "duplicate chord endpoint order block at line {line_number}"
                     ));
                 }
-                self.in_circle_block = true;
-                self.saw_circle_block = true;
+                self.in_chord_endpoint_order_block = true;
+                self.saw_chord_endpoint_order_block = true;
             }
             Some("END") => {
-                if !self.in_circle_block {
+                if !self.in_chord_endpoint_order_block {
                     return input_error(format!(
-                        "circle representation END without START at line {line_number}"
+                        "chord endpoint order END without START at line {line_number}"
                     ));
                 }
-                self.in_circle_block = false;
+                self.in_chord_endpoint_order_block = false;
             }
-            Some(action) if self.in_circle_block => {
+            Some(action) if self.in_chord_endpoint_order_block => {
                 return input_error(format!(
-                    "unsupported circle representation directive {action:?} at line {line_number}"
+                    "unsupported chord endpoint order directive {action:?} at line {line_number}"
                 ));
             }
-            _ if self.in_circle_block => {}
+            _ if self.in_chord_endpoint_order_block => {}
             _ => self.capture_metadata(parts, line_number)?,
         }
         Ok(())
     }
 
-    fn circle_comment_action(
+    fn chord_endpoint_order_comment_action(
         &mut self,
         parts: &[&str],
         line_number: usize,
     ) -> Result<CircleAction, SosaError> {
-        match circle_action(parts) {
+        match chord_endpoint_order_action(parts) {
             Some("START") => {
-                if self.in_circle_block {
+                if self.in_chord_endpoint_order_block {
                     return input_error(format!(
-                        "nested circle representation block at line {line_number}"
+                        "nested chord endpoint order block at line {line_number}"
                     ));
                 }
-                if self.saw_circle_block {
+                if self.saw_chord_endpoint_order_block {
                     return input_error(format!(
-                        "duplicate circle representation block at line {line_number}"
+                        "duplicate chord endpoint order block at line {line_number}"
                     ));
                 }
-                self.in_circle_block = true;
-                self.saw_circle_block = true;
+                self.in_chord_endpoint_order_block = true;
+                self.saw_chord_endpoint_order_block = true;
                 Ok(CircleAction::Start)
             }
             Some("END") => {
-                if !self.in_circle_block {
+                if !self.in_chord_endpoint_order_block {
                     return input_error(format!(
-                        "circle representation END without START at line {line_number}"
+                        "chord endpoint order END without START at line {line_number}"
                     ));
                 }
-                self.in_circle_block = false;
+                self.in_chord_endpoint_order_block = false;
                 Ok(CircleAction::End)
             }
-            Some(action) if self.in_circle_block => input_error(format!(
-                "unsupported circle representation directive {action:?} at line {line_number}"
+            Some(action) if self.in_chord_endpoint_order_block => input_error(format!(
+                "unsupported chord endpoint order directive {action:?} at line {line_number}"
             )),
-            _ if self.in_circle_block => Ok(CircleAction::EndpointLine),
+            _ if self.in_chord_endpoint_order_block => Ok(CircleAction::EndpointLine),
             _ => {
                 self.capture_metadata(parts, line_number)?;
                 Ok(CircleAction::Metadata)
@@ -330,20 +330,20 @@ struct Endpoints {
     right: Vec<usize>,
 }
 
-fn validate_circle_order(n: usize, circle_order: &[usize]) -> Result<Endpoints, SosaError> {
+fn validate_chord_endpoint_order(n: usize, chord_endpoint_order: &[usize]) -> Result<Endpoints, SosaError> {
     let expected_len = n
         .checked_mul(2)
         .ok_or_else(|| SosaError::Input(format!("vertex count {n} is too large")))?;
-    if circle_order.len() != expected_len {
+    if chord_endpoint_order.len() != expected_len {
         return input_error(format!(
-            "circle order has {} endpoint(s), expected {expected_len}",
-            circle_order.len()
+            "chord endpoint order has {} endpoint(s), expected {expected_len}",
+            chord_endpoint_order.len()
         ));
     }
     let mut counts = vec![0u8; n];
     let mut left = vec![usize::MAX; n + 1];
     let mut right = vec![usize::MAX; n + 1];
-    for (position, &vertex) in circle_order.iter().enumerate() {
+    for (position, &vertex) in chord_endpoint_order.iter().enumerate() {
         if vertex > n {
             return input_error(format!("circle vertex id {vertex} out of range 1..{n}"));
         }
@@ -358,7 +358,7 @@ fn validate_circle_order(n: usize, circle_order: &[usize]) -> Result<Endpoints, 
     for (index, count) in counts.iter().copied().enumerate() {
         if count != 2 {
             return input_error(format!(
-                "vertex {} appears {count} time(s) in circle order, expected 2",
+                "vertex {} appears {count} time(s) in chord endpoint order, expected 2",
                 index + 1
             ));
         }
@@ -386,11 +386,11 @@ fn chords_cross(u: usize, v: usize, endpoints: &Endpoints) -> bool {
     (lu < lv && lv < ru && ru < rv) || (lv < lu && lu < rv && rv < ru)
 }
 
-fn count_crossings(circle_order: &[usize], endpoints: &Endpoints) -> u128 {
-    let mut fenwick = Fenwick::new(circle_order.len() + 1);
+fn count_crossings(chord_endpoint_order: &[usize], endpoints: &Endpoints) -> u128 {
+    let mut fenwick = Fenwick::new(chord_endpoint_order.len() + 1);
     let mut seen = vec![false; endpoints.left.len()];
     let mut total = 0u128;
-    for (position, &vertex) in circle_order.iter().enumerate() {
+    for (position, &vertex) in chord_endpoint_order.iter().enumerate() {
         let fenwick_position = position + 1;
         if !seen[vertex] {
             seen[vertex] = true;
@@ -439,9 +439,9 @@ impl Fenwick {
     }
 }
 
-fn circle_action(parts: &[&str]) -> Option<&'static str> {
-    if parts.len() == 3 && parts[0] == "ircle" && parts[1] == "representation" {
-        match parts[2] {
+fn chord_endpoint_order_action(parts: &[&str]) -> Option<&'static str> {
+    if parts.len() == 4 && parts[0] == "hord" && parts[1] == "endpoint" && parts[2] == "order" {
+        match parts[3] {
             "START" => Some("START"),
             "END" => Some("END"),
             _ => Some("UNKNOWN"),
@@ -491,9 +491,9 @@ c family rc
 c n 3
 c m 3
 c num colors 3
-c ircle representation START
+c hord endpoint order START
 c 1 2 3 1 2 3
-c ircle representation END
+c hord endpoint order END
 p edge 3 3
 e 1 2
 e 1 3
@@ -523,9 +523,9 @@ e 2 3
     fn rejects_duplicate_edge() {
         let error = validate_dimacs_circle(Cursor::new(
             "\
-c ircle representation START
+c hord endpoint order START
 c 1 2 1 2
-c ircle representation END
+c hord endpoint order END
 p edge 2 2
 e 1 2
 e 2 1
@@ -541,9 +541,9 @@ e 2 1
         let error = validate_dimacs_circle(Cursor::new(
             "\
 c n 4
-c ircle representation START
+c hord endpoint order START
 c 1 2 1 2
-c ircle representation END
+c hord endpoint order END
 p edge 2 1
 e 1 2
 ",
@@ -557,9 +557,9 @@ e 1 2
     fn rejects_listed_non_crossing_edge() {
         let error = validate_dimacs_circle(Cursor::new(
             "\
-c ircle representation START
+c hord endpoint order START
 c 1 1 2 2
-c ircle representation END
+c hord endpoint order END
 p edge 2 1
 e 1 2
 ",
@@ -573,9 +573,9 @@ e 1 2
     fn rejects_missing_crossing_edge() {
         let error = validate_dimacs_circle(Cursor::new(
             "\
-c ircle representation START
+c hord endpoint order START
 c 1 2 1 2
-c ircle representation END
+c hord endpoint order END
 p edge 2 0
 ",
         ))

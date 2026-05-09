@@ -26,7 +26,7 @@ impl CircleInstance {
         dimacs: DimacsCircle,
         validate_crossings: bool,
     ) -> Result<Self, SosaError> {
-        let (endpoint_at, left, right) = build_endpoint_geometry(dimacs.n, &dimacs.circle_order)?;
+        let (endpoint_at, left, right) = build_endpoint_geometry(dimacs.n, &dimacs.chord_endpoint_order)?;
         let mut edges = Vec::with_capacity(dimacs.edges.len());
         let mut seen = HashSet::with_capacity(dimacs.edges.len());
         for (u_dimacs, v_dimacs) in dimacs.edges {
@@ -65,7 +65,7 @@ impl CircleInstance {
         geometry: DimacsCircleGeometry,
     ) -> Result<Self, SosaError> {
         let (endpoint_at, left, right) =
-            build_endpoint_geometry(geometry.n, &geometry.circle_order)?;
+            build_endpoint_geometry(geometry.n, &geometry.chord_endpoint_order)?;
 
         Ok(Self {
             n: geometry.n,
@@ -81,14 +81,14 @@ impl CircleInstance {
 
 fn build_endpoint_geometry(
     n: usize,
-    circle_order: &[u32],
+    chord_endpoint_order: &[u32],
 ) -> Result<(Vec<u32>, Vec<u32>, Vec<u32>), SosaError> {
     let endpoint_count = 2 * n;
     let mut endpoint_at = Vec::with_capacity(endpoint_count);
     let mut left = vec![u32::MAX; n];
     let mut right = vec![u32::MAX; n];
 
-    for (position, &dimacs_id) in circle_order.iter().enumerate() {
+    for (position, &dimacs_id) in chord_endpoint_order.iter().enumerate() {
         let vertex = dimacs_id - 1;
         endpoint_at.push(vertex);
         let slot = &mut left[vertex as usize];
@@ -460,9 +460,9 @@ mod tests {
     fn builds_triangle() {
         let dimacs = parse_dimacs_circle(
             "\
-c ircle representation START
+c hord endpoint order START
 c 1 2 3 1 2 3
-c ircle representation END
+c hord endpoint order END
 p edge 3 3
 e 1 2
 e 1 3
@@ -485,9 +485,9 @@ e 2 3
     fn builds_independent_non_crossing_chords() {
         let dimacs = parse_dimacs_circle(
             "\
-c ircle representation START
+c hord endpoint order START
 c 1 1 2 2
-c ircle representation END
+c hord endpoint order END
 p edge 2 0
 ",
         )
@@ -504,9 +504,9 @@ p edge 2 0
     fn builds_k4() {
         let dimacs = parse_dimacs_circle(
             "\
-c ircle representation START
+c hord endpoint order START
 c 1 2 3 4 1 2 3 4
-c ircle representation END
+c hord endpoint order END
 p edge 4 6
 e 1 2
 e 1 3
@@ -528,9 +528,9 @@ e 3 4
     fn rejects_self_loop() {
         let mut dimacs = parse_dimacs_circle(
             "\
-c ircle representation START
+c hord endpoint order START
 c 1 1
-c ircle representation END
+c hord endpoint order END
 p edge 1 0
 ",
         )
@@ -547,9 +547,9 @@ p edge 1 0
     fn rejects_duplicate_edge() {
         let mut dimacs = parse_dimacs_circle(
             "\
-c ircle representation START
+c hord endpoint order START
 c 1 2 1 2
-c ircle representation END
+c hord endpoint order END
 p edge 2 1
 e 1 2
 ",
@@ -567,9 +567,9 @@ e 1 2
     fn rejects_missing_crossing_edge() {
         let dimacs = parse_dimacs_circle(
             "\
-c ircle representation START
+c hord endpoint order START
 c 1 2 1 2
-c ircle representation END
+c hord endpoint order END
 p edge 2 0
 ",
         )
@@ -585,9 +585,9 @@ p edge 2 0
     fn rejects_extra_non_crossing_edge() {
         let dimacs = parse_dimacs_circle(
             "\
-c ircle representation START
+c hord endpoint order START
 c 1 1 2 2
-c ircle representation END
+c hord endpoint order END
 p edge 2 1
 e 1 2
 ",
@@ -679,9 +679,9 @@ e 1 2
     fn triangle_instance() -> CircleInstance {
         let dimacs = parse_dimacs_circle(
             "\
-c ircle representation START
+c hord endpoint order START
 c 1 2 3 1 2 3
-c ircle representation END
+c hord endpoint order END
 p edge 3 3
 e 1 2
 e 1 3
@@ -695,9 +695,9 @@ e 2 3
     fn path_instance() -> CircleInstance {
         let dimacs = parse_dimacs_circle(
             "\
-c ircle representation START
+c hord endpoint order START
 c 1 2 1 3 2 3
-c ircle representation END
+c hord endpoint order END
 p edge 3 2
 e 1 2
 e 2 3

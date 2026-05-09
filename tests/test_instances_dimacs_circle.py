@@ -19,7 +19,7 @@ from three_col_circle_code.instances.model import InstanceFormatError, InstanceM
 
 
 class DimacsCircleTests(unittest.TestCase):
-    def test_write_dimacs_circle_uses_wrapped_circle_order(self) -> None:
+    def test_write_dimacs_circle_uses_wrapped_chord_endpoint_order(self) -> None:
         record = _sample_record()
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -27,7 +27,7 @@ class DimacsCircleTests(unittest.TestCase):
             write_dimacs_circle(record, path, wrap=4)
             text = path.read_text(encoding="utf-8")
 
-        self.assertIn("c ircle representation START\n", text)
+        self.assertIn("c hord endpoint order START\n", text)
         self.assertIn("c instance id sample\n", text)
         self.assertIn("c family rcy\n", text)
         self.assertIn("c seed 11\n", text)
@@ -42,7 +42,7 @@ class DimacsCircleTests(unittest.TestCase):
         self.assertIn("c max attempts per node none\n", text)
         self.assertIn("c 1 2 1 2\n", text)
         self.assertIn("c 3 4 3 4\n", text)
-        self.assertIn("c ircle representation END\n", text)
+        self.assertIn("c hord endpoint order END\n", text)
         self.assertIn("p edge 4 2\n", text)
         self.assertIn("e 1 2\n", text)
         self.assertIn("e 3 4\n", text)
@@ -57,7 +57,7 @@ class DimacsCircleTests(unittest.TestCase):
             text = data.decode("utf-8")
 
         self.assertNotIn(b"\r\n", data)
-        circle_lines = _circle_order_lines(text)
+        circle_lines = _chord_endpoint_order_lines(text)
         self.assertGreater(len(circle_lines), 2)
         self.assertTrue(all(len(line.split()) <= 32 for line in circle_lines))
 
@@ -65,10 +65,10 @@ class DimacsCircleTests(unittest.TestCase):
         text = "\n".join(
             [
                 "c instance id wrapped",
-                "c ircle representation START",
+                "c hord endpoint order START",
                 "c 1 2 1 2",
                 "c 3 4 3 4",
-                "c ircle representation END",
+                "c hord endpoint order END",
                 "p edge 4 2",
                 "e 1 2",
                 "e 3 4",
@@ -114,9 +114,9 @@ class DimacsCircleTests(unittest.TestCase):
     def test_read_dimacs_circle_rejects_bad_endpoint_counts(self) -> None:
         text = "\n".join(
             [
-                "c ircle representation START",
+                "c hord endpoint order START",
                 "c 1 2 1 3 3 3",
-                "c ircle representation END",
+                "c hord endpoint order END",
                 "p edge 3 0",
                 "",
             ]
@@ -131,9 +131,9 @@ class DimacsCircleTests(unittest.TestCase):
     def test_read_dimacs_circle_rejects_edge_mismatch(self) -> None:
         text = "\n".join(
             [
-                "c ircle representation START",
+                "c hord endpoint order START",
                 "c 1 2 1 2",
-                "c ircle representation END",
+                "c hord endpoint order END",
                 "p edge 2 0",
                 "",
             ]
@@ -145,14 +145,14 @@ class DimacsCircleTests(unittest.TestCase):
             with self.assertRaisesRegex(InstanceFormatError, "edge_mismatch"):
                 read_dimacs_circle(path)
 
-    def test_read_dimacs_circle_rejects_comments_inside_circle_block(self) -> None:
+    def test_read_dimacs_circle_rejects_comments_inside_chord_endpoint_order_block(self) -> None:
         text = "\n".join(
             [
-                "c ircle representation START",
+                "c hord endpoint order START",
                 "c 1 2 1",
                 "c arbitrary comment",
                 "c 2",
-                "c ircle representation END",
+                "c hord endpoint order END",
                 "p edge 2 1",
                 "e 1 2",
                 "",
@@ -168,12 +168,12 @@ class DimacsCircleTests(unittest.TestCase):
     def test_read_dimacs_circle_rejects_duplicate_blocks(self) -> None:
         text = "\n".join(
             [
-                "c ircle representation START",
+                "c hord endpoint order START",
                 "c 1 1",
-                "c ircle representation END",
-                "c ircle representation START",
+                "c hord endpoint order END",
+                "c hord endpoint order START",
                 "c 1 1",
-                "c ircle representation END",
+                "c hord endpoint order END",
                 "p edge 1 0",
                 "",
             ]
@@ -182,7 +182,7 @@ class DimacsCircleTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "duplicate.col"
             path.write_text(text, encoding="utf-8")
-            with self.assertRaisesRegex(InstanceFormatError, "duplicate circle representation block"):
+            with self.assertRaisesRegex(InstanceFormatError, "duplicate chord endpoint order block"):
                 read_dimacs_circle(path)
 
     def test_export_dimacs_circle_tree_preserves_relative_paths(self) -> None:
@@ -263,10 +263,10 @@ def _noncrossing_record(n: int) -> InstanceRecord:
     return InstanceRecord(metadata=metadata, graph=graph)
 
 
-def _circle_order_lines(text: str) -> list[str]:
+def _chord_endpoint_order_lines(text: str) -> list[str]:
     lines = text.splitlines()
-    start = lines.index("c ircle representation START") + 1
-    end = lines.index("c ircle representation END")
+    start = lines.index("c hord endpoint order START") + 1
+    end = lines.index("c hord endpoint order END")
     return [line.removeprefix("c ") for line in lines[start:end]]
 
 

@@ -19,7 +19,7 @@ from three_col_circle_code.instances.validate import validate_instance
 
 
 DEFAULT_ORDER_WRAP = 32
-_CIRCLE_PREFIX = ("ircle", "representation")
+_CHORD_ENDPOINT_ORDER_PREFIX = ("hord", "endpoint", "order")
 _METADATA_NONE = "none"
 
 
@@ -29,7 +29,7 @@ def write_dimacs_circle(
     *,
     wrap: int = DEFAULT_ORDER_WRAP,
 ) -> Path:
-    """Write one instance as DIMACS edge format with circle-order comments."""
+    """Write one instance as DIMACS edge format with chord endpoint order comments."""
     if wrap < 1:
         raise ValueError("wrap must be at least 1")
 
@@ -41,7 +41,7 @@ def write_dimacs_circle(
 
     node_ids = _sorted_nodes(graph)
     node_to_dimacs = {node_id: index + 1 for index, node_id in enumerate(node_ids)}
-    order = _circle_order_from_graph(graph, node_to_dimacs)
+    order = _chord_endpoint_order_from_graph(graph, node_to_dimacs)
     edges = sorted(
         (min(node_to_dimacs[u], node_to_dimacs[v]), max(node_to_dimacs[u], node_to_dimacs[v]))
         for u, v in graph.edges()
@@ -51,11 +51,11 @@ def write_dimacs_circle(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", encoding="utf-8", newline="\n") as outfile:
         _write_metadata_comments(outfile, record.metadata)
-        outfile.write("c ircle representation START\n")
+        outfile.write("c hord endpoint order START\n")
         for index in range(0, len(order), wrap):
             chunk = " ".join(str(vertex_id) for vertex_id in order[index : index + wrap])
             outfile.write(f"c {chunk}\n")
-        outfile.write("c ircle representation END\n")
+        outfile.write("c hord endpoint order END\n")
         outfile.write(f"p edge {len(node_ids)} {len(edges)}\n")
         for u, v in edges:
             outfile.write(f"e {u} {v}\n")
@@ -76,7 +76,7 @@ def _read_dimacs_circle(path: Union[str, Path], *, validate: bool) -> InstanceRe
     input_path = Path(path)
     n_vertices, declared_edges, edges, order, parsed_metadata = _parse_dimacs_circle(input_path)
     if order is None:
-        raise InstanceFormatError("DIMACS file is missing a circle representation block")
+        raise InstanceFormatError("DIMACS file is missing a chord endpoint order block")
 
     graph = _graph_from_dimacs_circle(n_vertices, edges, order)
     metadata = _metadata_from_dimacs_comments(
@@ -199,8 +199,8 @@ def _parse_dimacs_circle(
     edges: list[tuple[int, int]] = []
     order: list[int] = []
     metadata: dict[str, str] = {}
-    in_circle_block = False
-    saw_circle_block = False
+    in_chord_endpoint_order_block = False
+    saw_chord_endpoint_order_block = False
 
     with path.open(encoding="utf-8") as infile:
         for line_number, raw_line in enumerate(infile, start=1):
@@ -210,22 +210,22 @@ def _parse_dimacs_circle(
             parts = line.split()
             tag = parts[0]
             if tag == "c":
-                action = _circle_comment_action(parts[1:])
+                action = _chord_endpoint_order_comment_action(parts[1:])
                 if action == "START":
-                    if in_circle_block:
-                        raise InstanceFormatError(f"nested circle representation block at line {line_number}")
-                    if saw_circle_block:
-                        raise InstanceFormatError(f"duplicate circle representation block at line {line_number}")
-                    in_circle_block = True
-                    saw_circle_block = True
+                    if in_chord_endpoint_order_block:
+                        raise InstanceFormatError(f"nested chord endpoint order block at line {line_number}")
+                    if saw_chord_endpoint_order_block:
+                        raise InstanceFormatError(f"duplicate chord endpoint order block at line {line_number}")
+                    in_chord_endpoint_order_block = True
+                    saw_chord_endpoint_order_block = True
                 elif action == "END":
-                    if not in_circle_block:
-                        raise InstanceFormatError(f"circle representation END without START at line {line_number}")
-                    in_circle_block = False
-                elif in_circle_block:
+                    if not in_chord_endpoint_order_block:
+                        raise InstanceFormatError(f"chord endpoint order END without START at line {line_number}")
+                    in_chord_endpoint_order_block = False
+                elif in_chord_endpoint_order_block:
                     if action is not None:
                         raise InstanceFormatError(
-                            f"unsupported circle representation directive at line {line_number}: {line}"
+                            f"unsupported chord endpoint order directive at line {line_number}: {line}"
                         )
                     order.extend(_parse_ints(parts[1:], line_number=line_number))
                 else:
@@ -251,19 +251,19 @@ def _parse_dimacs_circle(
                 continue
             raise InstanceFormatError(f"unsupported DIMACS line at {line_number}: {line}")
 
-    if in_circle_block:
-        raise InstanceFormatError("circle representation block is missing END")
+    if in_chord_endpoint_order_block:
+        raise InstanceFormatError("chord endpoint order block is missing END")
     if n_vertices is None or declared_edges is None:
         raise InstanceFormatError("DIMACS file is missing a problem line")
-    return n_vertices, declared_edges, edges, order if saw_circle_block else None, metadata
+    return n_vertices, declared_edges, edges, order if saw_chord_endpoint_order_block else None, metadata
 
 
-def _circle_comment_action(parts: list[str]) -> Optional[str]:
-    if len(parts) != 3:
+def _chord_endpoint_order_comment_action(parts: list[str]) -> Optional[str]:
+    if len(parts) != 4:
         return None
-    if tuple(parts[:2]) != _CIRCLE_PREFIX:
+    if tuple(parts[:3]) != _CHORD_ENDPOINT_ORDER_PREFIX:
         return None
-    return parts[2]
+    return parts[3]
 
 
 def _capture_metadata_comment(parts: list[str], metadata: dict[str, str]) -> None:
@@ -380,7 +380,7 @@ def _graph_from_dimacs_circle(
     edges: list[tuple[int, int]],
     order: list[int],
 ) -> nx.Graph:
-    _validate_circle_order(order, n_vertices)
+    _validate_chord_endpoint_order(order, n_vertices)
     graph = nx.Graph()
     endpoint_positions: dict[int, list[int]] = {vertex_id: [] for vertex_id in range(1, n_vertices + 1)}
     for position, vertex_id in enumerate(order):
@@ -397,11 +397,11 @@ def _graph_from_dimacs_circle(
     return graph
 
 
-def _validate_circle_order(order: list[int], n_vertices: int) -> None:
+def _validate_chord_endpoint_order(order: list[int], n_vertices: int) -> None:
     expected_length = 2 * n_vertices
     if len(order) != expected_length:
         raise InstanceFormatError(
-            f"circle order has {len(order)} endpoint(s), expected {expected_length}"
+            f"chord endpoint order has {len(order)} endpoint(s), expected {expected_length}"
         )
     counts = Counter(order)
     expected_vertices = set(range(1, n_vertices + 1))
@@ -410,14 +410,14 @@ def _validate_circle_order(order: list[int], n_vertices: int) -> None:
         missing = sorted(expected_vertices - actual_vertices)
         extra = sorted(actual_vertices - expected_vertices)
         raise InstanceFormatError(
-            f"circle order must use exactly vertex ids 1..{n_vertices}; missing={missing}, extra={extra}"
+            f"chord endpoint order must use exactly vertex ids 1..{n_vertices}; missing={missing}, extra={extra}"
         )
     bad_counts = {vertex_id: count for vertex_id, count in counts.items() if count != 2}
     if bad_counts:
         raise InstanceFormatError(f"each vertex id must appear exactly twice; counts={bad_counts}")
 
 
-def _circle_order_from_graph(graph: nx.Graph, node_to_dimacs: dict[object, int]) -> list[int]:
+def _chord_endpoint_order_from_graph(graph: nx.Graph, node_to_dimacs: dict[object, int]) -> list[int]:
     n_vertices = graph.number_of_nodes()
     order: list[Optional[int]] = [None] * (2 * n_vertices)
     for node_id, dimacs_id in node_to_dimacs.items():

@@ -146,9 +146,9 @@ mod tests {
     fn solves_small_colorable_file() {
         let path = write_temp_col(
             "\
-c ircle representation START
+c hord endpoint order START
 c 1 2 3 1 2 3
-c ircle representation END
+c hord endpoint order END
 p edge 3 3
 e 1 2
 e 1 3
@@ -178,9 +178,9 @@ e 2 3
     fn solves_small_uncolorable_file() {
         let path = write_temp_col(
             "\
-c ircle representation START
+c hord endpoint order START
 c 1 2 3 4 1 2 3 4
-c ircle representation END
+c hord endpoint order END
 p edge 4 6
 e 1 2
 e 1 3
@@ -213,9 +213,9 @@ e 3 4
     fn solves_above_base_case_threshold() {
         let path = write_temp_col(
             "\
-c ircle representation START
+c hord endpoint order START
 c 1 2 3 1 2 3
-c ircle representation END
+c hord endpoint order END
 p edge 3 3
 e 1 2
 e 1 3
@@ -245,9 +245,9 @@ e 2 3
     fn can_skip_crossing_validation() {
         let path = write_temp_col(
             "\
-c ircle representation START
+c hord endpoint order START
 c 1 1 2 2
-c ircle representation END
+c hord endpoint order END
 p edge 2 1
 e 1 2
 ",

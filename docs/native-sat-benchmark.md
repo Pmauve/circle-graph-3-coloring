@@ -49,7 +49,7 @@ Example Kissat block:
 ```
 
 The Rust binary reads the benchmark `.col` file as DIMACS edge input, ignores
-circle comments, and builds the fixed 3-color CNF without materializing a
+chord endpoint order comments, and builds the fixed 3-color CNF without materializing a
 Python/NetworkX graph. The supported backends are `cadical-rustsat` and
 `kissat-rustsat`; both add clauses through RustSAT solver adapters. Normal
 execution does not write a `.cnf` file.

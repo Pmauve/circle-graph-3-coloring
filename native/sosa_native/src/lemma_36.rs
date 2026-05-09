@@ -360,9 +360,9 @@ mod tests {
     fn branches_on_independent_set_and_reduces_it_away() {
         let instance = instance_from_text(
             "\
-c ircle representation START
+c hord endpoint order START
 c 1 2 1 2
-c ircle representation END
+c hord endpoint order END
 p edge 2 1
 e 1 2
 ",
@@ -389,9 +389,9 @@ e 1 2
     fn skips_non_independent_target_set() {
         let instance = instance_from_text(
             "\
-c ircle representation START
+c hord endpoint order START
 c 1 2 1 2
-c ircle representation END
+c hord endpoint order END
 p edge 2 1
 e 1 2
 ",

@@ -28,9 +28,9 @@ fn validate_reports_invalid_input_as_json() {
     fs::write(
         &path,
         "\
-c ircle representation START
+c hord endpoint order START
 c 1 1
-c ircle representation END
+c hord endpoint order END
 p edge 1 1
 e 1 1
 ",
@@ -134,9 +134,9 @@ c family rc
 c n 3
 c m 3
 c num colors 3
-c ircle representation START
+c hord endpoint order START
 c 1 2 3 1 2 3
-c ircle representation END
+c hord endpoint order END
 p edge 3 3
 e 1 2
 e 1 3

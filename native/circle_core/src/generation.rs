@@ -631,7 +631,7 @@ fn write_dimacs_circle(
         "c max attempts per node {}",
         builder.config.max_attempts_per_node
     )?;
-    writeln!(writer, "c ircle representation START")?;
+    writeln!(writer, "c hord endpoint order START")?;
     for chunk in builder.endpoint_order.chunks(32) {
         write!(writer, "c")?;
         for vertex in chunk {
@@ -639,7 +639,7 @@ fn write_dimacs_circle(
         }
         writeln!(writer)?;
     }
-    writeln!(writer, "c ircle representation END")?;
+    writeln!(writer, "c hord endpoint order END")?;
     writeln!(writer, "p edge {} {}", summary.n, summary.m)?;
     for (u, neighbors) in builder.adjacency.iter().enumerate() {
         for &v in neighbors {
