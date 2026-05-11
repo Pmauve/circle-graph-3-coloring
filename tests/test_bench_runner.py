@@ -3,6 +3,7 @@ import json
 import sys
 import tempfile
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional
 from unittest.mock import patch
@@ -54,7 +55,10 @@ class BenchRunnerTests(unittest.TestCase):
             ), patch(
                 "three_col_circle_code.bench.run_trial.run_solver",
                 return_value=_fake_solver_result(backend="legacy-pysmt-msat", wall_time_s=0.25),
-            ) as run_solver:
+            ) as run_solver, patch(
+                "three_col_circle_code.bench.run_trial.staged_runtime_instance",
+                side_effect=_fake_staged_runtime_instance,
+            ):
                 run_dir = run_benchmark(
                     output_root=tmp_root / "runs",
                     spec_path=spec_path,
@@ -113,7 +117,7 @@ class BenchRunnerTests(unittest.TestCase):
             tmp_root = Path(tmpdir)
             instance_pool_root = tmp_root / "instances"
             _write_instance(
-                instance_pool_root / "rc" / "s" / "rc-k03-n0002-seed1.col",
+                instance_pool_root / "rc" / "s" / "rc-k03-n0002-seed1.circle",
                 instance_id="rc-k03-n0002-seed1",
                 family="rc",
                 seed=1,
@@ -135,6 +139,9 @@ class BenchRunnerTests(unittest.TestCase):
             ), patch(
                 "three_col_circle_code.bench.run_trial.run_solver",
                 return_value=_fake_solver_result(backend="pysat-cadical", wall_time_s=0.1),
+            ), patch(
+                "three_col_circle_code.bench.run_trial.staged_runtime_instance",
+                side_effect=_fake_staged_runtime_instance,
             ):
                 progress = io.StringIO()
                 run_dir = run_benchmark(
@@ -172,7 +179,10 @@ class BenchRunnerTests(unittest.TestCase):
             ), patch(
                 "three_col_circle_code.bench.run_trial.run_solver",
                 return_value=_fake_solver_result(backend="pysat-cadical", wall_time_s=0.1),
-            ) as run_solver_mock:
+            ) as run_solver_mock, patch(
+                "three_col_circle_code.bench.run_trial.staged_runtime_instance",
+                side_effect=_fake_staged_runtime_instance,
+            ):
                 first_run_dir = run_benchmark(
                     output_root=tmp_root / "runs",
                     spec_path=spec_path,
@@ -319,6 +329,9 @@ class BenchRunnerTests(unittest.TestCase):
             ), patch(
                 "three_col_circle_code.bench.run_trial.run_solver",
                 return_value=_fake_solver_result(backend="pysat-cadical", wall_time_s=0.1),
+            ), patch(
+                "three_col_circle_code.bench.run_trial.staged_runtime_instance",
+                side_effect=_fake_staged_runtime_instance,
             ):
                 exit_code = main(
                     [
@@ -341,13 +354,57 @@ class BenchRunnerTests(unittest.TestCase):
 
 
 def _write_instance(path: Path, *, instance_id: str, family: str, seed: int) -> Path:
-    save_instance(_build_record(instance_id=instance_id, family=family, seed=seed), path)
+    record = _build_record(instance_id=instance_id, family=family, seed=seed)
+    if path.suffix == ".circle":
+        _write_circle_fixture(path, record)
+    else:
+        save_instance(record, path)
     return path
 
 
 def _write_native_generated_instance(*, instance_path: Path, family: str, n: int, seed: int, **_kwargs) -> None:
     instance_id = f"{family}-k03-n{n:04d}-seed{seed}"
-    save_instance(_build_record(instance_id=instance_id, family=family, seed=seed, n=n), instance_path)
+    record = _build_record(instance_id=instance_id, family=family, seed=seed, n=n)
+    if instance_path.suffix == ".circle":
+        _write_circle_fixture(instance_path, record)
+    else:
+        save_instance(record, instance_path)
+
+
+@contextmanager
+def _fake_staged_runtime_instance(instance_path: Path):
+    runtime_path = Path(str(instance_path) + ".col")
+    record = _build_record(instance_id=instance_path.stem, family="rc", seed=1)
+    save_instance(record, runtime_path)
+    yield runtime_path
+
+
+def _write_circle_fixture(path: Path, record: InstanceRecord) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    n = record.metadata.n
+    m = record.metadata.m
+    path.write_text(
+        "\n".join(
+            [
+                "c format version 1",
+                f"c instance id {record.metadata.instance_id}",
+                f"c family {record.metadata.family}",
+                f"c seed {record.metadata.seed}",
+                f"c n {n}",
+                f"c m {m}",
+                f"c num colors {record.metadata.num_colors}",
+                "c source generated",
+                "c generator test_fixture",
+                "c created at 2026-04-13T00:00:00Z",
+                "c hord endpoint order START",
+                "c " + " ".join(str(vertex) for vertex in range(1, n + 1) for _ in range(2)),
+                "c hord endpoint order END",
+                f"p circle {n} {m}",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
 
 
 def _build_record(*, instance_id: str, family: str, seed: int, n: int = 2) -> InstanceRecord:

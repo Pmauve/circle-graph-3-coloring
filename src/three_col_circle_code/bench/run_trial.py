@@ -18,6 +18,7 @@ from three_col_circle_code.bench.plan_io import (
 from three_col_circle_code.bench.records import (
     build_invalid_result_record,
 )
+from three_col_circle_code.bench.staging import staged_runtime_instance
 from three_col_circle_code.instances.io import load_instance
 from three_col_circle_code.instances.model import InstanceFormatError, InstanceMetadata, bucket_for_n
 from three_col_circle_code.instances.native import (
@@ -49,6 +50,7 @@ def run_trial(
     work_root: Optional[Path] = None,
     force: bool = False,
     validate_instance_artifact: bool = False,
+    runtime_instance_path: Optional[Path] = None,
 ) -> Path:
     """Run one planned solver trial and write its isolated result file."""
     context = _load_trial_context(plan_dir=plan_dir, index=index, work_root=work_root)
@@ -75,7 +77,7 @@ def run_trial(
         )
         _write_result(result_path, result)
         return result_path
-    if validate_instance_artifact and trial_row.instance_path.suffix == ".col":
+    if validate_instance_artifact and trial_row.instance_path.suffix in {".col", ".circle"}:
         try:
             ensure_validated_sidecar(trial_row.instance_path, force=True)
         except NativeInstanceInvalid as exc:
@@ -95,6 +97,20 @@ def run_trial(
         params=dict(trial_row.solver_params),
         label=trial_row.solver_label,
     )
+    if (
+        runtime_instance_path is None
+        and trial_row.instance_path.suffix == ".circle"
+        and not _uses_path_without_python_graph(solver_config)
+    ):
+        with staged_runtime_instance(trial_row.instance_path) as runtime_path:
+            return run_trial(
+                plan_dir=plan_dir,
+                index=index,
+                work_root=work_root,
+                force=force,
+                validate_instance_artifact=validate_instance_artifact,
+                runtime_instance_path=runtime_path,
+            )
     if _uses_path_without_python_graph(solver_config):
         try:
             instance_metadata = _load_path_solver_metadata(trial_row)
@@ -109,7 +125,8 @@ def run_trial(
             return result_path
     else:
         try:
-            record = load_instance(trial_row.instance_path, validate=validate_instance_artifact)
+            load_path = Path(runtime_instance_path) if runtime_instance_path is not None else trial_row.instance_path
+            record = load_instance(load_path, validate=validate_instance_artifact)
         except (InstanceFormatError, json.JSONDecodeError, OSError, MemoryError) as exc:
             result = _build_invalid_result_record(
                 run_id=context.run_id,
@@ -121,18 +138,34 @@ def run_trial(
             return result_path
         instance_metadata = record.metadata
 
-    warmup_measurements, _warmup_details = _run_measurements(
-        solver_config=solver_config,
-        instance_path=trial_row.instance_path,
-        validate_instance_artifact=validate_instance_artifact,
-        repetitions=trial_row.warmup_repetitions,
-    )
-    measurements, measurement_details = _run_measurements(
-        solver_config=solver_config,
-        instance_path=trial_row.instance_path,
-        validate_instance_artifact=validate_instance_artifact,
-        repetitions=trial_row.repetitions,
-    )
+    if runtime_instance_path is not None:
+        runtime_path = Path(runtime_instance_path)
+        warmup_measurements, _warmup_details = _run_measurements(
+            solver_config=solver_config,
+            instance_path=runtime_path,
+            validate_instance_artifact=validate_instance_artifact,
+            repetitions=trial_row.warmup_repetitions,
+        )
+        measurements, measurement_details = _run_measurements(
+            solver_config=solver_config,
+            instance_path=runtime_path,
+            validate_instance_artifact=validate_instance_artifact,
+            repetitions=trial_row.repetitions,
+        )
+    else:
+        with staged_runtime_instance(trial_row.instance_path) as runtime_path:
+            warmup_measurements, _warmup_details = _run_measurements(
+                solver_config=solver_config,
+                instance_path=runtime_path,
+                validate_instance_artifact=validate_instance_artifact,
+                repetitions=trial_row.warmup_repetitions,
+            )
+            measurements, measurement_details = _run_measurements(
+                solver_config=solver_config,
+                instance_path=runtime_path,
+                validate_instance_artifact=validate_instance_artifact,
+                repetitions=trial_row.repetitions,
+            )
     result = _build_repeated_result_record(
         run_id=context.run_id,
         trial=trial_row,
@@ -489,6 +522,7 @@ def _read_dimacs_header(path: Path) -> tuple[dict[str, str], int, int]:
         ("source",): "source",
         ("created", "at"): "created_at",
         ("num", "colors"): "num_colors",
+        ("m",): "m",
     }
     with path.open(encoding="utf-8") as infile:
         for raw_line in infile:
@@ -502,7 +536,7 @@ def _read_dimacs_header(path: Path) -> tuple[dict[str, str], int, int]:
                         comments[key] = " ".join(parts[len(key_parts) :])
                 continue
             fields = line.split()
-            if len(fields) == 4 and fields[0] == "p" and fields[1] in {"edge", "col"}:
+            if len(fields) == 4 and fields[0] == "p" and fields[1] in {"edge", "col", "circle"}:
                 return comments, int(fields[2]), int(fields[3])
             raise InstanceFormatError(f"unexpected DIMACS header line in {path}: {line!r}")
     raise InstanceFormatError(f"missing DIMACS problem line in {path}")

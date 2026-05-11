@@ -1,6 +1,8 @@
 import json
+import os
 import sys
 import tempfile
+import textwrap
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -22,6 +24,21 @@ from three_col_circle_code.bench.run_trial import main, run_trial
 from three_col_circle_code.instances.io import save_instance
 from three_col_circle_code.instances.model import InstanceMetadata, InstanceRecord
 from three_col_circle_code.solvers.common import SOLVER_STATUS_OK, SolverResult
+
+
+ZYKOVCOLOR_TIMED_STDOUT = (
+    "c Options : Encoding                = Assignment Encoding\n"
+    "c Options : Strategy                = Single K\n"
+    "Result: Unsatisfiable for 3 colors at 12s 469ms and 441.309 mb memory.\n"
+    "c Stats: Time \u250c Total: 2s 754ms\n"
+    "c Stats: Time \u2502 \u250c Preprocessing: 2s 12ms\n"
+    "c Stats: Time \u2502 \u250c Algorithm: 0s 742ms\n"
+    "c Stats: Time \u2502 \u2502 - Building encoding: 0s 592ms\n"
+    "c Stats: Time \u2502 \u2502 - Building at most k constraints: 0s 58ms\n"
+    "c Stats: Time \u2502 \u2502 - CEGAR: 0s 0ms\n"
+    "c Stats: Time \u2502 \u2502 \u250c Sat solving: 0s 91ms\n"
+    "IncSatGC computed UNSAT for k = 3\n"
+)
 
 
 class BenchRunTrialTests(unittest.TestCase):
@@ -375,6 +392,48 @@ class BenchRunTrialTests(unittest.TestCase):
         self.assertEqual(result["m"], 10)
         self.assertEqual(result["average_degree"], 0.004)
 
+    def test_run_trial_aggregates_zykovcolor_native_timings(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            executable = _write_fake_zykovcolor_solver(tmp_root, stdout=ZYKOVCOLOR_TIMED_STDOUT)
+            plan_dir, _work_root, instance_path = _write_plan(
+                tmp_root,
+                instance_id="rc-k03-n0002-seed1",
+                solver="zykovcolor",
+                solver_target="zykovcolor",
+                solver_label="ZykovColor",
+                solver_params={
+                    "executable": str(executable),
+                    "mode": "single-k",
+                    "decision_num_colors": 3,
+                },
+                instance_suffix=".col",
+            )
+            save_instance(_build_record(instance_id="rc-k03-n0002-seed1", family="rc", seed=1), instance_path)
+
+            with patch(
+                "three_col_circle_code.bench.run_trial.collect_environment_metadata",
+                return_value={"hostname": "worker-2"},
+            ):
+                result_path = run_trial(plan_dir=plan_dir, index=1)
+
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(result["status"], "ok", result["error"])
+        measurement = result["measurements"][0]
+        self.assertEqual(measurement["total_native_time_s"], 12.469)
+        self.assertEqual(measurement["load_prepare_time_s"], 2.012)
+        self.assertEqual(measurement["solve_time_s"], 0.742)
+        self.assertEqual(result["mean_total_native_time_s"], 12.469)
+        self.assertEqual(result["median_total_native_time_s"], 12.469)
+        self.assertEqual(result["mean_load_prepare_time_s"], 2.012)
+        self.assertEqual(result["median_load_prepare_time_s"], 2.012)
+        self.assertEqual(result["mean_solve_time_s"], 0.742)
+        self.assertEqual(result["median_solve_time_s"], 0.742)
+        self.assertEqual(result["details"]["native_time_source"], "zykovcolor_reported")
+        self.assertEqual(result["details"]["zykovcolor_stats_total_time_s"], 2.754)
+        self.assertEqual(result["details"]["zykovcolor_sat_solving_time_s"], 0.091)
+
     def test_run_trial_does_not_load_graph_for_native_sat_path_solver(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_root = Path(tmpdir)
@@ -443,10 +502,12 @@ def _write_plan(
     solver: str = "sosa-3-col-exact",
     solver_target: str = "sosa-3-col-exact",
     solver_label: str = "SOSA exact",
+    solver_params: dict[str, object] | None = None,
+    instance_suffix: str = ".json",
 ) -> tuple[Path, Path, Path]:
     plan_dir = tmp_root / "plans" / "smoke"
     work_root = tmp_root / "work" / "smoke"
-    instance_path = tmp_root / "instances" / family / "s" / f"{instance_id}.json"
+    instance_path = tmp_root / "instances" / family / "s" / f"{instance_id}{instance_suffix}"
     instances = (
         InstancePlanRow(
             index=1,
@@ -468,7 +529,7 @@ def _write_plan(
             solver=solver,
             backend=None,
             solver_target=solver_target,
-            solver_params={"base_case_n": 8},
+            solver_params={"base_case_n": 8} if solver_params is None else solver_params,
             solver_label=solver_label,
             repetitions=repetitions,
             warmup_repetitions=warmup_repetitions,
@@ -490,6 +551,34 @@ def _write_plan(
     )
     _write_instance_result(work_root, instance_path)
     return plan_dir, work_root, instance_path
+
+
+def _write_fake_zykovcolor_solver(tmpdir: Path, *, stdout: str) -> Path:
+    script = tmpdir / "fake_zykovcolor_impl.py"
+    script.write_text(
+        textwrap.dedent(
+            f"""
+            import sys
+            from pathlib import Path
+
+            dimacs_path = Path(sys.argv[1])
+            if "p edge" not in dimacs_path.read_text(encoding="utf-8"):
+                raise SystemExit(3)
+            sys.stdout.buffer.write({stdout.encode("utf-8")!r})
+            """
+        ).strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    if os.name == "nt":
+        command = tmpdir / "fake_zykovcolor.cmd"
+        command.write_text(f'@echo off\n"{sys.executable}" "{script}" %*\n', encoding="utf-8")
+        return command
+
+    command = tmpdir / "fake_zykovcolor"
+    command.write_text(f'#! /bin/sh\nexec "{sys.executable}" "{script}" "$@"\n', encoding="utf-8")
+    command.chmod(0o755)
+    return command
 
 
 def _write_instance_result(work_root: Path, instance_path: Path) -> None:

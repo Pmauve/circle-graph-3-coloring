@@ -1,6 +1,11 @@
 use std::env;
+use std::fs::File;
+use std::io::{BufWriter, Write};
+use std::path::Path;
 use std::path::PathBuf;
 
+use circle_core::crossing_edges::visit_circle_crossing_edges;
+use circle_core::dimacs_circle::read_dimacs_circle_geometry_skip_edges;
 use circle_core::error::SosaError;
 use circle_core::generation::{
     sequence_output_path, CircleGraphBuilder, GeneratedSummary, GenerationConfig, GenerationFamily,
@@ -54,6 +59,9 @@ fn run_instance(args: &[String]) -> Result<(String, i32), SosaError> {
     if command == "generate-sequence" {
         return run_instance_generate_sequence(&args[1..]);
     }
+    if command == "materialize-circle" {
+        return run_instance_materialize_circle(&args[1..]);
+    }
     if args.len() != 2 {
         return Err(SosaError::Input(instance_help().to_string()));
     }
@@ -63,7 +71,7 @@ fn run_instance(args: &[String]) -> Result<(String, i32), SosaError> {
         "validate" => validate_dimacs_circle_file(&path)?,
         command => {
             return Err(SosaError::Input(format!(
-                "unknown instance command {command:?}; expected inspect, validate, generate, or generate-sequence"
+                "unknown instance command {command:?}; expected inspect, validate, generate, generate-sequence, or materialize-circle"
             )));
         }
     };
@@ -74,7 +82,7 @@ fn run_instance_generate(args: &[String]) -> Result<(String, i32), SosaError> {
     let options = GenerateOptions::parse(args, false)?;
     let mut builder = CircleGraphBuilder::new(options.config()?)?;
     builder.extend_to(options.n)?;
-    let summary = builder.write_col(&options.output.ok_or_else(|| {
+    let summary = builder.write_path(&options.output.ok_or_else(|| {
         SosaError::Input("--output is required for instance generate".to_string())
     })?)?;
     Ok((generated_summary_json(&summary), 0))
@@ -107,13 +115,74 @@ fn run_instance_generate_sequence(args: &[String]) -> Result<(String, i32), Sosa
             config.seed,
             config.num_colors,
         );
-        summaries.push(builder.write_col(&path)?);
+        summaries.push(builder.write_path(&path)?);
         match n.checked_add(options.step_n) {
             Some(next) => n = next,
             None => break,
         }
     }
     Ok((generated_sequence_json(&summaries), 0))
+}
+
+fn run_instance_materialize_circle(args: &[String]) -> Result<(String, i32), SosaError> {
+    if args.len() != 3 || args[1] != "--output" {
+        return Err(SosaError::Input(
+            "usage: three_col_native instance materialize-circle <instance.circle> --output <instance.circle.col>"
+                .to_string(),
+        ));
+    }
+    let input = PathBuf::from(&args[0]);
+    let output = PathBuf::from(&args[2]);
+    let geometry = read_dimacs_circle_geometry_skip_edges(&input)?;
+    write_materialized_circle_col(&input, &output, &geometry)?;
+    Ok((
+        format!(
+            "{{{},\"n\":{},\"m\":{},\"path\":{}}}",
+            json_pair("status", "ok"),
+            geometry.n,
+            geometry.m_declared,
+            json_string(&output.to_string_lossy())
+        ),
+        0,
+    ))
+}
+
+fn write_materialized_circle_col(
+    input: &Path,
+    output: &Path,
+    geometry: &circle_core::dimacs_circle::DimacsCircleGeometry,
+) -> Result<(), SosaError> {
+    if let Some(parent) = output.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let file = File::create(output)?;
+    let mut writer = BufWriter::new(file);
+    writeln!(writer, "c format version 1")?;
+    writeln!(
+        writer,
+        "c instance id {}",
+        input
+            .file_stem()
+            .and_then(|value| value.to_str())
+            .unwrap_or("unknown")
+    )?;
+    writeln!(writer, "c source materialized-circle")?;
+    writeln!(writer, "c materialized from {}", input.to_string_lossy())?;
+    writeln!(writer, "c hord endpoint order START")?;
+    for chunk in geometry.chord_endpoint_order.chunks(32) {
+        write!(writer, "c")?;
+        for vertex in chunk {
+            write!(writer, " {}", vertex)?;
+        }
+        writeln!(writer)?;
+    }
+    writeln!(writer, "c hord endpoint order END")?;
+    writeln!(writer, "p edge {} {}", geometry.n, geometry.m_declared)?;
+    visit_circle_crossing_edges(geometry, |u, v| {
+        writeln!(writer, "e {u} {v}")?;
+        Ok(())
+    })?;
+    Ok(())
 }
 
 #[derive(Clone, Debug)]
@@ -305,7 +374,7 @@ fn help() -> &'static str {
 }
 
 fn instance_help() -> &'static str {
-    "usage: three_col_native instance <inspect|validate> <instance.col> | instance generate --family F --n N --seed S --output PATH | instance generate-sequence --family F --start-n N --stop-n N --step-n N --seed S --output-dir DIR"
+    "usage: three_col_native instance <inspect|validate> <instance.col> | instance materialize-circle <instance.circle> --output PATH | instance generate --family F --n N --seed S --output PATH | instance generate-sequence --family F --start-n N --stop-n N --step-n N --seed S --output-dir DIR"
 }
 
 fn sat_summary_text(summary: &SatSummary) -> String {

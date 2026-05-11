@@ -2,6 +2,7 @@ import json
 import sys
 import tempfile
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import patch
 
@@ -21,7 +22,7 @@ from three_col_circle_code.instances.native import validation_sidecar_path
 
 
 class BenchRunSequenceTests(unittest.TestCase):
-    def test_run_instance_sequence_runs_trials_and_removes_col_artifacts(self) -> None:
+    def test_run_instance_sequence_runs_trials_and_keeps_circle_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_root = Path(tmpdir)
             plan_dir, work_root, instances = _write_sequence_plan(tmp_root)
@@ -34,6 +35,9 @@ class BenchRunSequenceTests(unittest.TestCase):
             ), patch(
                 "three_col_circle_code.bench.run_sequence.run_trial",
                 side_effect=lambda **kwargs: _fake_run_trial(work_root, trial_calls, kwargs["index"]),
+            ), patch(
+                "three_col_circle_code.bench.run_sequence.staged_runtime_instance",
+                side_effect=_fake_staged_runtime_instance,
             ):
                 result_paths = run_instance_sequence(plan_dir=plan_dir, index=1)
 
@@ -50,10 +54,10 @@ class BenchRunSequenceTests(unittest.TestCase):
                 ],
             )
             for row in instances:
-                self.assertFalse(row.instance_path.exists())
-                self.assertFalse(validation_sidecar_path(row.instance_path).exists())
+                self.assertTrue(row.instance_path.exists())
+                self.assertTrue(validation_sidecar_path(row.instance_path).exists())
 
-    def test_run_instance_sequence_can_keep_col_artifacts(self) -> None:
+    def test_run_instance_sequence_accepts_keep_instances_compatibility_flag(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_root = Path(tmpdir)
             plan_dir, work_root, instances = _write_sequence_plan(tmp_root)
@@ -64,6 +68,9 @@ class BenchRunSequenceTests(unittest.TestCase):
             ), patch(
                 "three_col_circle_code.bench.run_sequence.run_trial",
                 side_effect=lambda **kwargs: _fake_run_trial(work_root, [], kwargs["index"]),
+            ), patch(
+                "three_col_circle_code.bench.run_sequence.staged_runtime_instance",
+                side_effect=_fake_staged_runtime_instance,
             ):
                 run_instance_sequence(plan_dir=plan_dir, index=1, keep_instances=True)
 
@@ -82,6 +89,9 @@ class BenchRunSequenceTests(unittest.TestCase):
             ), patch(
                 "three_col_circle_code.bench.run_sequence.run_trial",
                 side_effect=lambda **kwargs: _fake_run_trial(work_root, [], kwargs["index"]),
+            ), patch(
+                "three_col_circle_code.bench.run_sequence.staged_runtime_instance",
+                side_effect=_fake_staged_runtime_instance,
             ):
                 exit_code = main(["--plan-dir", str(plan_dir), "--index", "1"])
 
@@ -98,7 +108,7 @@ def _write_sequence_plan(tmp_root: Path) -> tuple[Path, Path, tuple[InstancePlan
             family="rcy_fast",
             n=100,
             seed=1,
-            instance_path=tmp_root / "instances" / "rcy_fast" / "s" / "rcy_fast-k03-n0100-seed1.col",
+            instance_path=tmp_root / "instances" / "rcy_fast" / "s" / "rcy_fast-k03-n0100-seed1.circle",
             sequence_id="seq-1",
         ),
         InstancePlanRow(
@@ -107,7 +117,7 @@ def _write_sequence_plan(tmp_root: Path) -> tuple[Path, Path, tuple[InstancePlan
             family="rcy_fast",
             n=200,
             seed=1,
-            instance_path=tmp_root / "instances" / "rcy_fast" / "s" / "rcy_fast-k03-n0200-seed1.col",
+            instance_path=tmp_root / "instances" / "rcy_fast" / "s" / "rcy_fast-k03-n0200-seed1.circle",
             sequence_id="seq-1",
         ),
     )
@@ -154,7 +164,7 @@ def _fake_sequence_generation(work_root: Path, rows: tuple[InstancePlanRow, ...]
     result_paths = []
     for row in rows:
         row.instance_path.parent.mkdir(parents=True, exist_ok=True)
-        row.instance_path.write_text("p edge 1 0\n", encoding="utf-8")
+        row.instance_path.write_text("c hord endpoint order START\nc 1 1\nc hord endpoint order END\np circle 1 0\n", encoding="utf-8")
         validation_sidecar_path(row.instance_path).write_text(
             json.dumps({"instance_id": row.instance_id, "validated": True}),
             encoding="utf-8",
@@ -178,6 +188,11 @@ def _fake_sequence_generation(work_root: Path, rows: tuple[InstancePlanRow, ...]
         )
         result_paths.append(result_path)
     return result_paths
+
+
+@contextmanager
+def _fake_staged_runtime_instance(instance_path: Path):
+    yield instance_path
 
 
 def _fake_run_trial(work_root: Path, calls: list[int], index: int) -> Path:

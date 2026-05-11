@@ -9,7 +9,7 @@ from three_col_circle_code.bench.sequences import (
     select_native_sequence_group,
     trial_rows_by_instance_index,
 )
-from three_col_circle_code.instances.native import validation_sidecar_path
+from three_col_circle_code.bench.staging import staged_runtime_instance
 
 
 def run_instance_sequence(
@@ -21,7 +21,7 @@ def run_instance_sequence(
     validate_instance_artifact: bool = False,
     keep_instances: bool = False,
 ) -> list[Path]:
-    """Generate one native instance sequence, run its trials, and optionally remove .col files."""
+    """Generate one native instance sequence and run its trials against staged runtime files."""
     group = select_native_sequence_group(plan_dir, index)
     result_paths = run_instance_sequence_generation(
         plan_dir=plan_dir,
@@ -31,7 +31,7 @@ def run_instance_sequence(
     )
     trial_rows = trial_rows_by_instance_index(plan_dir)
     for instance_row in group:
-        try:
+        with staged_runtime_instance(instance_row.instance_path) as runtime_path:
             for trial_row in trial_rows.get(instance_row.index, ()):
                 result_paths.append(
                     run_trial(
@@ -40,11 +40,9 @@ def run_instance_sequence(
                         work_root=work_root,
                         force=force,
                         validate_instance_artifact=validate_instance_artifact,
+                        runtime_instance_path=runtime_path,
                     )
                 )
-        finally:
-            if not keep_instances:
-                _cleanup_instance_artifact(instance_row.instance_path)
     return result_paths
 
 
@@ -74,18 +72,6 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     for path in result_paths:
         print(path)
     return 0
-
-
-def _cleanup_instance_artifact(instance_path: Path) -> None:
-    path = Path(instance_path)
-    if path.suffix != ".col":
-        return
-    for candidate in (path, validation_sidecar_path(path)):
-        try:
-            candidate.unlink()
-        except FileNotFoundError:
-            pass
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

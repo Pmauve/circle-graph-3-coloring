@@ -330,7 +330,10 @@ struct Endpoints {
     right: Vec<usize>,
 }
 
-fn validate_chord_endpoint_order(n: usize, chord_endpoint_order: &[usize]) -> Result<Endpoints, SosaError> {
+fn validate_chord_endpoint_order(
+    n: usize,
+    chord_endpoint_order: &[usize],
+) -> Result<Endpoints, SosaError> {
     let expected_len = n
         .checked_mul(2)
         .ok_or_else(|| SosaError::Input(format!("vertex count {n} is too large")))?;

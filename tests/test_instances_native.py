@@ -14,6 +14,7 @@ from three_col_circle_code.instances.native import (
     ensure_validated_sidecar,
     generate_col_with_native,
     generate_col_sequence_with_native,
+    materialize_circle_with_native,
     sidecar_is_current,
     validation_sidecar_path,
 )
@@ -45,6 +46,38 @@ class NativeInstanceTests(unittest.TestCase):
         self.assertIn("sha256", sidecar)
         self.assertEqual(set(sidecar), {"instance_id", "sha256", "validated"})
         run.assert_called_once()
+
+    def test_ensure_validated_sidecar_accepts_compact_circle_without_native_command(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "sample.circle"
+            path.write_text(
+                "\n".join(
+                    [
+                        "c instance id sample",
+                        "c family rc",
+                        "c n 2",
+                        "c m 1",
+                        "c num colors 3",
+                        "c hord endpoint order START",
+                        "c 1 2 1 2",
+                        "c hord endpoint order END",
+                        "p circle 2 1",
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            with patch("three_col_circle_code.instances.native.subprocess.run") as run:
+                summary = ensure_validated_sidecar(path)
+
+            sidecar = json.loads(validation_sidecar_path(path).read_text(encoding="utf-8"))
+
+        self.assertEqual(summary.instance_id, "sample")
+        self.assertEqual(summary.n, 2)
+        self.assertEqual(summary.m, 1)
+        self.assertEqual(sidecar["validated"], True)
+        run.assert_not_called()
 
     def test_current_sidecar_skips_native_command(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -178,6 +211,38 @@ class NativeInstanceTests(unittest.TestCase):
                 "10000",
                 "--output-dir",
                 str(output_dir),
+            ],
+        )
+
+    def test_materialize_circle_with_native_invokes_materialize_command(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            circle_path = Path(tmpdir) / "sample.circle"
+            output_path = Path(tmpdir) / "sample.circle.col"
+            completed = subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout='{"status":"ok","n":8,"m":7,"path":"sample.circle.col"}\n',
+                stderr="",
+            )
+
+            with patch.dict(os.environ, {"THREE_COL_NATIVE_BIN": "three_col_native"}), patch(
+                "three_col_circle_code.instances.native.subprocess.run",
+                return_value=completed,
+            ) as run:
+                summary = materialize_circle_with_native(circle_path=circle_path, output_path=output_path)
+
+        self.assertEqual(summary.instance_id, "sample")
+        self.assertEqual(summary.n, 8)
+        self.assertEqual(summary.m, 7)
+        self.assertEqual(
+            run.call_args.args[0],
+            [
+                "three_col_native",
+                "instance",
+                "materialize-circle",
+                str(circle_path),
+                "--output",
+                str(output_path),
             ],
         )
 

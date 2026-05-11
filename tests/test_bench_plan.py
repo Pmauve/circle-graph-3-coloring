@@ -84,7 +84,7 @@ class BenchPlanTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_root = Path(tmpdir)
             instance_pool = tmp_root / "instances"
-            flat_path = instance_pool / "rc-k03-n0002-seed1.col"
+            flat_path = instance_pool / "rc-k03-n0002-seed1.circle"
             flat_path.parent.mkdir(parents=True)
             flat_path.write_text("{}", encoding="utf-8")
             spec_path = _write_spec(
@@ -155,7 +155,7 @@ class BenchPlanTests(unittest.TestCase):
             instances = load_instance_plan(plan_dir)
             trials = load_trial_plan(plan_dir, instances=instances)
 
-        expected_path = tmp_root / "instances" / "rcy_fast" / "s" / "rcy_fast-k04-n0002-seed1.col"
+        expected_path = tmp_root / "instances" / "rcy_fast" / "s" / "rcy_fast-k04-n0002-seed1.circle"
         self.assertEqual(instances[0].instance_id, "rcy_fast-k04-n0002-seed1")
         self.assertEqual(instances[0].num_colors, 4)
         self.assertEqual(instances[0].instance_path, expected_path)
@@ -182,7 +182,7 @@ class BenchPlanTests(unittest.TestCase):
             instances = load_instance_plan(plan_dir)
             trials = load_trial_plan(plan_dir, instances=instances)
 
-        expected = instance_pool / "rc" / "s" / "rc-k03-n0002-seed1.col"
+        expected = instance_pool / "rc" / "s" / "rc-k03-n0002-seed1.circle"
         self.assertEqual(instances[0].instance_path, expected)
         self.assertEqual(trials[0].instance_path, expected)
 

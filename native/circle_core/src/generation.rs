@@ -202,6 +202,20 @@ impl CircleGraphBuilder {
         Ok(summary)
     }
 
+    pub fn write_circle(&self, path: &Path) -> Result<GeneratedSummary, SosaError> {
+        let summary = self.summary_for_path(path);
+        write_dimacs_circle_geometry(self, &summary)?;
+        Ok(summary)
+    }
+
+    pub fn write_path(&self, path: &Path) -> Result<GeneratedSummary, SosaError> {
+        if path.extension().and_then(|value| value.to_str()) == Some("circle") {
+            self.write_circle(path)
+        } else {
+            self.write_col(path)
+        }
+    }
+
     pub fn summary_for_path(&self, path: &Path) -> GeneratedSummary {
         GeneratedSummary {
             instance_id: instance_id(
@@ -592,18 +606,17 @@ pub fn sequence_output_path(
     output_dir
         .join(family.as_str())
         .join(bucket_for_n(n))
-        .join(format!("{}.col", instance_id(family, n, seed, num_colors)))
+        .join(format!(
+            "{}.circle",
+            instance_id(family, n, seed, num_colors)
+        ))
 }
 
-fn write_dimacs_circle(
+fn write_metadata(
+    writer: &mut BufWriter<File>,
     builder: &CircleGraphBuilder,
     summary: &GeneratedSummary,
 ) -> Result<(), SosaError> {
-    if let Some(parent) = summary.path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    let file = File::create(&summary.path)?;
-    let mut writer = BufWriter::new(file);
     let average_degree = if summary.n == 0 {
         0.0
     } else {
@@ -631,8 +644,15 @@ fn write_dimacs_circle(
         "c max attempts per node {}",
         builder.config.max_attempts_per_node
     )?;
+    Ok(())
+}
+
+fn write_endpoint_order(
+    writer: &mut BufWriter<File>,
+    endpoint_order: &[u32],
+) -> Result<(), SosaError> {
     writeln!(writer, "c hord endpoint order START")?;
-    for chunk in builder.endpoint_order.chunks(32) {
+    for chunk in endpoint_order.chunks(32) {
         write!(writer, "c")?;
         for vertex in chunk {
             write!(writer, " {}", vertex + 1)?;
@@ -640,6 +660,20 @@ fn write_dimacs_circle(
         writeln!(writer)?;
     }
     writeln!(writer, "c hord endpoint order END")?;
+    Ok(())
+}
+
+fn write_dimacs_circle(
+    builder: &CircleGraphBuilder,
+    summary: &GeneratedSummary,
+) -> Result<(), SosaError> {
+    if let Some(parent) = summary.path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let file = File::create(&summary.path)?;
+    let mut writer = BufWriter::new(file);
+    write_metadata(&mut writer, builder, summary)?;
+    write_endpoint_order(&mut writer, &builder.endpoint_order)?;
     writeln!(writer, "p edge {} {}", summary.n, summary.m)?;
     for (u, neighbors) in builder.adjacency.iter().enumerate() {
         for &v in neighbors {
@@ -648,6 +682,21 @@ fn write_dimacs_circle(
             }
         }
     }
+    Ok(())
+}
+
+fn write_dimacs_circle_geometry(
+    builder: &CircleGraphBuilder,
+    summary: &GeneratedSummary,
+) -> Result<(), SosaError> {
+    if let Some(parent) = summary.path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let file = File::create(&summary.path)?;
+    let mut writer = BufWriter::new(file);
+    write_metadata(&mut writer, builder, summary)?;
+    write_endpoint_order(&mut writer, &builder.endpoint_order)?;
+    writeln!(writer, "p circle {} {}", summary.n, summary.m)?;
     Ok(())
 }
 

@@ -108,14 +108,47 @@ fn generate_sequence_writes_requested_sizes() {
     let first = output_dir
         .join("rcy_fast")
         .join("s")
-        .join("rcy_fast-k03-n0004-seed19.col");
+        .join("rcy_fast-k03-n0004-seed19.circle");
     let second = output_dir
         .join("rcy_fast")
         .join("s")
-        .join("rcy_fast-k03-n0006-seed19.col");
+        .join("rcy_fast-k03-n0006-seed19.circle");
 
     assert!(first.exists());
     assert!(second.exists());
+}
+
+#[test]
+fn sat_solve_accepts_edge_source_argument() {
+    let path = fixture_path("sat-edge-source.col");
+    write_valid_instance(&path);
+
+    let output = Command::new(binary())
+        .args([
+            "sat",
+            "solve",
+            path.to_str().unwrap(),
+            "--backend",
+            "kissat-rustsat",
+            "--edge-source",
+            "circle_crossings",
+            "--timeout-s",
+            "60",
+        ])
+        .output()
+        .unwrap();
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(
+        !stdout.contains("unknown argument"),
+        "stdout should not report a CLI parser error: {stdout}"
+    );
+    if stdout.contains("backend is only available on Unix targets") {
+        return;
+    }
+    assert!(stdout.contains(r#""edge_source":"circle_crossings""#));
+    assert!(stdout.contains(r#""solver_status":"COLORABLE""#));
+    assert!(output.status.success());
 }
 
 fn fixture_path(name: &str) -> std::path::PathBuf {

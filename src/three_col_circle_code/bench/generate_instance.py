@@ -47,11 +47,11 @@ def run_instance_generation(
     started_at = _now()
     generated = False
     try:
-        existing_info = _load_valid_existing_col_instance(instance_row.instance_path)
+        existing_info = _load_valid_existing_native_instance(instance_row.instance_path)
         if existing_info is None:
             existing_info = _load_valid_existing_instance(instance_row.instance_path)
         if existing_info is None:
-            if Path(instance_row.instance_path).suffix == ".col":
+            if Path(instance_row.instance_path).suffix in {".col", ".circle"}:
                 generate_col_with_native(
                     instance_path=instance_row.instance_path,
                     family=instance_row.family,
@@ -277,9 +277,9 @@ def _resolve_work_root(*, plan_dir: Path, work_root: Optional[Path]) -> Path:
         raise ValueError("plan manifest is missing required field 'work_root'") from exc
 
 
-def _load_valid_existing_col_instance(instance_path: Path) -> Optional[list[dict[str, str]]]:
-    """Validate or trust an existing DIMACS-circle file without materializing a Python graph."""
-    if not Path(instance_path).exists() or Path(instance_path).suffix != ".col":
+def _load_valid_existing_native_instance(instance_path: Path) -> Optional[list[dict[str, str]]]:
+    """Validate or trust an existing native instance artifact without materializing a Python graph."""
+    if not Path(instance_path).exists() or Path(instance_path).suffix not in {".col", ".circle"}:
         return None
     ensure_validated_sidecar(Path(instance_path))
     return []
@@ -289,7 +289,7 @@ def _load_valid_existing_instance(instance_path: Path) -> Optional[list[dict[str
     """Load and validate an existing instance once."""
     if not Path(instance_path).exists():
         return None
-    if Path(instance_path).suffix == ".col":
+    if Path(instance_path).suffix in {".col", ".circle"}:
         return None
     try:
         record = load_instance(instance_path)

@@ -319,7 +319,7 @@ class BenchGenerateInstanceTests(unittest.TestCase):
                         seed=1,
                         num_colors=3,
                         sequence_id="seq-1",
-                        instance_path=tmp_root / "instances" / "rcy_fast" / "s" / f"{instance_id}.col",
+                        instance_path=tmp_root / "instances" / "rcy_fast" / "s" / f"{instance_id}.circle",
                     )
                 )
             plan_dir, work_root = _write_custom_plan(tmp_root, tuple(rows))
@@ -367,7 +367,7 @@ class BenchGenerateInstanceTests(unittest.TestCase):
                         seed=1,
                         num_colors=3,
                         sequence_id="seq-1",
-                        instance_path=tmp_root / "instances" / "rc" / "s" / f"{instance_id}.col",
+                        instance_path=tmp_root / "instances" / "rc" / "s" / f"{instance_id}.circle",
                     )
                 )
             plan_dir, _work_root = _write_custom_plan(tmp_root, tuple(rows))

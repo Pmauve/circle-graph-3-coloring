@@ -1,10 +1,10 @@
 # ZykovColor Integration
 
-ZykovColor is used as an external native solver. The Python benchmark target
-`zykovcolor` receives the planned `.col` DIMACS-circle file path, runs the
-ZykovColor executable on that file, parses the final result line, and stores the
-answer in the normal benchmark result format. In-memory ad-hoc calls still write
-a temporary `.col` file.
+ZykovColor is used as an external native solver. In benchmark runs the planned
+artifact is the compact `.circle` file, but the trial runner materializes a
+temporary solver-ready `.circle.col` file before invoking ZykovColor. The wrapper
+parses the final result line and stores the answer in the normal benchmark
+result format. In-memory ad-hoc calls still write a temporary `.col` file.
 
 The upstream source is not vendored into this repository. It is fetched at a
 pinned commit by:
@@ -83,3 +83,21 @@ Internally this passes ZykovColor's numeric CLI strategy for single-k solving:
 ```text
 --strategy 2 --num-colors 3
 ```
+
+## Timing Fields
+
+ZykovColor emits solver-reported timing lines. The benchmark maps them into the
+common native timing schema:
+
+- `Result ... at Xs Yms` -> `total_native_time_s`
+- `Stats: Time ... Preprocessing` -> `load_prepare_time_s`
+- `Stats: Time ... Algorithm` -> `solve_time_s`
+
+Additional ZykovColor breakdowns remain in `details`, including
+`zykovcolor_stats_total_time_s`, `zykovcolor_building_encoding_time_s`, and
+`zykovcolor_sat_solving_time_s`.
+
+`Stats Total` is kept as diagnostic detail rather than the top-level
+`total_native_time_s`, because it can differ from the final result timestamp.
+`wall_time_s` is still measured by the Python wrapper around the full
+subprocess.

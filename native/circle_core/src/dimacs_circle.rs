@@ -86,7 +86,9 @@ fn parse_dimacs_circle_geometry_skip_edges<R: BufRead>(
                 _ => {}
             },
             "p" => {
-                if parts.len() != 4 || (parts[1] != "edge" && parts[1] != "col") {
+                if parts.len() != 4
+                    || (parts[1] != "edge" && parts[1] != "col" && parts[1] != "circle")
+                {
                     return input_error(format!(
                         "unsupported DIMACS problem line at line {line_number}: {line}"
                     ));

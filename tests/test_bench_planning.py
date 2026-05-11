@@ -27,7 +27,7 @@ class BenchPlanningTests(unittest.TestCase):
             request=run_spec.instance_requests[0],
         )
 
-        self.assertEqual(path, Path("eval/instances/rc/s/rc-k03-n0002-seed1.col"))
+        self.assertEqual(path, Path("eval/instances/rc/s/rc-k03-n0002-seed1.circle"))
 
     def test_n_range_marks_requests_as_sequence(self) -> None:
         run_spec = normalize_run_spec(
@@ -61,7 +61,7 @@ class BenchPlanningTests(unittest.TestCase):
                     "solvers": [{"target": "sosa-3-col-exact"}],
                 }
             )
-            legacy_path = instance_root / "rc_fast" / "s" / "rc_fast-n0200-seed42.col"
+            legacy_path = instance_root / "rc_fast" / "s" / "rc_fast-n0200-seed42.circle"
             legacy_path.parent.mkdir(parents=True)
             legacy_path.write_text("", encoding="utf-8")
 
@@ -82,8 +82,8 @@ class BenchPlanningTests(unittest.TestCase):
                     "solvers": [{"target": "sosa-3-col-exact"}],
                 }
             )
-            canonical_path = instance_root / "rc_fast" / "s" / "rc_fast-k03-n0200-seed42.col"
-            legacy_path = instance_root / "rc_fast" / "s" / "rc_fast-n0200-seed42.col"
+            canonical_path = instance_root / "rc_fast" / "s" / "rc_fast-k03-n0200-seed42.circle"
+            legacy_path = instance_root / "rc_fast" / "s" / "rc_fast-n0200-seed42.circle"
             canonical_path.parent.mkdir(parents=True)
             canonical_path.write_text("", encoding="utf-8")
             legacy_path.write_text("", encoding="utf-8")
@@ -105,7 +105,7 @@ class BenchPlanningTests(unittest.TestCase):
                     "solvers": [{"target": "sosa-3-col-exact"}],
                 }
             )
-            legacy_path = instance_root / "rc" / "s" / "rc-n0400-seed1.col"
+            legacy_path = instance_root / "rc" / "s" / "rc-n0400-seed1.circle"
             legacy_path.parent.mkdir(parents=True)
             legacy_path.write_text("", encoding="utf-8")
 

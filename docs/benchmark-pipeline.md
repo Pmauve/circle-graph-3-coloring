@@ -20,9 +20,12 @@ benchmark_run --spec eval/sample_specs/pipeline-smoke.json --jobs 4
 
 This plans the run, generates missing instances, runs all trials, merges results, writes summaries, and builds `report.html`.
 
-Benchmark instances are canonical `.col` DIMACS-circle files. The planner
-reuses matching `.col` files from the spec's `instance_pool_root` and generation
-writes missing instances directly as `.col`.
+Benchmark instances are canonical compact `.circle` DIMACS-circle files. A
+`.circle` file stores metadata plus the chord endpoint order only; solver-ready
+edge lists are materialized as temporary `.circle.col` files in scratch storage
+immediately before solver execution. The planner reuses matching `.circle`
+files from the spec's `instance_pool_root` and generation writes missing
+instances directly as `.circle`.
 
 Set instance-side `num_colors` in an `instances` block when generating `k > 3` instances. Solver `params.num_colors` stays independent, so the same generated instance can still be tested with different solver palettes.
 
@@ -93,10 +96,10 @@ produced successful benchmark outputs.
 
 ### Sequence Runs
 
-Large native `.col` instances can exceed user quota if all generated artifacts
-are kept until the end of the run. For plans whose instance rows have
-`sequence_id`, use the sequence task instead of separate instance and trial
-arrays:
+For plans whose instance rows have `sequence_id`, use the sequence task instead
+of separate instance and trial arrays when you want each growable trajectory to
+be generated incrementally and each instance materialized once for all of its
+trials:
 
 ```bash
 RUN_ID=my-sequence-run
@@ -115,16 +118,13 @@ qsub -N "${RUN_ID}-seq" \
   scripts/benchmark_cluster/sequence_task.sh
 ```
 
-Each sequence task generates one native sequence, runs all planned trials for
-the instances in that sequence, then deletes the generated `.col` files and
-their `.validation.json` sidecars. It keeps `eval/benchmark_plans/<run-id>` and
-`eval/benchmark_work/<run-id>` intact so `benchmark_status`, `benchmark_merge`,
-and failure diagnostics still work normally. Set `KEEP_INSTANCES=1` to keep the
-generated `.col` files for debugging.
-
-The current native sequence generator writes the full sequence before Python can
-delete individual instances, so peak disk usage is still one sequence. Keep each
-`sequence_id` group small enough to fit quota.
+Each sequence task generates one native `.circle` sequence, materializes one
+temporary `.circle.col` per instance in `$TMPDIR`, runs all planned trials for
+that instance against the staged file, and then lets the scratch file disappear.
+It keeps canonical `.circle` files, `.circle.validation.json` sidecars,
+`eval/benchmark_plans/<run-id>`, and `eval/benchmark_work/<run-id>` intact so
+`benchmark_status`, `benchmark_merge`, and failure diagnostics still work
+normally.
 
 ## Outputs
 
@@ -137,7 +137,9 @@ eval/runs/<run-id>/results.jsonl
 eval/runs/<run-id>/report.html
 ```
 
-Instances themselves live in the spec's `instance_pool_root`, not in the work directory.
+Canonical compact instances live in the spec's `instance_pool_root`, not in the
+work directory. Runtime `.circle.col` files are scratch artifacts and should not
+be treated as benchmark outputs.
 
 Trial result rows record both `wall_time_s` and `core_time_s`. Wall time is the
 default report metric and includes parsing, subprocess overhead, and solver

@@ -47,7 +47,7 @@ def ensure_validated_sidecar(instance_path: Path, *, force: bool = False) -> Nat
                 num_colors=None,
             )
 
-    summary = validate_col_with_native(path)
+    summary = validate_circle_with_python(path) if path.suffix == ".circle" else validate_col_with_native(path)
     _write_sidecar(sidecar, summary=summary, digest=digest)
     return summary
 
@@ -66,6 +66,90 @@ def validate_col_with_native(instance_path: Path) -> NativeInstanceSummary:
 
 def inspect_col_with_native(instance_path: Path) -> NativeInstanceSummary:
     return _run_native_instance_command("inspect", Path(instance_path))
+
+
+def validate_circle_with_python(instance_path: Path) -> NativeInstanceSummary:
+    """Validate a compact DIMACS-circle geometry artifact without materializing edges."""
+    path = Path(instance_path)
+    comments: dict[str, str] = {}
+    n_problem: int | None = None
+    m_problem: int | None = None
+    endpoint_order: list[int] = []
+    in_endpoint_order = False
+    saw_endpoint_order = False
+    with path.open(encoding="utf-8") as infile:
+        for line_number, raw_line in enumerate(infile, start=1):
+            line = raw_line.strip().lstrip("\ufeff")
+            if not line:
+                continue
+            parts = line.split()
+            if parts[0] == "c":
+                action = _circle_endpoint_order_action(parts[1:])
+                if action == "START":
+                    if in_endpoint_order or saw_endpoint_order:
+                        raise NativeInstanceInvalid(f"duplicate or nested chord endpoint order at line {line_number}")
+                    in_endpoint_order = True
+                    saw_endpoint_order = True
+                elif action == "END":
+                    if not in_endpoint_order:
+                        raise NativeInstanceInvalid(f"chord endpoint order END without START at line {line_number}")
+                    in_endpoint_order = False
+                elif in_endpoint_order:
+                    try:
+                        endpoint_order.extend(int(token) for token in parts[1:])
+                    except ValueError as exc:
+                        raise NativeInstanceInvalid(f"invalid endpoint id at line {line_number}") from exc
+                else:
+                    _capture_circle_metadata_comment(comments, parts[1:])
+                continue
+            if parts[0] == "p":
+                if parts[1:2] != ["circle"] or len(parts) != 4:
+                    raise NativeInstanceInvalid(f"unsupported circle problem line at line {line_number}: {line!r}")
+                if n_problem is not None:
+                    raise NativeInstanceInvalid(f"duplicate circle problem line at line {line_number}")
+                try:
+                    n_problem = int(parts[2])
+                    m_problem = int(parts[3])
+                except ValueError as exc:
+                    raise NativeInstanceInvalid(f"invalid circle problem line at line {line_number}: {line!r}") from exc
+                continue
+            raise NativeInstanceInvalid(f"unsupported circle line at line {line_number}: {line!r}")
+
+    if in_endpoint_order:
+        raise NativeInstanceInvalid("chord endpoint order block is missing END")
+    if n_problem is None or m_problem is None:
+        raise NativeInstanceInvalid("circle file is missing a problem line")
+    if not saw_endpoint_order:
+        raise NativeInstanceInvalid("circle file is missing a chord endpoint order block")
+    if len(endpoint_order) != 2 * n_problem:
+        raise NativeInstanceInvalid(
+            f"chord endpoint order has {len(endpoint_order)} entries, expected {2 * n_problem}"
+        )
+    counts = [0] * (n_problem + 1)
+    for vertex in endpoint_order:
+        if vertex < 1 or vertex > n_problem:
+            raise NativeInstanceInvalid(f"endpoint vertex id {vertex} out of range 1..{n_problem}")
+        counts[vertex] += 1
+    bad_counts = [vertex for vertex in range(1, n_problem + 1) if counts[vertex] != 2]
+    if bad_counts:
+        raise NativeInstanceInvalid(f"vertices without exactly two endpoints: {bad_counts[:8]}")
+    metadata_n = comments.get("n")
+    metadata_m = comments.get("m")
+    try:
+        if metadata_n is not None and int(metadata_n) != n_problem:
+            raise NativeInstanceInvalid(f"metadata n={metadata_n} does not match problem n={n_problem}")
+        if metadata_m is not None and int(metadata_m) != m_problem:
+            raise NativeInstanceInvalid(f"metadata m={metadata_m} does not match problem m={m_problem}")
+        num_colors = None if comments.get("num_colors") is None else int(comments["num_colors"])
+    except ValueError as exc:
+        raise NativeInstanceInvalid("circle metadata contains a non-integer numeric field") from exc
+    return NativeInstanceSummary(
+        instance_id=comments.get("instance_id", path.stem),
+        family=comments.get("family"),
+        n=n_problem,
+        m=m_problem,
+        num_colors=num_colors,
+    )
 
 
 def generate_col_with_native(
@@ -182,6 +266,44 @@ def generate_col_sequence_with_native(
     return [Path(str(path)) for path in paths]
 
 
+def materialize_circle_with_native(*, circle_path: Path, output_path: Path) -> NativeInstanceSummary:
+    """Materialize a compact .circle file into a full .circle.col file through the native CLI."""
+    binary = os.environ.get(THREE_COL_NATIVE_BIN_ENV)
+    if not binary:
+        raise NativeInstanceError(f"{THREE_COL_NATIVE_BIN_ENV} is required for native instance materialization")
+    try:
+        completed = subprocess.run(
+            [
+                binary,
+                "instance",
+                "materialize-circle",
+                str(circle_path),
+                "--output",
+                str(output_path),
+            ],
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+    except OSError as exc:
+        raise NativeInstanceError(f"failed to start {binary!r}: {exc}") from exc
+
+    payload = _parse_native_json(completed.stdout)
+    if completed.returncode != 0:
+        message = str(payload.get("error") or completed.stderr or completed.stdout or "native materialization failed")
+        raise NativeInstanceError(message)
+    if payload.get("status") != "ok":
+        raise NativeInstanceError(f"unexpected native materialization status {payload.get('status')!r}")
+    return NativeInstanceSummary(
+        instance_id=Path(circle_path).stem,
+        family=None,
+        n=int(payload["n"]),
+        m=int(payload["m"]),
+        num_colors=None,
+    )
+
+
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with Path(path).open("rb") as infile:
@@ -231,6 +353,28 @@ def _parse_native_json(stdout: str) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise NativeInstanceError("native instance command returned non-object JSON")
     return payload
+
+
+def _circle_endpoint_order_action(parts: list[str]) -> str | None:
+    if len(parts) == 4 and parts[:3] == ["hord", "endpoint", "order"]:
+        if parts[3] in {"START", "END"}:
+            return parts[3]
+        return "UNKNOWN"
+    return None
+
+
+def _capture_circle_metadata_comment(comments: dict[str, str], parts: list[str]) -> None:
+    metadata_keys = {
+        ("instance", "id"): "instance_id",
+        ("family",): "family",
+        ("n",): "n",
+        ("m",): "m",
+        ("num", "colors"): "num_colors",
+    }
+    for key_parts, key in metadata_keys.items():
+        if tuple(parts[: len(key_parts)]) == key_parts and len(parts) > len(key_parts):
+            comments[key] = " ".join(parts[len(key_parts) :])
+            return
 
 
 def _read_current_sidecar(sidecar: Path, *, instance_path: Path, digest: str) -> dict[str, Any] | None:
