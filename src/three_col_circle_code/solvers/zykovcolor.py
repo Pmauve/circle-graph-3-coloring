@@ -27,8 +27,16 @@ ZYKOVCOLOR_BIN_ENV = "ZYKOVCOLOR_BIN"
 
 _CHROMATIC_RE = re.compile(r"IncSatGC computed chromatic number of\s+(\d+)")
 _SINGLE_K_RE = re.compile(r"IncSatGC computed\s+(SAT|UNSAT)\s+for k\s*=\s*(\d+)")
-_STATS_TOTAL_TIME_RE = re.compile(r"Stats:\s+Time\s+.*?Total:\s*(\d+)s\s+(\d+)ms")
 _RESULT_TIME_RE = re.compile(r"Result:.*?\bat\s+(\d+)s\s+(\d+)ms")
+_REPORTED_TIME_LABELS = {
+    "stats_total_time_s": "Total",
+    "preprocessing_time_s": "Preprocessing",
+    "algorithm_time_s": "Algorithm",
+    "building_encoding_time_s": "Building encoding",
+    "building_at_most_k_constraints_time_s": "Building at most k constraints",
+    "cegar_time_s": "CEGAR",
+    "sat_solving_time_s": "Sat solving",
+}
 _DECIMAL_TOTAL_TIME_RE = re.compile(r"total time\D+([0-9]+(?:\.[0-9]+)?)", re.IGNORECASE)
 _EFFECTIVE_ENCODING_RE = re.compile(r"Options\s+:\s+Encoding\s+=\s+(.+)")
 _EFFECTIVE_STRATEGY_RE = re.compile(r"Options\s+:\s+Strategy\s+=\s+(.+)")
@@ -129,7 +137,7 @@ def _run_zykovcolor_on_path(
             record=record,
             requested_params=requested_params,
             error="ZykovColor params.extra_args must not include --solver; use params.solver instead",
-            details={"core_time_source": "missing"},
+            details={"native_time_source": "missing", "core_time_source": "missing"},
         )
     command = [executable, str(dimacs_path), *mode_args, *extra_args]
 
@@ -162,7 +170,11 @@ def _run_zykovcolor_on_path(
             details={"error_type": type(exc).__name__},
         )
 
-    core_time_s = _parse_core_time(completed.stdout)
+    reported_times = _parse_reported_times(completed.stdout)
+    result_time_s = reported_times.get("result_time_s")
+    total_native_time_s = result_time_s if result_time_s is not None else reported_times.get("stats_total_time_s")
+    load_prepare_time_s = reported_times.get("preprocessing_time_s")
+    solve_time_s = reported_times.get("algorithm_time_s")
     effective_options = _parse_effective_options(completed.stdout)
     details: dict[str, Any] = {
         "requested_params": requested_params,
@@ -177,7 +189,21 @@ def _run_zykovcolor_on_path(
         "requested_mode": mode,
         "effective_encoding": effective_options.get("encoding"),
         "effective_strategy": effective_options.get("strategy"),
-        "core_time_source": "zykovcolor_reported" if core_time_s is not None else "missing",
+        "native_time_source": "zykovcolor_reported" if total_native_time_s is not None else "missing",
+        "total_native_time_s": total_native_time_s,
+        "load_prepare_time_s": load_prepare_time_s,
+        "solve_time_s": solve_time_s,
+        "zykovcolor_result_time_s": reported_times.get("result_time_s"),
+        "zykovcolor_stats_total_time_s": reported_times.get("stats_total_time_s"),
+        "zykovcolor_preprocessing_time_s": reported_times.get("preprocessing_time_s"),
+        "zykovcolor_algorithm_time_s": reported_times.get("algorithm_time_s"),
+        "zykovcolor_building_encoding_time_s": reported_times.get("building_encoding_time_s"),
+        "zykovcolor_building_at_most_k_constraints_time_s": reported_times.get(
+            "building_at_most_k_constraints_time_s"
+        ),
+        "zykovcolor_cegar_time_s": reported_times.get("cegar_time_s"),
+        "zykovcolor_sat_solving_time_s": reported_times.get("sat_solving_time_s"),
+        "core_time_source": "zykovcolor_reported" if total_native_time_s is not None else "missing",
     }
     validation_error = _effective_option_error(
         mode=mode,
@@ -222,7 +248,8 @@ def _run_zykovcolor_on_path(
         backend=None,
         status=SOLVER_STATUS_OK,
         wall_time_s=wall_time_s,
-        core_time_s=core_time_s,
+        core_time_s=total_native_time_s,
+        total_native_time_s=total_native_time_s,
         is_colorable=is_colorable,
         n_vertices=record.graph.number_of_nodes(),
         m_edges=record.graph.number_of_edges(),
@@ -377,19 +404,38 @@ def _tail(value: Optional[str], *, max_chars: int = 4000) -> str:
 
 
 def _parse_core_time(stdout: str) -> Optional[float]:
-    result_matches = _RESULT_TIME_RE.findall(stdout)
-    if result_matches:
-        seconds, milliseconds = result_matches[-1]
-        return int(seconds) + int(milliseconds) / 1000.0
-    stats_match = _STATS_TOTAL_TIME_RE.search(stdout)
-    if stats_match is not None:
-        seconds = int(stats_match.group(1))
-        milliseconds = int(stats_match.group(2))
-        return seconds + milliseconds / 1000.0
+    times = _parse_reported_times(stdout)
+    if times.get("result_time_s") is not None:
+        return times["result_time_s"]
+    if times.get("stats_total_time_s") is not None:
+        return times["stats_total_time_s"]
     decimal_match = _DECIMAL_TOTAL_TIME_RE.search(stdout)
     if decimal_match is None:
         return None
     return float(decimal_match.group(1))
+
+
+def _parse_reported_times(stdout: str) -> dict[str, float]:
+    times: dict[str, float] = {}
+    result_matches = _RESULT_TIME_RE.findall(stdout)
+    if result_matches:
+        seconds, milliseconds = result_matches[-1]
+        times["result_time_s"] = _seconds_from_parts(seconds, milliseconds)
+
+    for key, label in _REPORTED_TIME_LABELS.items():
+        pattern = re.compile(
+            rf"Stats:\s+Time[^\r\n]*?{re.escape(label)}:\s*(\d+)s\s+(\d+)ms",
+            re.IGNORECASE,
+        )
+        matches = pattern.findall(stdout)
+        if matches:
+            seconds, milliseconds = matches[-1]
+            times[key] = _seconds_from_parts(seconds, milliseconds)
+    return times
+
+
+def _seconds_from_parts(seconds: str, milliseconds: str) -> float:
+    return int(seconds) + int(milliseconds) / 1000.0
 
 
 def _parse_effective_options(stdout: str) -> dict[str, str]:

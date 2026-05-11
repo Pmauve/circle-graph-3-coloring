@@ -16,8 +16,22 @@ from three_col_circle_code.solvers.common import SolverConfig
 from three_col_circle_code.solvers.zykovcolor import (
     ZYKOVCOLOR_SOLVER,
     _parse_core_time,
+    _parse_reported_times,
     parse_zykovcolor_output,
     solve_zykovcolor,
+)
+
+
+ZYKOVCOLOR_TIMED_STDOUT = (
+    "Result: Unsatisfiable for 3 colors at 12s 469ms and 441.309 mb memory.\n"
+    "c Stats: Time \u250c Total: 2s 754ms\n"
+    "c Stats: Time \u2502 \u250c Preprocessing: 2s 12ms\n"
+    "c Stats: Time \u2502 \u250c Algorithm: 0s 742ms\n"
+    "c Stats: Time \u2502 \u2502 - Building encoding: 0s 592ms\n"
+    "c Stats: Time \u2502 \u2502 - Building at most k constraints: 0s 58ms\n"
+    "c Stats: Time \u2502 \u2502 - CEGAR: 0s 0ms\n"
+    "c Stats: Time \u2502 \u2502 \u250c Sat solving: 0s 91ms\n"
+    "IncSatGC computed UNSAT for k = 3\n"
 )
 
 
@@ -52,6 +66,29 @@ class ZykovColorSolverTests(unittest.TestCase):
             9.436,
         )
 
+    def test_parse_reported_times_extracts_result_timestamp(self) -> None:
+        self.assertEqual(_parse_reported_times(ZYKOVCOLOR_TIMED_STDOUT)["result_time_s"], 12.469)
+
+    def test_parse_reported_times_extracts_stats_total(self) -> None:
+        self.assertEqual(_parse_reported_times(ZYKOVCOLOR_TIMED_STDOUT)["stats_total_time_s"], 2.754)
+
+    def test_parse_reported_times_extracts_preprocessing(self) -> None:
+        self.assertEqual(_parse_reported_times(ZYKOVCOLOR_TIMED_STDOUT)["preprocessing_time_s"], 2.012)
+
+    def test_parse_reported_times_extracts_algorithm(self) -> None:
+        self.assertEqual(_parse_reported_times(ZYKOVCOLOR_TIMED_STDOUT)["algorithm_time_s"], 0.742)
+
+    def test_parse_reported_times_extracts_sat_solving(self) -> None:
+        self.assertEqual(_parse_reported_times(ZYKOVCOLOR_TIMED_STDOUT)["sat_solving_time_s"], 0.091)
+
+    def test_parse_core_time_falls_back_to_stats_total_without_result_timestamp(self) -> None:
+        stdout = "\n".join(line for line in ZYKOVCOLOR_TIMED_STDOUT.splitlines() if not line.startswith("Result:"))
+        self.assertEqual(_parse_core_time(stdout), 2.754)
+
+    def test_parse_core_time_prefers_zero_result_timestamp_over_stats_total(self) -> None:
+        stdout = "Result: Satisfiable for 3 colors at 0s 0ms\nc Stats: Time \u250c Total: 2s 754ms\n"
+        self.assertEqual(_parse_core_time(stdout), 0.0)
+
     def test_solve_zykovcolor_runs_external_executable(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             executable = _write_fake_solver(
@@ -78,6 +115,71 @@ class ZykovColorSolverTests(unittest.TestCase):
         self.assertIn("2", result.details["command"])
         self.assertIn("--num-colors", result.details["command"])
         self.assertNotIn("--zykov-color", result.details["command"])
+
+    def test_solve_zykovcolor_maps_reported_times_to_native_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            executable = _write_fake_solver(
+                Path(tmpdir),
+                stdout=(
+                    "c Options : Encoding                = Assignment Encoding\n"
+                    "c Options : Strategy                = Single K\n"
+                    f"{ZYKOVCOLOR_TIMED_STDOUT}"
+                ),
+            )
+            result = solve_zykovcolor(
+                _sample_record(),
+                params={"executable": str(executable), "mode": "single-k", "decision_num_colors": 3},
+            )
+
+        self.assertEqual(result.status, SOLVER_STATUS_OK, result.error)
+        self.assertFalse(result.is_colorable)
+        self.assertEqual(result.total_native_time_s, 12.469)
+        self.assertEqual(result.core_time_s, 12.469)
+        self.assertEqual(result.details["total_native_time_s"], 12.469)
+        self.assertEqual(result.details["load_prepare_time_s"], 2.012)
+        self.assertEqual(result.details["solve_time_s"], 0.742)
+        self.assertEqual(result.details["zykovcolor_stats_total_time_s"], 2.754)
+        self.assertEqual(result.details["zykovcolor_sat_solving_time_s"], 0.091)
+        self.assertEqual(result.details["native_time_source"], "zykovcolor_reported")
+        self.assertEqual(result.details["core_time_source"], "zykovcolor_reported")
+
+    def test_solve_zykovcolor_prefers_zero_result_time_over_stats_total(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            executable = _write_fake_solver(
+                Path(tmpdir),
+                stdout=(
+                    "c Options : Encoding                = Assignment Encoding\n"
+                    "c Options : Strategy                = Single K\n"
+                    "Result: Satisfiable for 3 colors at 0s 0ms\n"
+                    "c Stats: Time \u250c Total: 2s 754ms\n"
+                    "IncSatGC computed SAT for k = 3\n"
+                ),
+            )
+            result = solve_zykovcolor(
+                _sample_record(),
+                params={"executable": str(executable), "mode": "single-k", "decision_num_colors": 3},
+            )
+
+        self.assertEqual(result.status, SOLVER_STATUS_OK, result.error)
+        self.assertEqual(result.total_native_time_s, 0.0)
+        self.assertEqual(result.core_time_s, 0.0)
+        self.assertEqual(result.details["total_native_time_s"], 0.0)
+        self.assertEqual(result.details["zykovcolor_stats_total_time_s"], 2.754)
+
+    def test_solve_zykovcolor_error_keeps_parseable_reported_times_in_details(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            executable = _write_fake_solver(Path(tmpdir), stdout=ZYKOVCOLOR_TIMED_STDOUT, returncode=2)
+            result = solve_zykovcolor(
+                _sample_record(),
+                params={"executable": str(executable), "mode": "single-k", "decision_num_colors": 3},
+            )
+
+        self.assertEqual(result.status, SOLVER_STATUS_ERROR)
+        self.assertIsNone(result.total_native_time_s)
+        self.assertIsNone(result.core_time_s)
+        self.assertEqual(result.details["total_native_time_s"], 12.469)
+        self.assertEqual(result.details["load_prepare_time_s"], 2.012)
+        self.assertEqual(result.details["solve_time_s"], 0.742)
 
     def test_solve_zykovcolor_rejects_overridden_single_k_strategy(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -188,7 +290,7 @@ def _write_fake_solver(tmpdir: Path, *, stdout: str, returncode: int = 0) -> Pat
             dimacs_path = Path(sys.argv[1])
             if "p edge" not in dimacs_path.read_text(encoding="utf-8"):
                 raise SystemExit(3)
-            sys.stdout.write({stdout!r})
+            sys.stdout.buffer.write({stdout.encode("utf-8")!r})
             raise SystemExit({returncode})
             """
         ).strip()

@@ -214,6 +214,49 @@ class BenchReportDataTests(unittest.TestCase):
         self.assertEqual(sat_row["metrics"]["load_prepare_time_s"], 0.25)
         self.assertEqual(sat_row["metrics"]["solve_time_s"], 0.75)
 
+    def test_report_data_exposes_zykovcolor_native_timing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            run_dir = Path(tmpdir) / "zykov-run"
+            run_dir.mkdir()
+            row = {
+                "run_id": "zykov-run",
+                "instance_id": "rc-k03-n0002-seed1",
+                "instance_path": "instance.col",
+                "family": "rc",
+                "bucket": "s",
+                "n": 2,
+                "m": 1,
+                "seed": 1,
+                "source": "generated",
+                "solver_target": "zykovcolor",
+                "solver": "zykovcolor",
+                "backend": None,
+                "solver_params": {},
+                "status": "ok",
+                "mean_wall_time_s": 13.9,
+                "mean_total_native_time_s": 12.469,
+                "mean_load_prepare_time_s": 2.012,
+                "mean_solve_time_s": 0.742,
+                "is_colorable": False,
+                "validation_ok": True,
+                "validation_errors": [],
+                "details": {"native_time_source": "zykovcolor_reported"},
+                "error": None,
+            }
+            (run_dir / RESULTS_FILENAME).write_text(json.dumps(row) + "\n", encoding="utf-8")
+
+            data = load_benchmark_report_data(run_dir)
+
+        zykov_row = data.rows[0]
+        self.assertEqual(zykov_row.mean_total_native_time_s, 12.469)
+        self.assertEqual(zykov_row.mean_load_prepare_time_s, 2.012)
+        self.assertEqual(zykov_row.mean_solve_time_s, 0.742)
+        payload = build_report_plot_payload(data)
+        plot_row = payload["rows"][0]
+        self.assertEqual(plot_row["metrics"]["native_total_time_s"], 12.469)
+        self.assertEqual(plot_row["metrics"]["load_prepare_time_s"], 2.012)
+        self.assertEqual(plot_row["metrics"]["solve_time_s"], 0.742)
+
 
 class BenchReportHtmlTests(unittest.TestCase):
     def test_render_report_html_contains_key_sections(self) -> None:
