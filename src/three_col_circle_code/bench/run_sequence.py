@@ -1,9 +1,11 @@
 import argparse
+import json
 from pathlib import Path
 import sys
 from typing import Iterable, Optional
 
 from three_col_circle_code.bench.generate_instance import run_instance_sequence_generation
+from three_col_circle_code.bench.plan_io import instance_result_path
 from three_col_circle_code.bench.run_trial import run_trial
 from three_col_circle_code.bench.sequences import (
     select_native_sequence_group,
@@ -31,6 +33,22 @@ def run_instance_sequence(
     )
     trial_rows = trial_rows_by_instance_index(plan_dir)
     for instance_row in group:
+        instance_status = _instance_generation_status(
+            work_root=Path(work_root) if work_root is not None else _default_work_root(plan_dir),
+            index=instance_row.index,
+        )
+        if instance_status not in {"ok", "skipped"}:
+            for trial_row in trial_rows.get(instance_row.index, ()):
+                result_paths.append(
+                    run_trial(
+                        plan_dir=plan_dir,
+                        index=trial_row.index,
+                        work_root=work_root,
+                        force=force,
+                        validate_instance_artifact=validate_instance_artifact,
+                    )
+                )
+            continue
         with staged_runtime_instance(instance_row.instance_path) as runtime_path:
             for trial_row in trial_rows.get(instance_row.index, ()):
                 result_paths.append(
@@ -44,6 +62,22 @@ def run_instance_sequence(
                     )
                 )
     return result_paths
+
+
+def _default_work_root(plan_dir: Path) -> Path:
+    manifest = json.loads((Path(plan_dir) / "manifest.json").read_text(encoding="utf-8"))
+    return Path(str(manifest["work_root"]))
+
+
+def _instance_generation_status(*, work_root: Path, index: int) -> Optional[str]:
+    result_path = instance_result_path(work_root, index)
+    if not result_path.exists():
+        return None
+    try:
+        result = json.loads(result_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+    return str(result.get("status"))
 
 
 def main(argv: Optional[Iterable[str]] = None) -> int:

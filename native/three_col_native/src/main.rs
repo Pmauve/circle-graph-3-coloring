@@ -178,10 +178,16 @@ fn write_materialized_circle_col(
     }
     writeln!(writer, "c hord endpoint order END")?;
     writeln!(writer, "p edge {} {}", geometry.n, geometry.m_declared)?;
+    let mut edges = Vec::new();
     visit_circle_crossing_edges(geometry, |u, v| {
-        writeln!(writer, "e {u} {v}")?;
+        let edge = if u <= v { (u, v) } else { (v, u) };
+        edges.push(edge);
         Ok(())
     })?;
+    edges.sort_unstable();
+    for (u, v) in edges {
+        writeln!(writer, "e {u} {v}")?;
+    }
     Ok(())
 }
 

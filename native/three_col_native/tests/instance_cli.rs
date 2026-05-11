@@ -119,6 +119,48 @@ fn generate_sequence_writes_requested_sizes() {
 }
 
 #[test]
+fn materialize_circle_writes_sorted_edges() {
+    let input = fixture_path("materialize.circle");
+    let output = fixture_path("materialize.circle.col");
+    fs::write(
+        &input,
+        "\
+c format version 1
+c instance id materialize
+c family rc
+c n 2
+c m 1
+c num colors 3
+c hord endpoint order START
+c 2 1 2 1
+c hord endpoint order END
+p circle 2 1
+",
+    )
+    .unwrap();
+
+    let command_output = Command::new(binary())
+        .args([
+            "instance",
+            "materialize-circle",
+            input.to_str().unwrap(),
+            "--output",
+            output.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+
+    assert!(command_output.status.success());
+    let materialized = fs::read_to_string(output).unwrap();
+    assert!(materialized.contains("p edge 2 1"));
+    let edge_lines: Vec<&str> = materialized
+        .lines()
+        .filter(|line| line.starts_with("e "))
+        .collect();
+    assert_eq!(edge_lines, vec!["e 1 2"]);
+}
+
+#[test]
 fn sat_solve_accepts_edge_source_argument() {
     let path = fixture_path("sat-edge-source.col");
     write_valid_instance(&path);
