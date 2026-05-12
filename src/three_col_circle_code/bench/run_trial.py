@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from statistics import mean, median
 import sys
-from typing import Any, Iterable, Optional
+from typing import Any, Iterable, Mapping, Optional
 
 from three_col_circle_code.bench.env import collect_environment_metadata
 from three_col_circle_code.bench.plan_io import (
@@ -555,8 +555,22 @@ def _write_result(path: Path, result: dict[str, Any]) -> None:
     """Write one isolated trial result JSON file."""
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as outfile:
-        json.dump(result, outfile, indent=2, sort_keys=True)
+        json.dump(_json_ready(result), outfile, indent=2, sort_keys=True)
         outfile.write("\n")
+
+
+def _json_ready(value: Any) -> Any:
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, Mapping):
+        return {str(key): _json_ready(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_json_ready(item) for item in value]
+    return str(value)
 
 
 def _now() -> str:

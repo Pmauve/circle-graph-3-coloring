@@ -20,7 +20,7 @@ from three_col_circle_code.bench.plan_io import (
     write_plan_manifest,
     write_trial_plan,
 )
-from three_col_circle_code.bench.run_trial import main, run_trial
+from three_col_circle_code.bench.run_trial import _write_result, main, run_trial
 from three_col_circle_code.instances.io import save_instance
 from three_col_circle_code.instances.model import InstanceMetadata, InstanceRecord
 from three_col_circle_code.solvers.common import SOLVER_STATUS_OK, SolverResult
@@ -184,6 +184,24 @@ class BenchRunTrialTests(unittest.TestCase):
         self.assertEqual(result["ok_repetitions"], 0)
         self.assertIn("MemoryError", result["error"])
         self.assertEqual(result["details"]["error_type"], "MemoryError")
+
+    def test_write_result_serializes_bytes_in_solver_details(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result_path = Path(tmpdir) / "result.json"
+            _write_result(
+                result_path,
+                {
+                    "status": "error",
+                    "details": {
+                        "stdout_tail": b"s ERROR\n",
+                        "nested": [b"raw bytes"],
+                    },
+                },
+            )
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(result["details"]["stdout_tail"], "s ERROR\n")
+        self.assertEqual(result["details"]["nested"], ["raw bytes"])
 
     def test_run_trial_records_invalid_missing_instance(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
