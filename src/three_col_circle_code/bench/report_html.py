@@ -476,15 +476,30 @@ _TEMPLATE = """
           return payload.metrics.find((metric) => metric.key === selectedMetric) || payload.metrics[0];
         }
 
-        function currentVisibilityBySolver() {
+        function currentVisibilityBySolver(plot) {
           const visibility = {};
-          if (!plotElement.data) {
+          if (!plot.data) {
             return visibility;
           }
-          plotElement.data.forEach((trace) => {
-            visibility[trace.name] = trace.visible;
+          plot.data.forEach((trace) => {
+            const key = trace.legendgroup || trace.name;
+            if (key && trace.showlegend !== false) {
+              visibility[key] = trace.visible;
+            }
           });
           return visibility;
+        }
+
+        function visibleFor(previousVisibility, key) {
+          return Object.prototype.hasOwnProperty.call(previousVisibility, key)
+            ? previousVisibility[key]
+            : true;
+        }
+
+        function familyLineDash(family) {
+          const index = payload.families.indexOf(family);
+          const dashes = ["solid", "dash", "dot", "dashdot", "longdash", "longdashdot"];
+          return dashes[Math.max(index, 0) % dashes.length];
         }
 
         function rgbaColor(color, alpha) {
@@ -507,6 +522,7 @@ _TEMPLATE = """
         function buildAggregateTraces(metricKey, selectedFamilySet, previousVisibility) {
           const traces = [];
           const grouped = {};
+          const legendSolvers = new Set();
           aggregateTraceRows(metricKey, selectedFamilySet).forEach((row) => {
             const key = row.solver + "\u0000" + row.family;
             if (!grouped[key]) {
@@ -518,31 +534,33 @@ _TEMPLATE = """
             const rows = grouped[key].sort((left, right) => left.n - right.n);
             const solver = rows[0].solver;
             const family = rows[0].family;
-            const name = solver + " · " + family;
             const color = colors[solver] || "#2f4f6f";
-            const visible = previousVisibility[name];
+            const visible = visibleFor(previousVisibility, solver);
+            const dash = familyLineDash(family);
+            const showSolverLegend = !legendSolvers.has(solver);
+            legendSolvers.add(solver);
             traces.push({
               type: "scatter",
               mode: "lines",
-              name: name + " q25",
-              legendgroup: name,
+              name: solver + " q25",
+              legendgroup: solver,
               showlegend: false,
               visible: visible,
               x: rows.map((row) => row.n),
               y: rows.map((row) => row.metrics[metricKey].q25),
-              line: { color: "rgba(0,0,0,0)", width: 0 },
+              line: { color: "rgba(0,0,0,0)", width: 0, dash: dash },
               hoverinfo: "skip"
             });
             traces.push({
               type: "scatter",
               mode: "lines",
-              name: name + " IQR",
-              legendgroup: name,
+              name: solver + " IQR",
+              legendgroup: solver,
               showlegend: false,
               visible: visible,
               x: rows.map((row) => row.n),
               y: rows.map((row) => row.metrics[metricKey].q75),
-              line: { color: "rgba(0,0,0,0)", width: 0 },
+              line: { color: "rgba(0,0,0,0)", width: 0, dash: dash },
               fill: "tonexty",
               fillcolor: rgbaColor(color, 0.15),
               hoverinfo: "skip"
@@ -550,12 +568,13 @@ _TEMPLATE = """
             traces.push({
               type: "scatter",
               mode: "lines+markers",
-              name: name,
-              legendgroup: name,
+              name: solver,
+              legendgroup: solver,
+              showlegend: showSolverLegend,
               visible: visible,
               x: rows.map((row) => row.n),
               y: rows.map((row) => row.metrics[metricKey].median),
-              line: { color: color, width: 2.2 },
+              line: { color: color, width: 2.2, dash: dash },
               marker: {
                 color: color,
                 size: 8,
@@ -589,7 +608,7 @@ _TEMPLATE = """
 
         function renderRuntimePlot() {
           const metric = currentMetric();
-          const previousVisibility = currentVisibilityBySolver();
+          const previousVisibility = currentVisibilityBySolver(plotElement);
           let plottedRows = 0;
           const rawTraces = payload.solvers.map((solver) => {
             const rows = payload.rows
@@ -607,8 +626,9 @@ _TEMPLATE = """
               type: "scatter",
               mode: "markers",
               name: solver + " raw",
+              legendgroup: solver,
               showlegend: false,
-              visible: true,
+              visible: visibleFor(previousVisibility, solver),
               opacity: 0.32,
               x: rows.map((row) => row.n),
               y: rows.map((row) => row.metrics[metric.key]),
@@ -680,6 +700,7 @@ _TEMPLATE = """
         }
 
         function renderMemoryPlot() {
+          const previousVisibility = currentVisibilityBySolver(memoryPlotElement);
           let plottedRows = 0;
           const rawTraces = payload.solvers.map((solver) => {
             const rows = payload.rows
@@ -697,7 +718,9 @@ _TEMPLATE = """
               type: "scatter",
               mode: "markers",
               name: solver + " raw",
+              legendgroup: solver,
               showlegend: false,
+              visible: visibleFor(previousVisibility, solver),
               opacity: 0.32,
               x: rows.map((row) => row.n),
               y: rows.map((row) => row.metrics.max_peak_rss_mb),
@@ -732,7 +755,7 @@ _TEMPLATE = """
           });
           const traces = [
             ...rawTraces,
-            ...buildAggregateTraces("max_peak_rss_mb", selectedMemoryFamilies, {})
+            ...buildAggregateTraces("max_peak_rss_mb", selectedMemoryFamilies, previousVisibility)
           ];
           const layout = {
             autosize: true,
