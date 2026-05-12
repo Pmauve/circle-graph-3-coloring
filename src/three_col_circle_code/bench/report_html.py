@@ -487,11 +487,111 @@ _TEMPLATE = """
           return visibility;
         }
 
+        function rgbaColor(color, alpha) {
+          const hex = String(color || "").replace("#", "");
+          if (hex.length === 6) {
+            const r = parseInt(hex.slice(0, 2), 16);
+            const g = parseInt(hex.slice(2, 4), 16);
+            const b = parseInt(hex.slice(4, 6), 16);
+            return "rgba(" + r + "," + g + "," + b + "," + alpha + ")";
+          }
+          return color || "#2f4f6f";
+        }
+
+        function aggregateTraceRows(metricKey, selectedFamilySet) {
+          return (payload.aggregates || [])
+            .filter((row) => selectedFamilySet.has(row.family))
+            .filter((row) => row.metrics[metricKey] !== null && row.metrics[metricKey] !== undefined);
+        }
+
+        function buildAggregateTraces(metricKey, selectedFamilySet, previousVisibility) {
+          const traces = [];
+          const grouped = {};
+          aggregateTraceRows(metricKey, selectedFamilySet).forEach((row) => {
+            const key = row.solver + "\u0000" + row.family;
+            if (!grouped[key]) {
+              grouped[key] = [];
+            }
+            grouped[key].push(row);
+          });
+          Object.keys(grouped).sort().forEach((key) => {
+            const rows = grouped[key].sort((left, right) => left.n - right.n);
+            const solver = rows[0].solver;
+            const family = rows[0].family;
+            const name = solver + " · " + family;
+            const color = colors[solver] || "#2f4f6f";
+            const visible = previousVisibility[name];
+            traces.push({
+              type: "scatter",
+              mode: "lines",
+              name: name + " q25",
+              legendgroup: name,
+              showlegend: false,
+              visible: visible,
+              x: rows.map((row) => row.n),
+              y: rows.map((row) => row.metrics[metricKey].q25),
+              line: { color: "rgba(0,0,0,0)", width: 0 },
+              hoverinfo: "skip"
+            });
+            traces.push({
+              type: "scatter",
+              mode: "lines",
+              name: name + " IQR",
+              legendgroup: name,
+              showlegend: false,
+              visible: visible,
+              x: rows.map((row) => row.n),
+              y: rows.map((row) => row.metrics[metricKey].q75),
+              line: { color: "rgba(0,0,0,0)", width: 0 },
+              fill: "tonexty",
+              fillcolor: rgbaColor(color, 0.15),
+              hoverinfo: "skip"
+            });
+            traces.push({
+              type: "scatter",
+              mode: "lines+markers",
+              name: name,
+              legendgroup: name,
+              visible: visible,
+              x: rows.map((row) => row.n),
+              y: rows.map((row) => row.metrics[metricKey].median),
+              line: { color: color, width: 2.2 },
+              marker: {
+                color: color,
+                size: 8,
+                symbol: rows.map((row) => row.marker_symbol),
+                line: { color: "#ffffff", width: 0.8 }
+              },
+              customdata: rows.map((row) => [
+                row.family,
+                row.n_rows,
+                row.n_ok,
+                row.n_error,
+                row.n_invalid,
+                row.metrics[metricKey].q25,
+                row.metrics[metricKey].q75,
+                row.metrics[metricKey].count
+              ]),
+              hovertemplate:
+                "solver=" + solver + "<br>" +
+                "family=%{customdata[0]}<br>" +
+                "n=%{x}<br>" +
+                "median=%{y:.6f}<br>" +
+                "q25=%{customdata[5]:.6f}<br>" +
+                "q75=%{customdata[6]:.6f}<br>" +
+                "ok_values=%{customdata[7]}<br>" +
+                "rows=%{customdata[1]}, ok=%{customdata[2]}, error=%{customdata[3]}, invalid=%{customdata[4]}<extra></extra>",
+              hoverlabel: { align: "left" }
+            });
+          });
+          return traces;
+        }
+
         function renderRuntimePlot() {
           const metric = currentMetric();
           const previousVisibility = currentVisibilityBySolver();
           let plottedRows = 0;
-          const traces = payload.solvers.map((solver) => {
+          const rawTraces = payload.solvers.map((solver) => {
             const rows = payload.rows
               .filter((row) => row.solver === solver)
               .filter((row) => selectedFamilies.has(row.family))
@@ -506,13 +606,15 @@ _TEMPLATE = """
             return {
               type: "scatter",
               mode: "markers",
-              name: solver,
-              visible: previousVisibility[solver],
+              name: solver + " raw",
+              showlegend: false,
+              visible: true,
+              opacity: 0.32,
               x: rows.map((row) => row.n),
               y: rows.map((row) => row.metrics[metric.key]),
               marker: {
                 color: colors[solver] || "#2f4f6f",
-                size: 10,
+                size: 6,
                 symbol: rows.map((row) => row.marker_symbol),
                 line: { color: "#ffffff", width: 0.8 }
               },
@@ -537,6 +639,10 @@ _TEMPLATE = """
               hoverlabel: { align: "left" }
             };
           });
+          const traces = [
+            ...rawTraces,
+            ...buildAggregateTraces(metric.key, selectedFamilies, previousVisibility)
+          ];
           const layout = {
             autosize: true,
             height: 680,
@@ -575,7 +681,7 @@ _TEMPLATE = """
 
         function renderMemoryPlot() {
           let plottedRows = 0;
-          const traces = payload.solvers.map((solver) => {
+          const rawTraces = payload.solvers.map((solver) => {
             const rows = payload.rows
               .filter((row) => row.solver === solver)
               .filter((row) => selectedMemoryFamilies.has(row.family))
@@ -590,12 +696,14 @@ _TEMPLATE = """
             return {
               type: "scatter",
               mode: "markers",
-              name: solver,
+              name: solver + " raw",
+              showlegend: false,
+              opacity: 0.32,
               x: rows.map((row) => row.n),
               y: rows.map((row) => row.metrics.max_peak_rss_mb),
               marker: {
                 color: colors[solver] || "#2f4f6f",
-                size: 10,
+                size: 6,
                 symbol: rows.map((row) => row.marker_symbol),
                 line: { color: "#ffffff", width: 0.8 }
               },
@@ -622,6 +730,10 @@ _TEMPLATE = """
               hoverlabel: { align: "left" }
             };
           });
+          const traces = [
+            ...rawTraces,
+            ...buildAggregateTraces("max_peak_rss_mb", selectedMemoryFamilies, {})
+          ];
           const layout = {
             autosize: true,
             height: 680,
@@ -692,6 +804,8 @@ def render_report_html(
     }
     family_symbols = _family_symbols(plot_payload["families"])
     for row in plot_payload["rows"]:
+        row["marker_symbol"] = family_symbols.get(row["family"], "circle")
+    for row in plot_payload["aggregates"]:
         row["marker_symbol"] = family_symbols.get(row["family"], "circle")
     return template.render(
         title=data.metadata.run_id,

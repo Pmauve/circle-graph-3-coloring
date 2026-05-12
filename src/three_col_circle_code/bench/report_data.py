@@ -4,7 +4,7 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 from statistics import mean, median
-from typing import Any, Mapping, Optional
+from typing import Any, Iterable, Mapping, Optional
 
 from three_col_circle_code.bench.results import MANIFEST_FILENAME, RESULTS_FILENAME
 from three_col_circle_code.bench.specs import canonical_params_json
@@ -206,6 +206,7 @@ def write_summary_csvs(run_dir: Path) -> None:
 def build_report_plot_payload(data: BenchmarkReportData) -> dict[str, Any]:
     """Build compact JSON data for the interactive report plots."""
     rows: list[dict[str, Any]] = []
+    aggregate_inputs: list[tuple[ReportRow, str, str]] = []
     families: set[str] = set()
     solver_labels: set[str] = set()
     for row in data.rows:
@@ -215,6 +216,7 @@ def build_report_plot_payload(data: BenchmarkReportData) -> dict[str, Any]:
         solver_label = solver_variant_label(row.solver_target, row.solver_params, row.solver_label)
         families.add(family)
         solver_labels.add(solver_label)
+        aggregate_inputs.append((row, family, solver_label))
         rows.append(
             {
                 "instance_id": row.instance_id,
@@ -237,6 +239,7 @@ def build_report_plot_payload(data: BenchmarkReportData) -> dict[str, Any]:
                 },
             }
         )
+    aggregates = _build_plot_aggregates(aggregate_inputs)
     return {
         "families": sorted(families),
         "solvers": sorted(solver_labels),
@@ -247,6 +250,7 @@ def build_report_plot_payload(data: BenchmarkReportData) -> dict[str, Any]:
             {"key": "solve_time_s", "label": "Solve", "y_axis": "mean_solve_time_s"},
         ],
         "rows": rows,
+        "aggregates": aggregates,
     }
 
 
@@ -532,6 +536,77 @@ def _build_headline_metrics(
             None if best_runtime_row is None else best_runtime_row.solver_target
         ),
     )
+
+
+def _build_plot_aggregates(rows: list[tuple[ReportRow, str, str]]) -> list[dict[str, Any]]:
+    grouped: dict[tuple[str, int, str], list[ReportRow]] = defaultdict(list)
+    for row, family, solver_label in rows:
+        if row.n is None:
+            continue
+        grouped[(family, row.n, solver_label)].append(row)
+
+    aggregates: list[dict[str, Any]] = []
+    for (family, n_value, solver_label), group_rows in sorted(grouped.items(), key=lambda item: item[0]):
+        statuses = Counter(row.status for row in group_rows)
+        ok_rows = [row for row in group_rows if row.status == "ok"]
+        aggregates.append(
+            {
+                "family": family,
+                "n": n_value,
+                "solver": solver_label,
+                "n_rows": len(group_rows),
+                "n_ok": statuses.get("ok", 0),
+                "n_error": statuses.get("error", 0),
+                "n_invalid": statuses.get("invalid", 0),
+                "metrics": {
+                    "wall_time_s": _aggregate_values(
+                        row.mean_wall_time_s
+                        for row in ok_rows
+                    ),
+                    "native_total_time_s": _aggregate_values(
+                        row.mean_total_native_time_s
+                        for row in ok_rows
+                    ),
+                    "load_prepare_time_s": _aggregate_values(
+                        row.mean_load_prepare_time_s
+                        for row in ok_rows
+                    ),
+                    "solve_time_s": _aggregate_values(
+                        row.mean_solve_time_s
+                        for row in ok_rows
+                    ),
+                    "max_peak_rss_mb": _aggregate_values(
+                        None if row.max_peak_rss_kb is None else row.max_peak_rss_kb / 1024.0
+                        for row in ok_rows
+                    ),
+                },
+            }
+        )
+    return aggregates
+
+
+def _aggregate_values(values: Iterable[Optional[float]]) -> Optional[dict[str, float | int]]:
+    sorted_values = sorted(value for value in values if value is not None)
+    if not sorted_values:
+        return None
+    return {
+        "count": len(sorted_values),
+        "median": median(sorted_values),
+        "q25": _quantile(sorted_values, 0.25),
+        "q75": _quantile(sorted_values, 0.75),
+        "min": sorted_values[0],
+        "max": sorted_values[-1],
+    }
+
+
+def _quantile(sorted_values: list[float], probability: float) -> float:
+    if len(sorted_values) == 1:
+        return sorted_values[0]
+    position = probability * (len(sorted_values) - 1)
+    lower_index = int(position)
+    upper_index = min(lower_index + 1, len(sorted_values) - 1)
+    fraction = position - lower_index
+    return sorted_values[lower_index] + fraction * (sorted_values[upper_index] - sorted_values[lower_index])
 
 
 def _write_summary_csv(

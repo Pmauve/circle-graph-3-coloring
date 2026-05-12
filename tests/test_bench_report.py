@@ -214,6 +214,28 @@ class BenchReportDataTests(unittest.TestCase):
         self.assertEqual(sat_row["metrics"]["load_prepare_time_s"], 0.25)
         self.assertEqual(sat_row["metrics"]["solve_time_s"], 0.75)
 
+    def test_build_report_plot_payload_contains_seed_aggregates(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            run_dir = _write_summary_run(Path(tmpdir) / "summary-run")
+            data = load_benchmark_report_data(run_dir)
+
+        payload = build_report_plot_payload(data)
+
+        sat_aggregate = next(
+            row
+            for row in payload["aggregates"]
+            if row["family"] == "rc"
+            and row["n"] == 2
+            and row["solver"] == "sat-baseline:pysat-cadical"
+        )
+        self.assertEqual(sat_aggregate["n_rows"], 2)
+        self.assertEqual(sat_aggregate["n_ok"], 2)
+        self.assertEqual(sat_aggregate["metrics"]["wall_time_s"]["count"], 2)
+        self.assertEqual(sat_aggregate["metrics"]["wall_time_s"]["median"], 2.0)
+        self.assertEqual(sat_aggregate["metrics"]["wall_time_s"]["q25"], 1.5)
+        self.assertEqual(sat_aggregate["metrics"]["wall_time_s"]["q75"], 2.5)
+        self.assertEqual(sat_aggregate["metrics"]["max_peak_rss_mb"]["max"], 3.0)
+
     def test_report_data_exposes_zykovcolor_native_timing(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             run_dir = Path(tmpdir) / "zykov-run"
