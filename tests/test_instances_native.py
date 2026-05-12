@@ -246,6 +246,34 @@ class NativeInstanceTests(unittest.TestCase):
             ],
         )
 
+    def test_generate_col_with_native_passes_alpha_and_output_format(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "sample.circle"
+            completed = subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout='{"status":"ok","instance_id":"sample","family":"rccy_alpha","n":8,"m":7,"num_colors":3,"path":"sample.circle"}\n',
+                stderr="",
+            )
+
+            with patch.dict(os.environ, {"THREE_COL_NATIVE_BIN": "three_col_native"}), patch(
+                "three_col_circle_code.instances.native.subprocess.run",
+                return_value=completed,
+            ) as run:
+                generate_col_with_native(
+                    instance_path=path,
+                    family="rccy_alpha",
+                    n=8,
+                    seed=17,
+                    alpha=0.5,
+                    output_format="circle",
+                )
+
+        self.assertIn("--alpha", run.call_args.args[0])
+        self.assertIn("0.5", run.call_args.args[0])
+        self.assertIn("--output-format", run.call_args.args[0])
+        self.assertIn("circle", run.call_args.args[0])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -17,6 +17,9 @@ pub enum GenerationFamily {
     RccyTuned,
     RccyFullSweepWeightedActive,
     RccyFullSweepMaxActive,
+    RccyAlpha,
+    RccyAlpha0,
+    RccyAlpha1,
 }
 
 impl GenerationFamily {
@@ -30,6 +33,9 @@ impl GenerationFamily {
             "rccy_tuned" => Ok(Self::RccyTuned),
             "rccy_full_sweep_weighted_active" => Ok(Self::RccyFullSweepWeightedActive),
             "rccy_full_sweep_max_active" => Ok(Self::RccyFullSweepMaxActive),
+            "rccy_alpha" => Ok(Self::RccyAlpha),
+            "rccy_alpha0" => Ok(Self::RccyAlpha0),
+            "rccy_alpha1" => Ok(Self::RccyAlpha1),
             _ => Err(SosaError::Input(format!(
                 "unsupported generation family {value:?}"
             ))),
@@ -46,6 +52,9 @@ impl GenerationFamily {
             Self::RccyTuned => "rccy_tuned",
             Self::RccyFullSweepWeightedActive => "rccy_full_sweep_weighted_active",
             Self::RccyFullSweepMaxActive => "rccy_full_sweep_max_active",
+            Self::RccyAlpha => "rccy_alpha",
+            Self::RccyAlpha0 => "rccy_alpha0",
+            Self::RccyAlpha1 => "rccy_alpha1",
         }
     }
 
@@ -88,6 +97,9 @@ impl GenerationFamily {
             Self::RccyFullSweepMaxActive => {
                 "native_seeded_random_circle_graph_yes_constructive_full_sweep_max_active"
             }
+            Self::RccyAlpha => "native_seeded_random_circle_graph_yes_alpha",
+            Self::RccyAlpha0 => "native_seeded_random_circle_graph_yes_alpha0",
+            Self::RccyAlpha1 => "native_seeded_random_circle_graph_yes_alpha1",
         }
     }
 }
@@ -113,12 +125,18 @@ struct ConstructiveCandidate {
     step: usize,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum AlphaSelection {
+    Power(f64),
+}
+
 #[derive(Clone, Debug)]
 pub struct GenerationConfig {
     pub family: GenerationFamily,
     pub seed: u64,
     pub num_colors: u8,
     pub max_attempts_per_node: usize,
+    pub alpha: Option<f64>,
 }
 
 impl GenerationConfig {
@@ -138,6 +156,18 @@ impl GenerationConfig {
             return Err(SosaError::Input(
                 "max_attempts_per_node must be at least 1".to_string(),
             ));
+        }
+        if let Some(alpha) = self.alpha {
+            if alpha < 0.0 || !alpha.is_finite() {
+                return Err(SosaError::Input(
+                    "alpha must be a finite non-negative number".to_string(),
+                ));
+            }
+            if !matches!(self.family, GenerationFamily::RccyAlpha) {
+                return Err(SosaError::Input(
+                    "--alpha is only supported for family rccy_alpha".to_string(),
+                ));
+            }
         }
         Ok(())
     }
@@ -202,6 +232,10 @@ impl CircleGraphBuilder {
         Ok(summary)
     }
 
+    pub fn write_circle_only(&self, path: &Path) -> Result<GeneratedSummary, SosaError> {
+        self.write_circle(path)
+    }
+
     pub fn write_circle(&self, path: &Path) -> Result<GeneratedSummary, SosaError> {
         let summary = self.summary_for_path(path);
         write_dimacs_circle_geometry(self, &summary)?;
@@ -218,12 +252,7 @@ impl CircleGraphBuilder {
 
     pub fn summary_for_path(&self, path: &Path) -> GeneratedSummary {
         GeneratedSummary {
-            instance_id: instance_id(
-                self.config.family,
-                self.len(),
-                self.config.seed,
-                self.config.num_colors,
-            ),
+            instance_id: instance_id_for_config(&self.config, self.len()),
             family: self.config.family.as_str().to_string(),
             n: self.len(),
             m: self.edge_count(),
@@ -233,6 +262,22 @@ impl CircleGraphBuilder {
     }
 
     fn insert_next_vertex(&mut self) -> Result<(), SosaError> {
+        if matches!(
+            self.config.family,
+            GenerationFamily::RccyAlpha
+                | GenerationFamily::RccyAlpha0
+                | GenerationFamily::RccyAlpha1
+        ) {
+            let selection = match self.config.family {
+                GenerationFamily::RccyAlpha => {
+                    AlphaSelection::Power(self.config.alpha.unwrap_or(0.0))
+                }
+                GenerationFamily::RccyAlpha0 => AlphaSelection::Power(0.0),
+                GenerationFamily::RccyAlpha1 => AlphaSelection::Power(1.0),
+                _ => unreachable!(),
+            };
+            return self.insert_next_alpha_vertex(selection);
+        }
         if let Some(config) = self.config.family.constructive_config() {
             return self.insert_next_constructive_vertex(config);
         }
@@ -261,6 +306,40 @@ impl CircleGraphBuilder {
             self.commit_candidate(node_id, first_position, second_position, &neighbors, color);
             return Ok(());
         }
+        Err(SosaError::Input(format!(
+            "failed to generate {} vertex {} after {} attempts",
+            self.config.family.as_str(),
+            node_id + 1,
+            self.config.max_attempts_per_node
+        )))
+    }
+
+    fn insert_next_alpha_vertex(&mut self, selection: AlphaSelection) -> Result<(), SosaError> {
+        let node_id = self.len() as u32;
+        if node_id == 0 {
+            self.endpoint_order.push(node_id);
+            self.endpoint_order.push(node_id);
+            self.adjacency.push(Vec::new());
+            let color = self.rng.next_u8_inclusive(1, self.config.num_colors);
+            self.colors
+                .as_mut()
+                .expect("alpha families must use colors")
+                .push(color);
+            return Ok(());
+        }
+
+        for _attempt in 0..self.config.max_attempts_per_node {
+            let start_gap = self.rng.next_usize(self.endpoint_order.len() + 1);
+            let candidates = self.collect_alpha_candidates(start_gap);
+            if candidates.is_empty() {
+                continue;
+            }
+            let chosen = self.choose_alpha_candidate(&candidates, selection);
+            let color = self.choose_uniform_available_color(&chosen.available_colors);
+            self.commit_constructive_candidate(node_id, start_gap, chosen.second_gap, color);
+            return Ok(());
+        }
+
         Err(SosaError::Input(format!(
             "failed to generate {} vertex {} after {} attempts",
             self.config.family.as_str(),
@@ -365,6 +444,48 @@ impl CircleGraphBuilder {
         self.iter_constructive_candidates(start_gap, direction, full_sweep)
     }
 
+    fn collect_alpha_candidates(&self, start_gap: usize) -> Vec<ConstructiveCandidate> {
+        let n_gaps = self.endpoint_order.len() + 1;
+        let colors = self.colors.as_ref().expect("alpha families need colors");
+        let mut active = vec![false; self.len()];
+        let mut color_counts = vec![0usize; self.config.num_colors as usize + 1];
+        let mut active_count = 0usize;
+        let mut current_gap = start_gap;
+        let mut candidates = Vec::new();
+
+        for step in 1..n_gaps {
+            if current_gap < self.endpoint_order.len() {
+                let vertex = self.endpoint_order[current_gap] as usize;
+                let color = colors[vertex] as usize;
+                if active[vertex] {
+                    active[vertex] = false;
+                    color_counts[color] -= 1;
+                    active_count -= 1;
+                } else {
+                    active[vertex] = true;
+                    color_counts[color] += 1;
+                    active_count += 1;
+                }
+            }
+            current_gap = (current_gap + 1) % n_gaps;
+            let available_colors = if active_count == 0 {
+                Vec::new()
+            } else {
+                available_colors_from_counts(&color_counts, self.config.num_colors)
+            };
+            if available_colors.is_empty() {
+                continue;
+            }
+            candidates.push(ConstructiveCandidate {
+                second_gap: current_gap,
+                available_colors,
+                active_count,
+                step,
+            });
+        }
+        candidates
+    }
+
     fn iter_constructive_candidates(
         &self,
         start_gap: usize,
@@ -466,6 +587,39 @@ impl CircleGraphBuilder {
                 &candidates[0]
             }
         }
+    }
+
+    fn choose_alpha_candidate<'a>(
+        &mut self,
+        candidates: &'a [ConstructiveCandidate],
+        selection: AlphaSelection,
+    ) -> &'a ConstructiveCandidate {
+        match selection {
+            AlphaSelection::Power(alpha) if alpha == 0.0 => {
+                let index = self.rng.next_usize(candidates.len());
+                &candidates[index]
+            }
+            AlphaSelection::Power(alpha) => {
+                let total_weight: f64 = candidates
+                    .iter()
+                    .map(|candidate| candidate.active_count)
+                    .map(|active_count| (active_count as f64).powf(alpha))
+                    .sum();
+                let mut selected = self.rng.next_f64() * total_weight.max(1.0);
+                for candidate in candidates {
+                    let weight = (candidate.active_count as f64).powf(alpha);
+                    if selected < weight {
+                        return candidate;
+                    }
+                    selected -= weight;
+                }
+                &candidates[0]
+            }
+        }
+    }
+
+    fn choose_uniform_available_color(&mut self, available_colors: &[u8]) -> u8 {
+        available_colors[self.rng.next_usize(available_colors.len())]
     }
 
     fn commit_constructive_candidate(
@@ -575,13 +729,59 @@ impl CircleGraphBuilder {
 }
 
 pub fn instance_id(family: GenerationFamily, n: usize, seed: u64, num_colors: u8) -> String {
+    instance_id_with_alpha(family, n, seed, num_colors, None)
+}
+
+fn instance_id_for_config(config: &GenerationConfig, n: usize) -> String {
+    instance_id_with_alpha(
+        config.family,
+        n,
+        config.seed,
+        config.num_colors,
+        config.alpha,
+    )
+}
+
+fn instance_id_with_alpha(
+    family: GenerationFamily,
+    n: usize,
+    seed: u64,
+    num_colors: u8,
+    alpha: Option<f64>,
+) -> String {
+    let alpha_part = if matches!(family, GenerationFamily::RccyAlpha) {
+        format!("-alpha{}", alpha_label(alpha.unwrap_or(0.0)))
+    } else {
+        String::new()
+    };
     format!(
-        "{}-k{:02}-n{:04}-seed{}",
+        "{}{}-k{:02}-n{:04}-seed{}",
         family.as_str(),
+        alpha_part,
         num_colors,
         n,
         seed
     )
+}
+
+fn alpha_label(alpha: f64) -> String {
+    let mut label = format!("{alpha:.12}");
+    while label.contains('.') && label.ends_with('0') {
+        label.pop();
+    }
+    if label.ends_with('.') {
+        label.pop();
+    }
+    label.replace('.', "p")
+}
+
+fn alpha_for_family(family: GenerationFamily, alpha: Option<f64>) -> Option<f64> {
+    match family {
+        GenerationFamily::RccyAlpha => Some(alpha.unwrap_or(0.0)),
+        GenerationFamily::RccyAlpha0 => Some(0.0),
+        GenerationFamily::RccyAlpha1 => Some(1.0),
+        _ => None,
+    }
 }
 
 pub fn bucket_for_n(n: usize) -> &'static str {
@@ -602,13 +802,17 @@ pub fn sequence_output_path(
     n: usize,
     seed: u64,
     num_colors: u8,
+    alpha: Option<f64>,
+    extension: &str,
 ) -> PathBuf {
+    let extension = extension.trim_start_matches('.');
     output_dir
         .join(family.as_str())
         .join(bucket_for_n(n))
         .join(format!(
-            "{}.circle",
-            instance_id(family, n, seed, num_colors)
+            "{}.{}",
+            instance_id_with_alpha(family, n, seed, num_colors, alpha),
+            extension
         ))
 }
 
@@ -630,6 +834,9 @@ fn write_metadata(
     writeln!(writer, "c m {}", summary.m)?;
     writeln!(writer, "c average degree {:.12}", average_degree)?;
     writeln!(writer, "c num colors {}", summary.num_colors)?;
+    if let Some(alpha) = alpha_for_family(builder.config.family, builder.config.alpha) {
+        writeln!(writer, "c alpha {:.12}", alpha)?;
+    }
     writeln!(writer, "c source generated")?;
     writeln!(
         writer,
@@ -757,6 +964,11 @@ impl GeneratorRng {
 
     fn next_u8_inclusive(&mut self, low: u8, high: u8) -> u8 {
         low + self.next_usize((high - low + 1) as usize) as u8
+    }
+
+    fn next_f64(&mut self) -> f64 {
+        const SCALE: f64 = (1u64 << 53) as f64;
+        ((self.next_u64() >> 11) as f64) / SCALE
     }
 }
 
@@ -886,6 +1098,7 @@ mod tests {
             seed: 17,
             num_colors: 3,
             max_attempts_per_node: 10_000,
+            alpha: None,
         };
         let mut small = CircleGraphBuilder::new(config.clone()).unwrap();
         small.extend_to(8).unwrap();
@@ -906,12 +1119,16 @@ mod tests {
             GenerationFamily::RccyTuned,
             GenerationFamily::RccyFullSweepWeightedActive,
             GenerationFamily::RccyFullSweepMaxActive,
+            GenerationFamily::RccyAlpha,
+            GenerationFamily::RccyAlpha0,
+            GenerationFamily::RccyAlpha1,
         ] {
             let config = GenerationConfig {
                 family,
                 seed: 29,
                 num_colors: 4,
                 max_attempts_per_node: 10_000,
+                alpha: None,
             };
             let mut builder = CircleGraphBuilder::new(config).unwrap();
 
@@ -929,6 +1146,33 @@ mod tests {
             seed: 1,
             num_colors: 4,
             max_attempts_per_node: 10_000,
+            alpha: None,
+        };
+
+        assert!(CircleGraphBuilder::new(config).is_err());
+    }
+
+    #[test]
+    fn rejects_alpha_for_non_alpha_family() {
+        let config = GenerationConfig {
+            family: GenerationFamily::RcyFast,
+            seed: 1,
+            num_colors: 3,
+            max_attempts_per_node: 10_000,
+            alpha: Some(1.0),
+        };
+
+        assert!(CircleGraphBuilder::new(config).is_err());
+    }
+
+    #[test]
+    fn rejects_invalid_alpha() {
+        let config = GenerationConfig {
+            family: GenerationFamily::RccyAlpha,
+            seed: 1,
+            num_colors: 3,
+            max_attempts_per_node: 10_000,
+            alpha: Some(f64::NAN),
         };
 
         assert!(CircleGraphBuilder::new(config).is_err());
@@ -939,6 +1183,30 @@ mod tests {
         assert_eq!(
             instance_id(GenerationFamily::RcFast, 8, 17, 3),
             "rc_fast-k03-n0008-seed17"
+        );
+    }
+
+    #[test]
+    fn parses_alpha_families() {
+        assert_eq!(
+            GenerationFamily::parse("rccy_alpha").unwrap(),
+            GenerationFamily::RccyAlpha
+        );
+        assert_eq!(
+            GenerationFamily::parse("rccy_alpha0").unwrap(),
+            GenerationFamily::RccyAlpha0
+        );
+        assert_eq!(
+            GenerationFamily::parse("rccy_alpha1").unwrap(),
+            GenerationFamily::RccyAlpha1
+        );
+    }
+
+    #[test]
+    fn formats_alpha_instance_ids() {
+        assert_eq!(
+            instance_id_with_alpha(GenerationFamily::RccyAlpha, 8, 17, 3, Some(0.5)),
+            "rccy_alpha-alpha0p5-k03-n0008-seed17"
         );
     }
 }

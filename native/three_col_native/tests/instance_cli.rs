@@ -193,6 +193,69 @@ fn sat_solve_accepts_edge_source_argument() {
     assert!(output.status.success());
 }
 
+#[test]
+fn generate_alpha_family_uses_readable_alpha_id() {
+    let path = fixture_path("generated-alpha.col");
+    let output = Command::new(binary())
+        .args([
+            "instance",
+            "generate",
+            "--family",
+            "rccy_alpha",
+            "--alpha",
+            "0.5",
+            "--n",
+            "8",
+            "--seed",
+            "17",
+            "--output",
+            path.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains(r#""instance_id":"rccy_alpha-alpha0p5-k03-n0008-seed17""#));
+    let contents = fs::read_to_string(path).unwrap();
+    assert!(contents.contains("c alpha 0.500000000000"));
+}
+
+#[test]
+fn generate_circle_output_omits_edge_lines() {
+    let path = fixture_path("generated.circle");
+    let output = Command::new(binary())
+        .args([
+            "instance",
+            "generate",
+            "--family",
+            "rccy_alpha",
+            "--alpha",
+            "1",
+            "--n",
+            "8",
+            "--seed",
+            "17",
+            "--output-format",
+            "circle",
+            "--output",
+            path.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let contents = fs::read_to_string(&path).unwrap();
+    assert!(contents.contains("p circle 8 "));
+    assert!(!contents.lines().any(|line| line.starts_with("e ")));
+
+    let inspect_output = Command::new(binary())
+        .args(["instance", "inspect", path.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(inspect_output.status.success());
+}
+
 fn fixture_path(name: &str) -> std::path::PathBuf {
     let mut path = std::env::temp_dir();
     path.push(format!("three-col-native-{}-{name}", std::process::id()));

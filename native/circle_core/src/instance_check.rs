@@ -266,7 +266,7 @@ impl ParserState {
         line_number: usize,
         line: &str,
     ) -> Result<(), SosaError> {
-        if parts.len() != 4 || (parts[1] != "edge" && parts[1] != "col") {
+        if parts.len() != 4 || (parts[1] != "edge" && parts[1] != "col" && parts[1] != "circle") {
             return input_error(format!(
                 "unsupported DIMACS problem line at line {line_number}: {line}"
             ));

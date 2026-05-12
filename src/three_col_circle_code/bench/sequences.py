@@ -8,11 +8,11 @@ from three_col_circle_code.bench.plan_io import (
 
 
 def native_sequence_groups(rows: tuple[Any, ...]) -> list[tuple[Any, ...]]:
-    """Group native compact-circle instance rows by one growable trajectory."""
+    """Group native circle-family instance rows by one growable trajectory."""
     candidates = [
         row
         for row in rows
-        if Path(row.instance_path).suffix == ".circle" and getattr(row, "sequence_id", None) is not None
+        if Path(row.instance_path).suffix in {".col", ".circle"} and getattr(row, "sequence_id", None) is not None
     ]
     grouped: dict[str, list[Any]] = {}
     for row in candidates:

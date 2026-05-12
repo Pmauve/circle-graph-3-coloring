@@ -21,6 +21,7 @@ from three_col_circle_code.instances.native import (
     ensure_validated_sidecar,
     generate_col_with_native,
     generate_col_sequence_with_native,
+    inspect_col_with_native,
 )
 from three_col_circle_code.instances.validate import validate_instance
 
@@ -58,8 +59,13 @@ def run_instance_generation(
                     n=instance_row.n,
                     seed=instance_row.seed,
                     num_colors=instance_row.num_colors,
+                    alpha=_alpha_from_params(instance_row.generator_params),
+                    output_format=instance_row.output_format,
                 )
-                ensure_validated_sidecar(Path(instance_row.instance_path), force=True)
+                if instance_row.output_format == "col":
+                    ensure_validated_sidecar(Path(instance_row.instance_path), force=True)
+                else:
+                    inspect_col_with_native(Path(instance_row.instance_path))
                 validation_errors = []
                 validation_ok = True
             else:
@@ -87,6 +93,9 @@ def run_instance_generation(
             generated=generated,
             validation_ok=validation_ok,
             validation_errors=validation_errors,
+            generator_params=dict(instance_row.generator_params),
+            family_label=instance_row.family_label,
+            output_format=instance_row.output_format,
             started_at=started_at,
             error=None,
             environment=collect_environment_metadata(),
@@ -100,6 +109,9 @@ def run_instance_generation(
             generated=generated,
             validation_ok=False,
             validation_errors=[{"code": "native_validation_failed", "message": str(exc)}],
+            generator_params=dict(instance_row.generator_params),
+            family_label=instance_row.family_label,
+            output_format=instance_row.output_format,
             started_at=started_at,
             error=str(exc),
             environment=collect_environment_metadata(),
@@ -113,6 +125,9 @@ def run_instance_generation(
             generated=generated,
             validation_ok=False,
             validation_errors=[],
+            generator_params=dict(instance_row.generator_params),
+            family_label=instance_row.family_label,
+            output_format=instance_row.output_format,
             started_at=started_at,
             error=str(exc),
             environment=collect_environment_metadata(),
@@ -158,9 +173,14 @@ def run_instance_sequence_generation(
             step_n=step_n,
             seed=first.seed,
             num_colors=first.num_colors,
+            alpha=_alpha_from_params(first.generator_params),
+            output_format=first.output_format,
         )
         for row in group:
-            ensure_validated_sidecar(row.instance_path, force=True)
+            if row.output_format == "col":
+                ensure_validated_sidecar(row.instance_path, force=True)
+            else:
+                inspect_col_with_native(row.instance_path)
             result = _build_result(
                 index=row.index,
                 status="ok",
@@ -169,6 +189,9 @@ def run_instance_sequence_generation(
                 generated=True,
                 validation_ok=True,
                 validation_errors=[],
+                generator_params=dict(row.generator_params),
+                family_label=row.family_label,
+                output_format=row.output_format,
                 started_at=started_at,
                 error=None,
                 environment=collect_environment_metadata(),
@@ -270,7 +293,10 @@ def _load_valid_existing_native_instance(instance_path: Path) -> Optional[list[d
     """Validate or trust an existing native instance artifact without materializing a Python graph."""
     if not Path(instance_path).exists() or Path(instance_path).suffix not in {".col", ".circle"}:
         return None
-    ensure_validated_sidecar(Path(instance_path))
+    if Path(instance_path).suffix == ".col":
+        ensure_validated_sidecar(Path(instance_path))
+    else:
+        inspect_col_with_native(Path(instance_path))
     return []
 
 
@@ -308,6 +334,9 @@ def _build_result(
     generated: bool,
     validation_ok: bool,
     validation_errors: list[dict[str, str]],
+    generator_params: dict[str, Any],
+    family_label: Optional[str],
+    output_format: str,
     started_at: str,
     error: Optional[str],
     environment: dict[str, Any],
@@ -322,6 +351,9 @@ def _build_result(
         "generated": generated,
         "validation_ok": validation_ok,
         "validation_errors": validation_errors,
+        "generator_params": dict(generator_params),
+        "family_label": family_label,
+        "output_format": output_format,
         "started_at": started_at,
         "finished_at": _now(),
         "environment": environment,
@@ -333,7 +365,10 @@ def _build_sequence_failure_result(*, row: Any, started_at: str, error: Exceptio
     """Keep valid earlier sequence artifacts when a later native extension fails."""
     if Path(row.instance_path).exists():
         try:
-            ensure_validated_sidecar(row.instance_path, force=True)
+            if row.output_format == "col":
+                ensure_validated_sidecar(row.instance_path, force=True)
+            else:
+                inspect_col_with_native(row.instance_path)
         except NativeInstanceInvalid as exc:
             return _build_result(
                 index=row.index,
@@ -343,6 +378,9 @@ def _build_sequence_failure_result(*, row: Any, started_at: str, error: Exceptio
                 generated=True,
                 validation_ok=False,
                 validation_errors=[{"code": "native_validation_failed", "message": str(exc)}],
+                generator_params=dict(row.generator_params),
+                family_label=row.family_label,
+                output_format=row.output_format,
                 started_at=started_at,
                 error=str(exc),
                 environment=collect_environment_metadata(),
@@ -356,6 +394,9 @@ def _build_sequence_failure_result(*, row: Any, started_at: str, error: Exceptio
                 generated=True,
                 validation_ok=False,
                 validation_errors=[],
+                generator_params=dict(row.generator_params),
+                family_label=row.family_label,
+                output_format=row.output_format,
                 started_at=started_at,
                 error=str(exc),
                 environment=collect_environment_metadata(),
@@ -368,6 +409,9 @@ def _build_sequence_failure_result(*, row: Any, started_at: str, error: Exceptio
             generated=True,
             validation_ok=True,
             validation_errors=[],
+            generator_params=dict(row.generator_params),
+            family_label=row.family_label,
+            output_format=row.output_format,
             started_at=started_at,
             error=None,
             environment=collect_environment_metadata(),
@@ -380,6 +424,9 @@ def _build_sequence_failure_result(*, row: Any, started_at: str, error: Exceptio
         generated=False,
         validation_ok=False,
         validation_errors=[],
+        generator_params=dict(row.generator_params),
+        family_label=row.family_label,
+        output_format=row.output_format,
         started_at=started_at,
         error=str(error),
         environment=collect_environment_metadata(),
@@ -392,6 +439,9 @@ def _existing_result_matches_plan(result: dict[str, Any], *, instance_row: Any) 
         result.get("index") == instance_row.index
         and result.get("instance_id") == instance_row.instance_id
         and str(result.get("instance_path")) == str(instance_row.instance_path)
+        and dict(result.get("generator_params", {})) == dict(instance_row.generator_params)
+        and result.get("family_label") == instance_row.family_label
+        and result.get("output_format", "circle") == instance_row.output_format
     )
 
 
@@ -417,6 +467,12 @@ def _instance_pool_root_from_path(instance_path: Path, family: str) -> Path:
     if family_index == 0:
         raise ValueError(f"cannot infer instance pool root from {instance_path}")
     return Path(*parts[:family_index])
+
+
+def _alpha_from_params(params: Any) -> Optional[float]:
+    if not isinstance(params, dict) or "alpha" not in params:
+        return None
+    return float(params["alpha"])
 
 
 if __name__ == "__main__":

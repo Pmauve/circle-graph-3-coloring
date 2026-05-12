@@ -113,6 +113,33 @@ FAMILY_SPECS: tuple[FamilySpec, ...] = (
         legacy_path_tokens=("rccy_full_sweep_max_active",),
         k_color_yes_supported=True,
     ),
+    FamilySpec(
+        family="rccy_alpha",
+        graph_generator_attr="",
+        legacy_cli_supported=False,
+        seeded_supported=True,
+        seeded_generator_name="seeded_random_circle_graph_yes_alpha",
+        legacy_path_tokens=("rccy_alpha",),
+        k_color_yes_supported=True,
+    ),
+    FamilySpec(
+        family="rccy_alpha0",
+        graph_generator_attr="",
+        legacy_cli_supported=False,
+        seeded_supported=True,
+        seeded_generator_name="seeded_random_circle_graph_yes_alpha0",
+        legacy_path_tokens=("rccy_alpha0",),
+        k_color_yes_supported=True,
+    ),
+    FamilySpec(
+        family="rccy_alpha1",
+        graph_generator_attr="",
+        legacy_cli_supported=False,
+        seeded_supported=True,
+        seeded_generator_name="seeded_random_circle_graph_yes_alpha1",
+        legacy_path_tokens=("rccy_alpha1",),
+        k_color_yes_supported=True,
+    ),
 )
 
 _FAMILY_BY_NAME = {spec.family: spec for spec in FAMILY_SPECS}
@@ -140,6 +167,8 @@ def generate_seeded_family(*, family: str, n: int, seed: int, max_attempts_per_n
     validate_num_colors(num_colors)
     if num_colors != 3 and not spec.k_color_yes_supported:
         raise ValueError(f"family {family!r} does not support num_colors={num_colors}")
+    if not spec.graph_generator_attr:
+        raise ValueError(f"family {family!r} is only supported by native instance generation")
     graph_generator_fn = _load_graph_generator_fn(spec.graph_generator_attr)
     kwargs = {
         "save": False,

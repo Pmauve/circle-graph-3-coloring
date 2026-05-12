@@ -290,6 +290,9 @@ def _build_invalid_result_record(
             "finished_at": _now(),
             "repetitions": trial.repetitions,
             "warmup_repetitions": trial.warmup_repetitions,
+            "family_label": trial.family_label,
+            "generator_params": dict(trial.generator_params),
+            "output_format": trial.output_format,
             "ok_repetitions": 0,
             "mean_wall_time_s": None,
             "median_wall_time_s": None,
@@ -427,6 +430,9 @@ def _build_repeated_result_record(
         "instance_id": trial.instance_id,
         "instance_path": str(trial.instance_path),
         "family": instance_metadata.family,
+        "family_label": trial.family_label,
+        "generator_params": dict(trial.generator_params),
+        "output_format": trial.output_format,
         "bucket": instance_metadata.bucket,
         "n": instance_metadata.n,
         "m": instance_metadata.m,
@@ -478,6 +484,9 @@ def _existing_result_matches_plan(result: dict[str, Any], *, trial: Any) -> bool
         and result.get("solver") == trial.solver
         and result.get("backend") == trial.backend
         and result.get("solver_label") == trial.solver_label
+        and result.get("family_label") == trial.family_label
+        and dict(result.get("generator_params", {})) == dict(trial.generator_params)
+        and result.get("output_format", "circle") == trial.output_format
         and dict(result.get("solver_params", {})) == dict(trial.solver_params)
         and result.get("repetitions") == trial.repetitions
         and result.get("warmup_repetitions") == trial.warmup_repetitions

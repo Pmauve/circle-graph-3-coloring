@@ -19,6 +19,9 @@ class InstancePlanRow:
     seed: int
     instance_path: Path
     num_colors: int = 3
+    generator_params: dict[str, Any] = field(default_factory=dict)
+    family_label: Optional[str] = None
+    output_format: str = "circle"
     sequence_id: Optional[str] = None
 
     @classmethod
@@ -32,6 +35,9 @@ class InstancePlanRow:
             n=int(row["n"]),
             seed=int(row["seed"]),
             num_colors=int(row.get("num_colors", 3)),
+            generator_params=dict(row.get("generator_params", {})),
+            family_label=None if row.get("family_label") is None else str(row["family_label"]),
+            output_format=str(row.get("output_format", "circle")),
             instance_path=Path(str(row["instance_path"])),
             sequence_id=None if row.get("sequence_id") is None else str(row["sequence_id"]),
         )
@@ -45,6 +51,9 @@ class InstancePlanRow:
             "n": self.n,
             "seed": self.seed,
             "num_colors": self.num_colors,
+            "generator_params": dict(self.generator_params),
+            "family_label": self.family_label,
+            "output_format": self.output_format,
             "instance_path": str(self.instance_path),
             "sequence_id": self.sequence_id,
         }
@@ -66,6 +75,9 @@ class TrialPlanRow:
     repetitions: int = 1
     warmup_repetitions: int = 0
     num_colors: int = 3
+    generator_params: dict[str, Any] = field(default_factory=dict)
+    family_label: Optional[str] = None
+    output_format: str = "circle"
 
     @classmethod
     def from_mapping(cls, row: Mapping[str, Any]) -> "TrialPlanRow":
@@ -98,6 +110,9 @@ class TrialPlanRow:
             n=int(row["n"]),
             seed=int(row["seed"]),
             num_colors=int(row.get("num_colors", 3)),
+            generator_params=dict(row.get("generator_params", {})),
+            family_label=None if row.get("family_label") is None else str(row["family_label"]),
+            output_format=str(row.get("output_format", "circle")),
             solver=str(row["solver"]),
             backend=None if row["backend"] is None else str(row["backend"]),
             solver_target=str(row["solver_target"]),
@@ -117,6 +132,9 @@ class TrialPlanRow:
             "n": self.n,
             "seed": self.seed,
             "num_colors": self.num_colors,
+            "generator_params": dict(self.generator_params),
+            "family_label": self.family_label,
+            "output_format": self.output_format,
             "solver": self.solver,
             "backend": self.backend,
             "solver_target": self.solver_target,
@@ -238,6 +256,10 @@ def validate_trial_plan(
             raise ValueError(f"trial plan row {row.index} uses an instance_path that differs from instances.jsonl")
         if row.num_colors != instance.num_colors:
             raise ValueError(f"trial plan row {row.index} uses num_colors that differs from instances.jsonl")
+        if row.generator_params != instance.generator_params:
+            raise ValueError(f"trial plan row {row.index} uses generator_params that differs from instances.jsonl")
+        if row.output_format != instance.output_format:
+            raise ValueError(f"trial plan row {row.index} uses output_format that differs from instances.jsonl")
         if row.repetitions < 1:
             raise ValueError("trial plan row repetitions must be positive")
         if row.warmup_repetitions < 0:

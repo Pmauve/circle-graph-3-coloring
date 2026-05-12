@@ -50,7 +50,7 @@ class BenchRunnerTests(unittest.TestCase):
                 "three_col_circle_code.bench.generate_instance.generate_col_with_native",
                 side_effect=_write_native_generated_instance,
             ), patch(
-                "three_col_circle_code.bench.generate_instance.ensure_validated_sidecar",
+                "three_col_circle_code.bench.generate_instance.inspect_col_with_native",
                 return_value=None,
             ), patch(
                 "three_col_circle_code.bench.run_trial.run_solver",
@@ -134,7 +134,7 @@ class BenchRunnerTests(unittest.TestCase):
             with patch(
                 "three_col_circle_code.bench.generate_instance.generate_col_with_native",
             ) as generate_instance_mock, patch(
-                "three_col_circle_code.bench.generate_instance.ensure_validated_sidecar",
+                "three_col_circle_code.bench.generate_instance.inspect_col_with_native",
                 return_value=None,
             ), patch(
                 "three_col_circle_code.bench.run_trial.run_solver",
@@ -174,7 +174,7 @@ class BenchRunnerTests(unittest.TestCase):
                 "three_col_circle_code.bench.generate_instance.generate_col_with_native",
                 side_effect=_write_native_generated_instance,
             ) as generate_instance_mock, patch(
-                "three_col_circle_code.bench.generate_instance.ensure_validated_sidecar",
+                "three_col_circle_code.bench.generate_instance.inspect_col_with_native",
                 return_value=None,
             ), patch(
                 "three_col_circle_code.bench.run_trial.run_solver",
@@ -324,7 +324,7 @@ class BenchRunnerTests(unittest.TestCase):
                 "three_col_circle_code.bench.generate_instance.generate_col_with_native",
                 side_effect=_write_native_generated_instance,
             ), patch(
-                "three_col_circle_code.bench.generate_instance.ensure_validated_sidecar",
+                "three_col_circle_code.bench.generate_instance.inspect_col_with_native",
                 return_value=None,
             ), patch(
                 "three_col_circle_code.bench.run_trial.run_solver",

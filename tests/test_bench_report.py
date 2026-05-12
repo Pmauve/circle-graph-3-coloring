@@ -140,6 +140,7 @@ class BenchReportDataTests(unittest.TestCase):
                 "instance_id": "rc-k03-n0002-seed1",
                 "instance_path": "instance.json",
                 "family": "rc",
+                "family_label": "K4-Free",
                 "bucket": "s",
                 "n": 2,
                 "m": 1,
@@ -179,6 +180,9 @@ class BenchReportDataTests(unittest.TestCase):
 
         self.assertEqual(data.metadata.solver_targets, ("SOSA backtracking",))
         self.assertEqual(data.solver_summary_rows[0].solver_target, "SOSA backtracking")
+        self.assertEqual(data.rows[0].family, "rc")
+        self.assertEqual(data.rows[0].family_label, "K4-Free")
+        self.assertEqual(build_report_plot_payload(data)["families"], ["K4-Free"])
 
     def test_load_benchmark_report_data_dedupes_duplicate_task_rows(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -159,6 +159,8 @@ class BenchGenerateInstanceTests(unittest.TestCase):
             n=2,
             seed=1,
             num_colors=3,
+            alpha=None,
+            output_format="col",
         )
         validate.assert_called_once_with(instance_path, force=True)
         generate.assert_not_called()
@@ -328,9 +330,9 @@ class BenchGenerateInstanceTests(unittest.TestCase):
                 "three_col_circle_code.bench.generate_instance.generate_col_sequence_with_native",
                 return_value=[],
             ) as native_sequence, patch(
-                "three_col_circle_code.bench.generate_instance.ensure_validated_sidecar",
+                "three_col_circle_code.bench.generate_instance.inspect_col_with_native",
                 return_value=None,
-            ) as validate, patch(
+            ) as inspect, patch(
                 "three_col_circle_code.bench.generate_instance.collect_environment_metadata",
                 return_value={"hostname": "worker-1"},
             ):
@@ -349,8 +351,10 @@ class BenchGenerateInstanceTests(unittest.TestCase):
             step_n=100,
             seed=1,
             num_colors=3,
+            alpha=None,
+            output_format="circle",
         )
-        self.assertEqual(validate.call_count, 3)
+        self.assertEqual(inspect.call_count, 3)
 
     def test_run_instance_sequence_generation_preserves_completed_prefix_on_native_failure(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -381,9 +385,9 @@ class BenchGenerateInstanceTests(unittest.TestCase):
                 "three_col_circle_code.bench.generate_instance.generate_col_sequence_with_native",
                 side_effect=fail_after_first_artifact,
             ), patch(
-                "three_col_circle_code.bench.generate_instance.ensure_validated_sidecar",
+                "three_col_circle_code.bench.generate_instance.inspect_col_with_native",
                 return_value=None,
-            ) as validate, patch(
+            ) as inspect, patch(
                 "three_col_circle_code.bench.generate_instance.collect_environment_metadata",
                 return_value={"hostname": "worker-1"},
             ):
@@ -396,7 +400,7 @@ class BenchGenerateInstanceTests(unittest.TestCase):
         self.assertTrue(results[0]["validation_ok"])
         self.assertIsNone(results[0]["error"])
         self.assertIn("failed to generate rc_fast vertex 200", results[1]["error"])
-        validate.assert_called_once_with(rows[0].instance_path, force=True)
+        inspect.assert_called_once_with(rows[0].instance_path)
 
     def test_sequence_cli_prints_result_paths(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -440,6 +444,9 @@ def _write_plan(
 ) -> tuple[Path, Path]:
     plan_dir = tmp_root / "plans" / "smoke"
     work_root = tmp_root / "work" / "smoke"
+    output_format = instance_path.suffix.lstrip(".")
+    if output_format not in {"col", "circle"}:
+        output_format = "circle"
     write_instance_plan(
         plan_dir,
         (
@@ -451,6 +458,7 @@ def _write_plan(
                 seed=1,
                 num_colors=num_colors,
                 instance_path=instance_path,
+                output_format=output_format,
             ),
         ),
     )

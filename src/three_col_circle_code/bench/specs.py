@@ -1,4 +1,5 @@
 import json
+import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -17,6 +18,9 @@ class InstanceRequest:
     n: int
     seed: int
     num_colors: int
+    generator_params: dict[str, Any]
+    family_label: str | None = None
+    output_format: str = "circle"
     sequence_id: str | None = None
 
 
@@ -99,6 +103,9 @@ def _normalize_instance_block(block: Any) -> dict[str, Any]:
         "family": family,
         "seeds": sorted(normalized_seeds),
         "num_colors": _normalize_num_colors(block.get("num_colors", 3)),
+        "params": _normalize_generator_params(family, block.get("params", {})),
+        "label": _normalize_optional_label(block.get("label")),
+        "output_format": _normalize_output_format(block.get("output_format", "circle")),
     }
     if has_n_values:
         n_values = block["n_values"]
@@ -159,12 +166,15 @@ def _expand_instance_requests(instance_blocks: Sequence[Mapping[str, Any]]) -> t
                     n=n_value,
                     seed=seed_value,
                     num_colors=block["num_colors"],
+                    generator_params=block["params"],
                 )
                 sequence_id = None
                 if from_range:
                     sequence_id = (
                         f"block{block_index}:"
-                        f"{block['family']}:k{block['num_colors']:02d}:seed{seed_value}"
+                        f"{block['family']}:{params_id_part(block['params'])}:"
+                        f"k{block['num_colors']:02d}:seed{seed_value}:"
+                        f"{block['output_format']}"
                     )
                 if instance_id in seen_instance_ids:
                     raise ValueError(f"benchmark run spec contains duplicate instance request {instance_id!r}")
@@ -176,6 +186,9 @@ def _expand_instance_requests(instance_blocks: Sequence[Mapping[str, Any]]) -> t
                         n=n_value,
                         seed=seed_value,
                         num_colors=block["num_colors"],
+                        generator_params=dict(block["params"]),
+                        family_label=block["label"],
+                        output_format=block["output_format"],
                         sequence_id=sequence_id,
                     )
                 )
@@ -217,14 +230,82 @@ def _resolve_solver_configs(solver_blocks: Sequence[Mapping[str, Any]]) -> tuple
     return tuple(sorted(configs, key=lambda config: config.target))
 
 
-def instance_id_for_request(*, family: str, n: int, seed: int, num_colors: int) -> str:
+def instance_id_for_request(
+    *,
+    family: str,
+    n: int,
+    seed: int,
+    num_colors: int,
+    generator_params: Mapping[str, Any] | None = None,
+) -> str:
+    params_part = params_id_part(generator_params or {})
+    if params_part:
+        return f"{family}-{params_part}-k{num_colors:02d}-n{n:04d}-seed{seed}"
     return f"{family}-k{num_colors:02d}-n{n:04d}-seed{seed}"
+
+
+def params_id_part(params: Mapping[str, Any]) -> str:
+    if not params:
+        return ""
+    parts = []
+    for key in sorted(params):
+        value = params[key]
+        if key == "alpha":
+            parts.append(f"alpha{_float_id_label(float(value))}")
+        else:
+            parts.append(f"{key}{_value_id_label(value)}")
+    return "-".join(parts)
 
 
 def _normalize_num_colors(value: Any) -> int:
     num_colors = int(value)
     validate_num_colors(num_colors)
     return num_colors
+
+
+def _normalize_generator_params(family: str, value: Any) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        raise ValueError("run spec instance block field 'params' must be an object")
+    params = dict(value)
+    if family == "rccy_alpha":
+        allowed = {"alpha"}
+        unknown = sorted(set(params).difference(allowed))
+        if unknown:
+            raise ValueError(f"unsupported rccy_alpha params: {unknown}")
+        alpha = float(params.get("alpha", 0.0))
+        if alpha < 0.0 or not math.isfinite(alpha):
+            raise ValueError("rccy_alpha parameter 'alpha' must be finite and non-negative")
+        return {"alpha": alpha}
+    if params:
+        raise ValueError(f"family {family!r} does not support generator params")
+    return {}
+
+
+def _normalize_optional_label(value: Any) -> str | None:
+    if value is None:
+        return None
+    label = str(value).strip()
+    if not label:
+        raise ValueError("run spec instance block field 'label' must not be empty")
+    return label
+
+
+def _normalize_output_format(value: Any) -> str:
+    output_format = str(value)
+    if output_format not in {"col", "circle"}:
+        raise ValueError("run spec instance block field 'output_format' must be 'col' or 'circle'")
+    return output_format
+
+
+def _float_id_label(value: float) -> str:
+    label = f"{value:.12f}".rstrip("0").rstrip(".")
+    return label.replace(".", "p")
+
+
+def _value_id_label(value: Any) -> str:
+    if isinstance(value, float):
+        return _float_id_label(value)
+    return str(value).replace(".", "p")
 
 
 def canonical_params_json(params: Mapping[str, Any]) -> str:

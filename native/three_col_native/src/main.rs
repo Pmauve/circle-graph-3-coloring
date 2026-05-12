@@ -82,9 +82,10 @@ fn run_instance_generate(args: &[String]) -> Result<(String, i32), SosaError> {
     let options = GenerateOptions::parse(args, false)?;
     let mut builder = CircleGraphBuilder::new(options.config()?)?;
     builder.extend_to(options.n)?;
-    let summary = builder.write_path(&options.output.ok_or_else(|| {
+    let output = options.output.ok_or_else(|| {
         SosaError::Input("--output is required for instance generate".to_string())
-    })?)?;
+    })?;
+    let summary = options.output_format.write(&builder, &output)?;
     Ok((generated_summary_json(&summary), 0))
 }
 
@@ -114,8 +115,10 @@ fn run_instance_generate_sequence(args: &[String]) -> Result<(String, i32), Sosa
             n,
             config.seed,
             config.num_colors,
+            config.alpha,
+            options.output_format.extension(),
         );
-        summaries.push(builder.write_path(&path)?);
+        summaries.push(options.output_format.write(&builder, &path)?);
         match n.checked_add(options.step_n) {
             Some(next) => n = next,
             None => break,
@@ -203,6 +206,45 @@ struct GenerateOptions {
     output_dir: Option<PathBuf>,
     num_colors: u8,
     max_attempts_per_node: usize,
+    alpha: Option<f64>,
+    output_format: OutputFormat,
+    output_format_explicit: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum OutputFormat {
+    Col,
+    Circle,
+}
+
+impl OutputFormat {
+    fn parse(value: &str) -> Result<Self, SosaError> {
+        match value {
+            "col" => Ok(Self::Col),
+            "circle" => Ok(Self::Circle),
+            _ => Err(SosaError::Input(format!(
+                "unsupported --output-format {value:?}; expected col or circle"
+            ))),
+        }
+    }
+
+    fn extension(self) -> &'static str {
+        match self {
+            Self::Col => "col",
+            Self::Circle => "circle",
+        }
+    }
+
+    fn write(
+        self,
+        builder: &CircleGraphBuilder,
+        output: &std::path::Path,
+    ) -> Result<GeneratedSummary, SosaError> {
+        match self {
+            Self::Col => builder.write_col(output),
+            Self::Circle => builder.write_circle(output),
+        }
+    }
 }
 
 impl GenerateOptions {
@@ -218,6 +260,9 @@ impl GenerateOptions {
             output_dir: None,
             num_colors: 3,
             max_attempts_per_node: 10_000,
+            alpha: None,
+            output_format: OutputFormat::Circle,
+            output_format_explicit: false,
         };
         let mut index = 0;
         while index < args.len() {
@@ -266,10 +311,32 @@ impl GenerateOptions {
                         parse_usize_arg(args, index, "--max-attempts-per-node")?;
                     index += 2;
                 }
+                "--alpha" => {
+                    options.alpha = Some(parse_f64_arg(args, index, "--alpha")?);
+                    index += 2;
+                }
+                "--output-format" => {
+                    options.output_format =
+                        OutputFormat::parse(required_value(args, index, "--output-format")?)?;
+                    options.output_format_explicit = true;
+                    index += 2;
+                }
                 unknown => {
                     return Err(SosaError::Input(format!("unknown argument {unknown:?}")));
                 }
             }
+        }
+
+        if !options.output_format_explicit && !sequence {
+            options.output_format = match options
+                .output
+                .as_ref()
+                .and_then(|path| path.extension())
+                .and_then(|extension| extension.to_str())
+            {
+                Some("circle") => OutputFormat::Circle,
+                _ => OutputFormat::Col,
+            };
         }
 
         if sequence {
@@ -297,6 +364,7 @@ impl GenerateOptions {
                 .ok_or_else(|| SosaError::Input("--seed is required".to_string()))?,
             num_colors: self.num_colors,
             max_attempts_per_node: self.max_attempts_per_node,
+            alpha: self.alpha,
         })
     }
 }
@@ -375,12 +443,19 @@ fn parse_u8_arg(args: &[String], index: usize, flag: &str) -> Result<u8, SosaErr
         .map_err(|_| SosaError::Input(format!("invalid {flag} value {value:?}")))
 }
 
+fn parse_f64_arg(args: &[String], index: usize, flag: &str) -> Result<f64, SosaError> {
+    let value = required_value(args, index, flag)?;
+    value
+        .parse::<f64>()
+        .map_err(|_| SosaError::Input(format!("invalid {flag} value {value:?}")))
+}
+
 fn help() -> &'static str {
     "usage: three_col_native <instance|sat> ..."
 }
 
 fn instance_help() -> &'static str {
-    "usage: three_col_native instance <inspect|validate> <instance.col> | instance materialize-circle <instance.circle> --output PATH | instance generate --family F --n N --seed S --output PATH | instance generate-sequence --family F --start-n N --stop-n N --step-n N --seed S --output-dir DIR"
+    "usage: three_col_native instance <inspect|validate> <instance.col|instance.circle> | instance materialize-circle <instance.circle> --output PATH | instance generate --family F --n N --seed S [--alpha A] [--output-format col|circle] --output PATH | instance generate-sequence --family F --start-n N --stop-n N --step-n N --seed S [--alpha A] [--output-format col|circle] --output-dir DIR"
 }
 
 fn sat_summary_text(summary: &SatSummary) -> String {

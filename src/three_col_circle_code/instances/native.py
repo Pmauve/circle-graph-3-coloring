@@ -4,7 +4,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 import subprocess
-from typing import Any
+from typing import Any, Optional
 
 
 THREE_COL_NATIVE_BIN_ENV = "THREE_COL_NATIVE_BIN"
@@ -160,6 +160,8 @@ def generate_col_with_native(
     seed: int,
     num_colors: int = 3,
     max_attempts_per_node: int = 10_000,
+    alpha: Optional[float] = None,
+    output_format: str = "col",
 ) -> NativeInstanceSummary:
     """Generate a DIMACS-circle instance through the native CLI."""
     binary = os.environ.get(THREE_COL_NATIVE_BIN_ENV)
@@ -167,24 +169,29 @@ def generate_col_with_native(
         raise NativeInstanceError(f"{THREE_COL_NATIVE_BIN_ENV} is required for native instance generation")
     path = Path(instance_path)
     try:
+        command = [
+            binary,
+            "instance",
+            "generate",
+            "--family",
+            family,
+            "--n",
+            str(n),
+            "--seed",
+            str(seed),
+            "--num-colors",
+            str(num_colors),
+            "--max-attempts-per-node",
+            str(max_attempts_per_node),
+            "--output",
+            str(path),
+        ]
+        if alpha is not None:
+            command.extend(["--alpha", str(alpha)])
+        if output_format != "col":
+            command.extend(["--output-format", output_format])
         completed = subprocess.run(
-            [
-                binary,
-                "instance",
-                "generate",
-                "--family",
-                family,
-                "--n",
-                str(n),
-                "--seed",
-                str(seed),
-                "--num-colors",
-                str(num_colors),
-                "--max-attempts-per-node",
-                str(max_attempts_per_node),
-                "--output",
-                str(path),
-            ],
+            command,
             check=False,
             text=True,
             stdout=subprocess.PIPE,
@@ -218,34 +225,41 @@ def generate_col_sequence_with_native(
     seed: int,
     num_colors: int = 3,
     max_attempts_per_node: int = 10_000,
+    alpha: Optional[float] = None,
+    output_format: str = "col",
 ) -> list[Path]:
     """Generate a sequence of DIMACS-circle instances through the native CLI."""
     binary = os.environ.get(THREE_COL_NATIVE_BIN_ENV)
     if not binary:
         raise NativeInstanceError(f"{THREE_COL_NATIVE_BIN_ENV} is required for native instance generation")
     try:
+        command = [
+            binary,
+            "instance",
+            "generate-sequence",
+            "--family",
+            family,
+            "--start-n",
+            str(start_n),
+            "--stop-n",
+            str(stop_n),
+            "--step-n",
+            str(step_n),
+            "--seed",
+            str(seed),
+            "--num-colors",
+            str(num_colors),
+            "--max-attempts-per-node",
+            str(max_attempts_per_node),
+            "--output-dir",
+            str(output_dir),
+        ]
+        if alpha is not None:
+            command.extend(["--alpha", str(alpha)])
+        if output_format != "col":
+            command.extend(["--output-format", output_format])
         completed = subprocess.run(
-            [
-                binary,
-                "instance",
-                "generate-sequence",
-                "--family",
-                family,
-                "--start-n",
-                str(start_n),
-                "--stop-n",
-                str(stop_n),
-                "--step-n",
-                str(step_n),
-                "--seed",
-                str(seed),
-                "--num-colors",
-                str(num_colors),
-                "--max-attempts-per-node",
-                str(max_attempts_per_node),
-                "--output-dir",
-                str(output_dir),
-            ],
+            command,
             check=False,
             text=True,
             stdout=subprocess.PIPE,

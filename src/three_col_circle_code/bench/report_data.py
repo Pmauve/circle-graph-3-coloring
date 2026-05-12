@@ -31,6 +31,7 @@ class ReportRow:
     instance_id: str
     instance_path: Optional[str]
     family: Optional[str]
+    family_label: Optional[str]
     bucket: Optional[str]
     n: Optional[int]
     m: Optional[int]
@@ -212,7 +213,7 @@ def build_report_plot_payload(data: BenchmarkReportData) -> dict[str, Any]:
     for row in data.rows:
         if row.n is None:
             continue
-        family = row.family or "unknown"
+        family = _display_family(row) or "unknown"
         solver_label = solver_variant_label(row.solver_target, row.solver_params, row.solver_label)
         families.add(family)
         solver_labels.add(solver_label)
@@ -287,6 +288,7 @@ def _normalize_report_row(row: Mapping[str, Any]) -> ReportRow:
         instance_id=str(row["instance_id"]),
         instance_path=_optional_str(row.get("instance_path")),
         family=_optional_str(row.get("family")),
+        family_label=_optional_str(row.get("family_label")),
         bucket=_optional_str(row.get("bucket")),
         n=_optional_int(row.get("n")),
         m=_optional_int(row.get("m")),
@@ -435,7 +437,7 @@ def _build_agreement_rows(
         agreement_rows.append(
             AgreementRow(
                 instance_id=instance_id,
-                family=first_row.family,
+                family=_display_family(first_row),
                 bucket=first_row.bucket,
                 n=first_row.n,
                 solver_targets=solver_targets,
@@ -719,9 +721,15 @@ def _sort_value(value: Any) -> tuple[int, Any]:
 
 
 def _summary_group_value(row: ReportRow, field: str) -> Any:
+    if field == "family":
+        return _display_family(row)
     if field == "solver_target":
         return solver_variant_label(row.solver_target, row.solver_params, row.solver_label)
     return getattr(row, field)
+
+
+def _display_family(row: ReportRow) -> Optional[str]:
+    return row.family_label or row.family
 
 
 def _render_solver_param_value(value: Any) -> str:

@@ -49,7 +49,7 @@ def resolve_existing_instance_path(
     request: InstanceRequest,
 ) -> tuple[Optional[Path], Optional[str]]:
     for instance_id, id_kind in _candidate_instance_ids(request):
-        flat_instance_path = Path(instance_pool_root) / f"{instance_id}.circle"
+        flat_instance_path = Path(instance_pool_root) / f"{instance_id}.{request.output_format}"
         if flat_instance_path.exists():
             return flat_instance_path, f"flat-{id_kind}"
 
@@ -57,13 +57,13 @@ def resolve_existing_instance_path(
             Path(instance_pool_root)
             / request.family
             / bucket_for_n(request.n)
-            / f"{instance_id}.circle"
+            / f"{instance_id}.{request.output_format}"
         )
         if nested_instance_path.exists():
             return nested_instance_path, f"nested-{id_kind}"
 
         family_root = Path(instance_pool_root) / request.family
-        for candidate_path in sorted(family_root.glob(f"*/{instance_id}.circle")):
+        for candidate_path in sorted(family_root.glob(f"*/{instance_id}.{request.output_format}")):
             if candidate_path.exists():
                 return candidate_path, f"nested-any-bucket-{id_kind}"
     return None, None
@@ -78,7 +78,7 @@ def expected_instance_path(
         Path(instance_pool_root)
         / request.family
         / bucket_for_n(request.n)
-        / f"{request.instance_id}.circle"
+        / f"{request.instance_id}.{request.output_format}"
     )
 
 
@@ -111,6 +111,9 @@ def build_run_manifest(
                 "n": request.n,
                 "seed": request.seed,
                 "num_colors": request.num_colors,
+                "generator_params": dict(request.generator_params),
+                "family_label": request.family_label,
+                "output_format": request.output_format,
                 "sequence_id": request.sequence_id,
             }
             for request in run_spec.instance_requests

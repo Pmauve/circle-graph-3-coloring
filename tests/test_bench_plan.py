@@ -161,6 +161,51 @@ class BenchPlanTests(unittest.TestCase):
         self.assertEqual(instances[0].instance_path, expected_path)
         self.assertEqual(trials[0].num_colors, 4)
 
+    def test_create_benchmark_plan_carries_generator_params_label_and_output_format(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            spec_path = _write_spec(
+                tmp_root / "alpha.json",
+                {
+                    "instance_pool_root": str(tmp_root / "instances"),
+                    "instances": [
+                        {
+                            "family": "rccy_alpha",
+                            "label": "Dense-ish",
+                            "params": {"alpha": 0.5},
+                            "output_format": "circle",
+                            "n_values": [8],
+                            "seeds": [1],
+                        }
+                    ],
+                    "solvers": [{"target": "sosa-3-col-native"}],
+                },
+            )
+
+            plan_dir = create_benchmark_plan(
+                spec_path=spec_path,
+                plan_root=tmp_root / "plans",
+                work_root=tmp_root / "work",
+            )
+            instances = load_instance_plan(plan_dir)
+            trials = load_trial_plan(plan_dir, instances=instances)
+
+        expected_path = (
+            tmp_root
+            / "instances"
+            / "rccy_alpha"
+            / "s"
+            / "rccy_alpha-alpha0p5-k03-n0008-seed1.circle"
+        )
+        self.assertEqual(instances[0].instance_id, "rccy_alpha-alpha0p5-k03-n0008-seed1")
+        self.assertEqual(instances[0].generator_params, {"alpha": 0.5})
+        self.assertEqual(instances[0].family_label, "Dense-ish")
+        self.assertEqual(instances[0].output_format, "circle")
+        self.assertEqual(instances[0].instance_path, expected_path)
+        self.assertEqual(trials[0].generator_params, {"alpha": 0.5})
+        self.assertEqual(trials[0].family_label, "Dense-ish")
+        self.assertEqual(trials[0].output_format, "circle")
+
     def test_create_benchmark_plan_uses_expected_nested_path_for_missing_instance(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_root = Path(tmpdir)

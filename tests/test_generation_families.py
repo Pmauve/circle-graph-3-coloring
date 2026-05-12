@@ -27,6 +27,9 @@ class GenerationFamiliesTests(unittest.TestCase):
                 "rccy_baseline",
                 "rccy_full_sweep_weighted_active",
                 "rccy_full_sweep_max_active",
+                "rccy_alpha",
+                "rccy_alpha0",
+                "rccy_alpha1",
             ),
         )
 
@@ -80,6 +83,16 @@ class GenerationFamiliesTests(unittest.TestCase):
                 max_attempts_per_node=10_000,
                 num_colors=0,
             )
+
+    def test_generate_seeded_family_rejects_native_only_families(self) -> None:
+        for family in ("rccy_alpha", "rccy_alpha0", "rccy_alpha1"):
+            with self.assertRaisesRegex(ValueError, "native instance generation"):
+                generate_seeded_family(
+                    family=family,
+                    n=6,
+                    seed=11,
+                    max_attempts_per_node=10_000,
+                )
 
     def test_infer_legacy_family_from_parts_prefers_exact_path_token(self) -> None:
         family = infer_legacy_family_from_parts(("eval", "graph_data", "rc_fast", "s", "sample.json"))
