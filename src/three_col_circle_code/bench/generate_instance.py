@@ -178,18 +178,7 @@ def run_instance_sequence_generation(
             result_paths.append(result_path)
     except Exception as exc:
         for row in group:
-            result = _build_result(
-                index=row.index,
-                status="error",
-                instance_id=row.instance_id,
-                instance_path=row.instance_path,
-                generated=False,
-                validation_ok=False,
-                validation_errors=[],
-                started_at=started_at,
-                error=str(exc),
-                environment=collect_environment_metadata(),
-            )
+            result = _build_sequence_failure_result(row=row, started_at=started_at, error=exc)
             result_path = instance_result_path(resolved_work_root, row.index)
             _write_result(result_path, result)
             result_paths.append(result_path)
@@ -338,6 +327,63 @@ def _build_result(
         "environment": environment,
         "error": error,
     }
+
+
+def _build_sequence_failure_result(*, row: Any, started_at: str, error: Exception) -> dict[str, Any]:
+    """Keep valid earlier sequence artifacts when a later native extension fails."""
+    if Path(row.instance_path).exists():
+        try:
+            ensure_validated_sidecar(row.instance_path, force=True)
+        except NativeInstanceInvalid as exc:
+            return _build_result(
+                index=row.index,
+                status="invalid",
+                instance_id=row.instance_id,
+                instance_path=row.instance_path,
+                generated=True,
+                validation_ok=False,
+                validation_errors=[{"code": "native_validation_failed", "message": str(exc)}],
+                started_at=started_at,
+                error=str(exc),
+                environment=collect_environment_metadata(),
+            )
+        except Exception as exc:
+            return _build_result(
+                index=row.index,
+                status="error",
+                instance_id=row.instance_id,
+                instance_path=row.instance_path,
+                generated=True,
+                validation_ok=False,
+                validation_errors=[],
+                started_at=started_at,
+                error=str(exc),
+                environment=collect_environment_metadata(),
+            )
+        return _build_result(
+            index=row.index,
+            status="ok",
+            instance_id=row.instance_id,
+            instance_path=row.instance_path,
+            generated=True,
+            validation_ok=True,
+            validation_errors=[],
+            started_at=started_at,
+            error=None,
+            environment=collect_environment_metadata(),
+        )
+    return _build_result(
+        index=row.index,
+        status="error",
+        instance_id=row.instance_id,
+        instance_path=row.instance_path,
+        generated=False,
+        validation_ok=False,
+        validation_errors=[],
+        started_at=started_at,
+        error=str(error),
+        environment=collect_environment_metadata(),
+    )
 
 
 def _existing_result_matches_plan(result: dict[str, Any], *, instance_row: Any) -> bool:

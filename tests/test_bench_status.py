@@ -30,8 +30,11 @@ class BenchStatusTests(unittest.TestCase):
             status = build_benchmark_status(plan_dir=plan_dir)
 
         self.assertEqual(status["run_id"], "smoke")
-        self.assertFalse(status["ready_for_trials"])
+        self.assertTrue(status["ready_for_trials"])
         self.assertFalse(status["ready_for_merge"])
+        self.assertFalse(status["all_instances_ok"])
+        self.assertFalse(status["all_trials_ok"])
+        self.assertFalse(status["all_ok"])
         self.assertEqual(status["instances"]["counts"], {"error": 1, "ok": 1})
         self.assertEqual(status["instances"]["failed_indices"], [2])
         self.assertEqual(status["trials"]["counts"], {"missing": 1, "ok": 1})
@@ -51,6 +54,9 @@ class BenchStatusTests(unittest.TestCase):
 
         self.assertTrue(status["ready_for_trials"])
         self.assertTrue(status["ready_for_merge"])
+        self.assertTrue(status["all_instances_ok"])
+        self.assertTrue(status["all_trials_ok"])
+        self.assertTrue(status["all_ok"])
         self.assertEqual(status["instances"]["n_success"], 2)
         self.assertEqual(status["trials"]["n_success"], 2)
 
@@ -62,12 +68,22 @@ class BenchStatusTests(unittest.TestCase):
 
         self.assertEqual(exit_code, 1)
 
-    def test_cli_require_ready_for_trials_checks_instance_stage(self) -> None:
+    def test_cli_require_ready_for_trials_allows_complete_instance_stage_with_errors(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_root = Path(tmpdir)
             plan_dir, work_root = _write_plan(tmp_root)
             _write_result(instance_result_path(work_root, 1), "ok")
             _write_result(instance_result_path(work_root, 2), "error")
+
+            exit_code = main(["--plan-dir", str(plan_dir), "--require-ready-for-trials"])
+
+        self.assertEqual(exit_code, 0)
+
+    def test_cli_require_ready_for_trials_rejects_missing_instance_results(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            plan_dir, work_root = _write_plan(tmp_root)
+            _write_result(instance_result_path(work_root, 1), "ok")
 
             exit_code = main(["--plan-dir", str(plan_dir), "--require-ready-for-trials"])
 
@@ -84,6 +100,19 @@ class BenchStatusTests(unittest.TestCase):
             exit_code = main(["--plan-dir", str(plan_dir), "--require-ready-for-merge"])
 
         self.assertEqual(exit_code, 1)
+
+    def test_cli_require_ready_for_merge_allows_complete_trial_stage_with_errors(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            plan_dir, work_root = _write_plan(tmp_root)
+            _write_result(instance_result_path(work_root, 1), "ok")
+            _write_result(instance_result_path(work_root, 2), "ok")
+            _write_result(trial_result_path(work_root, 1), "ok")
+            _write_result(trial_result_path(work_root, 2), "error")
+
+            exit_code = main(["--plan-dir", str(plan_dir), "--require-ready-for-merge"])
+
+        self.assertEqual(exit_code, 0)
 
 
 def _write_plan(tmp_root: Path) -> tuple[Path, Path]:

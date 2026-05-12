@@ -41,8 +41,11 @@ def build_benchmark_status(
         "work_root": str(resolved_work_root),
         "instances": instance_status,
         "trials": trial_status,
-        "ready_for_trials": instance_status["n_success"] == instance_status["total"],
-        "ready_for_merge": trial_status["n_success"] == trial_status["total"],
+        "ready_for_trials": instance_status["complete"],
+        "ready_for_merge": trial_status["complete"],
+        "all_instances_ok": instance_status["all_success"],
+        "all_trials_ok": trial_status["all_success"],
+        "all_ok": instance_status["all_success"] and trial_status["all_success"],
     }
 
 
@@ -95,12 +98,16 @@ def _summarize_results(
         if status not in success_statuses:
             failed_indices.append(index)
     n_success = sum(counts.get(status, 0) for status in success_statuses)
+    n_present = len(materialized_indices) - len(missing_indices)
     return {
         "total": len(materialized_indices),
+        "n_present": n_present,
         "n_success": n_success,
         "counts": dict(sorted(counts.items())),
         "missing_indices": missing_indices,
         "failed_indices": failed_indices,
+        "complete": len(missing_indices) == 0,
+        "all_success": n_success == len(materialized_indices),
     }
 
 

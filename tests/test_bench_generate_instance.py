@@ -352,6 +352,52 @@ class BenchGenerateInstanceTests(unittest.TestCase):
         )
         self.assertEqual(validate.call_count, 3)
 
+    def test_run_instance_sequence_generation_preserves_completed_prefix_on_native_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            rows = []
+            for index, n in enumerate((100, 200, 300), start=1):
+                instance_id = f"rc_fast-k03-n{n:04d}-seed1"
+                rows.append(
+                    InstancePlanRow(
+                        index=index,
+                        instance_id=instance_id,
+                        family="rc_fast",
+                        n=n,
+                        seed=1,
+                        num_colors=3,
+                        sequence_id="seq-1",
+                        instance_path=tmp_root / "instances" / "rc_fast" / "s" / f"{instance_id}.circle",
+                    )
+                )
+            plan_dir, _work_root = _write_custom_plan(tmp_root, tuple(rows))
+
+            def fail_after_first_artifact(**_kwargs: object) -> None:
+                rows[0].instance_path.parent.mkdir(parents=True, exist_ok=True)
+                rows[0].instance_path.write_text("p circle 100 3\n", encoding="utf-8")
+                raise RuntimeError("failed to generate rc_fast vertex 200 after 10000 attempts")
+
+            with patch(
+                "three_col_circle_code.bench.generate_instance.generate_col_sequence_with_native",
+                side_effect=fail_after_first_artifact,
+            ), patch(
+                "three_col_circle_code.bench.generate_instance.ensure_validated_sidecar",
+                return_value=None,
+            ) as validate, patch(
+                "three_col_circle_code.bench.generate_instance.collect_environment_metadata",
+                return_value={"hostname": "worker-1"},
+            ):
+                result_paths = run_instance_sequence_generation(plan_dir=plan_dir, index=1)
+
+            results = [json.loads(path.read_text(encoding="utf-8")) for path in result_paths]
+
+        self.assertEqual([result["status"] for result in results], ["ok", "error", "error"])
+        self.assertEqual([result["generated"] for result in results], [True, False, False])
+        self.assertTrue(results[0]["validation_ok"])
+        self.assertIsNone(results[0]["error"])
+        self.assertIn("failed to generate rc_fast vertex 200", results[1]["error"])
+        validate.assert_called_once_with(rows[0].instance_path, force=True)
+
     def test_sequence_cli_prints_result_paths(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_root = Path(tmpdir)
