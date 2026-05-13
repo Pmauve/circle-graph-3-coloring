@@ -19,68 +19,126 @@ pub fn solve_base_case(
 
 fn solve_base_case_backtracking(instance: &CircleInstance, stats: &mut Stats) -> bool {
     let mut assigned = vec![0u8; instance.n];
-    search(instance, &mut assigned, stats)
+    let mut available_masks = instance.allowed.clone();
+    let mut forbidden_counts = vec![[0u32; 4]; instance.n];
+    let mut trail = Vec::new();
+    search(
+        instance,
+        &mut assigned,
+        &mut available_masks,
+        &mut forbidden_counts,
+        &mut trail,
+        stats,
+    )
 }
 
-fn search(instance: &CircleInstance, assigned: &mut [u8], stats: &mut Stats) -> bool {
+fn search(
+    instance: &CircleInstance,
+    assigned: &mut [u8],
+    available_masks: &mut [u8],
+    forbidden_counts: &mut [[u32; 4]],
+    trail: &mut Vec<(usize, u8, bool)>,
+    stats: &mut Stats,
+) -> bool {
     stats.base_case_search_nodes += 1;
-    let Some(vertex) = choose_vertex(instance, assigned) else {
+    let Some(vertex) = choose_vertex(instance, assigned, available_masks) else {
         return true;
     };
-    let mask = available_mask(instance, assigned, vertex);
-    for color in iter_colors(mask) {
+    for color in iter_colors(available_masks[vertex]) {
         assigned[vertex] = color;
-        if search(instance, assigned, stats) {
+        let trail_start = trail.len();
+        let branch_is_consistent = apply_assignment(
+            instance,
+            assigned,
+            available_masks,
+            forbidden_counts,
+            trail,
+            vertex,
+            color,
+        );
+        if branch_is_consistent
+            && search(
+                instance,
+                assigned,
+                available_masks,
+                forbidden_counts,
+                trail,
+                stats,
+            )
+        {
             return true;
         }
+        undo_assignment(available_masks, forbidden_counts, trail, trail_start);
         assigned[vertex] = 0;
     }
     false
 }
 
-fn choose_vertex(instance: &CircleInstance, assigned: &[u8]) -> Option<usize> {
-    let mut best: Option<(u32, usize, usize, usize)> = None;
+fn choose_vertex(
+    instance: &CircleInstance,
+    assigned: &[u8],
+    available_masks: &[u8],
+) -> Option<usize> {
+    let mut best: Option<(u32, usize, usize)> = None;
     for vertex in 0..instance.n {
         if assigned[vertex] != 0 {
             continue;
         }
-        let mask = available_mask(instance, assigned, vertex);
-        let color_options = color_count(mask);
-        let saturation = saturation_degree(instance, assigned, vertex);
+        let color_options = color_count(available_masks[vertex]);
         let degree = instance.degree(vertex as u32);
-        let key = (
-            color_options,
-            usize::MAX - saturation,
-            usize::MAX - degree,
-            vertex,
-        );
+        let key = (color_options, usize::MAX - degree, vertex);
         if best.is_none_or(|best_key| key < best_key) {
             best = Some(key);
         }
     }
-    best.map(|(_, _, _, vertex)| vertex)
+    best.map(|(_, _, vertex)| vertex)
 }
 
-fn available_mask(instance: &CircleInstance, assigned: &[u8], vertex: usize) -> u8 {
-    let mut mask = instance.allowed[vertex];
+fn apply_assignment(
+    instance: &CircleInstance,
+    assigned: &[u8],
+    available_masks: &mut [u8],
+    forbidden_counts: &mut [[u32; 4]],
+    trail: &mut Vec<(usize, u8, bool)>,
+    vertex: usize,
+    color: u8,
+) -> bool {
+    let mask = color_bit(color);
+    let mut consistent = true;
     for &neighbor in instance.neighbors(vertex as u32) {
-        let color = assigned[neighbor as usize];
-        if color != 0 {
-            mask &= !color_bit(color);
+        let neighbor = neighbor as usize;
+        if assigned[neighbor] != 0 {
+            continue;
         }
+        let count = &mut forbidden_counts[neighbor][color as usize];
+        let removed_mask = *count == 0 && available_masks[neighbor] & mask != 0;
+        trail.push((neighbor, color, removed_mask));
+        if removed_mask {
+            available_masks[neighbor] &= !mask;
+            if available_masks[neighbor] == 0 {
+                consistent = false;
+            }
+        }
+        *count += 1;
     }
-    mask
+    consistent
 }
 
-fn saturation_degree(instance: &CircleInstance, assigned: &[u8], vertex: usize) -> usize {
-    let mut seen = 0u8;
-    for &neighbor in instance.neighbors(vertex as u32) {
-        let color = assigned[neighbor as usize];
-        if color != 0 {
-            seen |= color_bit(color);
+fn undo_assignment(
+    available_masks: &mut [u8],
+    forbidden_counts: &mut [[u32; 4]],
+    trail: &mut Vec<(usize, u8, bool)>,
+    trail_start: usize,
+) {
+    while trail.len() > trail_start {
+        let (vertex, color, removed_mask) = trail.pop().expect("trail length checked above");
+        let count = &mut forbidden_counts[vertex][color as usize];
+        *count -= 1;
+        if removed_mask {
+            debug_assert_eq!(*count, 0);
+            available_masks[vertex] |= color_bit(color);
         }
     }
-    color_count(seen) as usize
 }
 
 #[cfg(unix)]
