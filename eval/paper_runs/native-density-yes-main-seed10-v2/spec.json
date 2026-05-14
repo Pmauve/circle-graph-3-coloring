@@ -1,0 +1,241 @@
+{
+  "instance_pool_root": "eval/instances",
+  "instances": [
+    {
+      "family": "rc_fast",
+      "label": "K4-FREE",
+      "output_format": "circle",
+      "num_colors": 3,
+      "n": {
+        "start": 200,
+        "stop": 10000,
+        "step": 200
+      },
+      "seeds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "family": "rcy_fast",
+      "label": "SIMPLE-YES",
+      "output_format": "circle",
+      "num_colors": 3,
+      "n": {
+        "start": 200,
+        "stop": 10000,
+        "step": 200
+      },
+      "seeds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "family": "rccy_alpha",
+      "label": "DENSITY-YES alpha=0",
+      "params": {
+        "alpha": 0
+      },
+      "output_format": "circle",
+      "num_colors": 3,
+      "n": {
+        "start": 200,
+        "stop": 20000,
+        "step": 200
+      },
+      "seeds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "family": "rccy_alpha",
+      "label": "DENSITY-YES alpha=0.5",
+      "params": {
+        "alpha": 0.5
+      },
+      "output_format": "circle",
+      "num_colors": 3,
+      "n": {
+        "start": 200,
+        "stop": 20000,
+        "step": 200
+      },
+      "seeds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "family": "rccy_alpha",
+      "label": "DENSITY-YES alpha=1",
+      "params": {
+        "alpha": 1
+      },
+      "output_format": "circle",
+      "num_colors": 3,
+      "n": {
+        "start": 200,
+        "stop": 20000,
+        "step": 200
+      },
+      "seeds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "family": "rccy_alpha",
+      "label": "DENSITY-YES alpha=2",
+      "params": {
+        "alpha": 2
+      },
+      "output_format": "circle",
+      "num_colors": 3,
+      "n": {
+        "start": 200,
+        "stop": 20000,
+        "step": 200
+      },
+      "seeds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ]
+    }
+  ],
+  "solvers": [
+    {
+      "target": "sat-3-col-native",
+      "label": "SAT Kissat crossings",
+      "params": {
+        "backend": "kissat-rustsat",
+        "edge_source": "circle_crossings",
+        "timeout_s": 1800
+      }
+    },
+    {
+      "target": "sat-3-col-native",
+      "label": "SAT Kissat listed",
+      "params": {
+        "backend": "kissat-rustsat",
+        "edge_source": "listed_edges",
+        "timeout_s": 1800
+      }
+    },
+    {
+      "target": "sat-3-col-native",
+      "label": "SAT CaDiCaL crossings",
+      "params": {
+        "backend": "cadical-rustsat",
+        "edge_source": "circle_crossings",
+        "timeout_s": 1800
+      }
+    },
+    {
+      "target": "sosa-3-col-native",
+      "label": "SOSA base=128",
+      "params": {
+        "base_case_n": 128,
+        "base_case_algorithm": "backtracking",
+        "input_mode": "trusted-listed-edges",
+        "timeout_s": 1800
+      }
+    },
+    {
+      "target": "sosa-3-col-native",
+      "label": "SOSA base=128 lazy",
+      "params": {
+        "base_case_n": 128,
+        "base_case_algorithm": "backtracking",
+        "input_mode": "lazy-circle-neighbors",
+        "timeout_s": 1800
+      }
+    },
+    {
+      "target": "sosa-3-col-native",
+      "label": "SOSA lazy base=512 Kissat",
+      "params": {
+        "base_case_n": 512,
+        "base_case_algorithm": "kissat-rustsat",
+        "input_mode": "lazy-circle-neighbors",
+        "timeout_s": 1800
+      }
+    },
+    {
+      "target": "zykovcolor",
+      "label": "ZykovColor zykov preset k=3",
+      "params": {
+        "mode": "single-k",
+        "decision_num_colors": 3,
+        "configuration": "zykov-color",
+        "solver": "cadical",
+        "timeout_s": 1800
+      }
+    },
+    {
+      "target": "zykovcolor",
+      "label": "ZykovColor assignment no-pre k=3",
+      "params": {
+        "mode": "single-k",
+        "decision_num_colors": 3,
+        "configuration": "assignment",
+        "solver": "cadical",
+        "extra_args": [
+          "--disable-preprocessing"
+        ],
+        "timeout_s": 1800
+      }
+    }
+  ],
+  "repetitions": 1,
+  "warmup_repetitions": 0
+}

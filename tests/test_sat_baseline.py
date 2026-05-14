@@ -16,14 +16,25 @@ from three_col_circle_code.sat.baseline import (
 
 HAS_PYSMT = find_spec("pysmt") is not None
 HAS_PYSAT = find_spec("pysat") is not None
+HAS_PYSMT_MSAT = False
 try:
     from pysat.solvers import Kissat404  # noqa: F401
 except ImportError:
     HAS_PYSAT_KISSAT = False
 else:
-    HAS_PYSAT_KISSAT = True
+    HAS_PYSAT_KISSAT = sys.platform != "win32"
 
 if HAS_PYSMT:
+    try:
+        from pysmt.shortcuts import Solver
+
+        _msat_probe = Solver(name="msat")
+        _msat_probe.exit()
+    except Exception:
+        HAS_PYSMT_MSAT = False
+    else:
+        HAS_PYSMT_MSAT = True
+
     from three_col_circle_code.sat_builder import is_three_colorable
 
 
@@ -79,7 +90,7 @@ class SatBaselineTests(unittest.TestCase):
         self.assertEqual(result.n_vertices, 4)
         self.assertEqual(result.m_edges, 6)
 
-    @unittest.skipUnless(HAS_PYSMT, "pysmt is required for the legacy SAT baseline tests")
+    @unittest.skipUnless(HAS_PYSMT_MSAT, "pysmt with MathSAT is required for the legacy SAT baseline tests")
     def test_legacy_shared_interface_returns_metadata(self):
         graph = nx.path_graph(3)
 
@@ -91,7 +102,7 @@ class SatBaselineTests(unittest.TestCase):
         self.assertEqual(result.m_edges, 2)
         self.assertGreaterEqual(result.elapsed_time, 0.0)
 
-    @unittest.skipUnless(HAS_PYSMT, "pysmt is required for the legacy SAT baseline tests")
+    @unittest.skipUnless(HAS_PYSMT_MSAT, "pysmt with MathSAT is required for the legacy SAT baseline tests")
     def test_legacy_wrapper_preserves_tuple_shape(self):
         graph = nx.complete_graph(4)
 

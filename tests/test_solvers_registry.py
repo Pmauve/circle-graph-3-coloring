@@ -13,15 +13,32 @@ from three_col_circle_code.solvers.registry import (
     available_solver_names,
     resolve_solver_configs,
     run_solver,
+    run_solver_from_path,
 )
 from three_col_circle_code.solvers.sat import SAT_BASELINE_SOLVER
-from three_col_circle_code.solvers.sosa import SOSA_SOLVER
+from three_col_circle_code.solvers.sat_native import SAT_3_COL_NATIVE_SOLVER
+from three_col_circle_code.solvers.sosa import (
+    SOSA_3_COL_EXACT_SOLVER,
+    SOSA_K_COL_HEURISTIC_SOLVER,
+    SOSA_3_COL_NATIVE_SOLVER,
+)
+from three_col_circle_code.solvers.zykovcolor import ZYKOVCOLOR_SOLVER
 from three_col_circle_code.sat.baseline import LEGACY_PYSMT_MSAT, PYSAT_CADICAL, PYSAT_KISSAT404
 
 
 class SolverRegistryTests(unittest.TestCase):
     def test_available_solver_names_lists_registered_solver_families(self) -> None:
-        self.assertEqual(available_solver_names(), (SAT_BASELINE_SOLVER, SOSA_SOLVER))
+        self.assertEqual(
+            available_solver_names(),
+            (
+                SAT_BASELINE_SOLVER,
+                SAT_3_COL_NATIVE_SOLVER,
+                SOSA_3_COL_EXACT_SOLVER,
+                SOSA_K_COL_HEURISTIC_SOLVER,
+                SOSA_3_COL_NATIVE_SOLVER,
+                ZYKOVCOLOR_SOLVER,
+            ),
+        )
 
     def test_resolve_solver_configs_expands_sat_family_to_all_backends(self) -> None:
         configs = resolve_solver_configs((SAT_BASELINE_SOLVER,))
@@ -43,7 +60,7 @@ class SolverRegistryTests(unittest.TestCase):
             backend="pysat-cadical",
             status=SOLVER_STATUS_OK,
             wall_time_s=0.1,
-            is_three_colorable=True,
+            is_colorable=True,
             n_vertices=2,
             m_edges=1,
             details={},
@@ -81,7 +98,7 @@ class SolverRegistryTests(unittest.TestCase):
             backend="legacy-pysmt-msat",
             status=SOLVER_STATUS_OK,
             wall_time_s=0.1,
-            is_three_colorable=True,
+            is_colorable=True,
             n_vertices=2,
             m_edges=1,
             details={},
@@ -101,15 +118,15 @@ class SolverRegistryTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             resolve_solver_configs(("unknown",))
 
-    def test_run_solver_dispatches_to_sosa_solver(self) -> None:
+    def test_run_solver_dispatches_to_exact_sosa_solver(self) -> None:
         graph = nx.path_graph(2)
-        config = SolverConfig(solver=SOSA_SOLVER, params={"brute_force_cutoff": 8})
+        config = SolverConfig(solver=SOSA_3_COL_EXACT_SOLVER, params={"base_case_n": 8})
         fake_result = SolverResult(
-            solver=SOSA_SOLVER,
+            solver=SOSA_3_COL_EXACT_SOLVER,
             backend=None,
             status=SOLVER_STATUS_OK,
             wall_time_s=0.1,
-            is_three_colorable=True,
+            is_colorable=True,
             n_vertices=2,
             m_edges=1,
             details={},
@@ -117,12 +134,140 @@ class SolverRegistryTests(unittest.TestCase):
         )
 
         with patch(
-            "three_col_circle_code.solvers.registry.solve_sosa",
+            "three_col_circle_code.solvers.registry.solve_sosa_3_col_exact",
             return_value=fake_result,
         ) as solve:
             result = run_solver(graph, config)
 
-        solve.assert_called_once_with(graph, params={"brute_force_cutoff": 8})
+        solve.assert_called_once_with(graph, params={"base_case_n": 8})
+        self.assertIs(result, fake_result)
+
+    def test_run_solver_dispatches_to_k_color_heuristic_sosa_solver(self) -> None:
+        graph = nx.path_graph(2)
+        config = SolverConfig(
+            solver=SOSA_K_COL_HEURISTIC_SOLVER,
+            params={"num_colors": 4, "produce_witness": False},
+        )
+        fake_result = SolverResult(
+            solver=SOSA_K_COL_HEURISTIC_SOLVER,
+            backend=None,
+            status=SOLVER_STATUS_OK,
+            wall_time_s=0.1,
+            is_colorable=True,
+            n_vertices=2,
+            m_edges=1,
+            details={},
+            error=None,
+        )
+
+        with patch(
+            "three_col_circle_code.solvers.registry.solve_sosa_k_col_heuristic",
+            return_value=fake_result,
+        ) as solve:
+            result = run_solver(graph, config)
+
+        solve.assert_called_once_with(graph, params={"num_colors": 4, "produce_witness": False})
+        self.assertIs(result, fake_result)
+
+    def test_run_solver_rejects_native_sosa_without_path(self) -> None:
+        graph = nx.path_graph(2)
+        config = SolverConfig(solver=SOSA_3_COL_NATIVE_SOLVER)
+
+        with self.assertRaisesRegex(ValueError, "requires a file path"):
+            run_solver(graph, config)
+
+    def test_run_solver_rejects_native_sat_without_path(self) -> None:
+        graph = nx.path_graph(2)
+        config = SolverConfig(solver=SAT_3_COL_NATIVE_SOLVER)
+
+        with self.assertRaisesRegex(ValueError, "requires a file path"):
+            run_solver(graph, config)
+
+    def test_run_solver_from_path_dispatches_to_native_sat_solver(self) -> None:
+        path = Path("instance.col")
+        config = SolverConfig(
+            solver=SAT_3_COL_NATIVE_SOLVER,
+            params={"backend": "kissat-rustsat"},
+        )
+        fake_result = SolverResult(
+            solver=SAT_3_COL_NATIVE_SOLVER,
+            backend=None,
+            status=SOLVER_STATUS_OK,
+            wall_time_s=0.1,
+            is_colorable=True,
+            n_vertices=2,
+            m_edges=1,
+            details={},
+            error=None,
+        )
+
+        with patch(
+            "three_col_circle_code.solvers.registry.solve_sat_3_col_native_from_path",
+            return_value=fake_result,
+        ) as solve:
+            result = run_solver_from_path(path, config)
+
+        solve.assert_called_once_with(path, params={"backend": "kissat-rustsat"})
+        self.assertIs(result, fake_result)
+
+    def test_run_solver_from_path_validates_native_col_without_loading_graph(self) -> None:
+        path = Path("instance.col")
+        config = SolverConfig(
+            solver=SAT_3_COL_NATIVE_SOLVER,
+            params={"backend": "kissat-rustsat"},
+        )
+        fake_result = SolverResult(
+            solver=SAT_3_COL_NATIVE_SOLVER,
+            backend=None,
+            status=SOLVER_STATUS_OK,
+            wall_time_s=0.1,
+            is_colorable=True,
+            n_vertices=2,
+            m_edges=1,
+            details={},
+            error=None,
+        )
+
+        with patch(
+            "three_col_circle_code.solvers.registry.ensure_validated_sidecar",
+        ) as validate, patch(
+            "three_col_circle_code.solvers.registry.load_instance",
+            side_effect=AssertionError("should not load graph"),
+        ), patch(
+            "three_col_circle_code.solvers.registry.solve_sat_3_col_native_from_path",
+            return_value=fake_result,
+        ):
+            result = run_solver_from_path(path, config, validate_instance_artifact=True)
+
+        validate.assert_called_once_with(path, force=True)
+        self.assertIs(result, fake_result)
+
+    def test_run_solver_from_path_dispatches_to_native_sosa_solver(self) -> None:
+        path = Path("instance.col")
+        config = SolverConfig(solver=SOSA_3_COL_NATIVE_SOLVER, params={"base_case_n": 16})
+        fake_result = SolverResult(
+            solver=SOSA_3_COL_NATIVE_SOLVER,
+            backend=None,
+            status=SOLVER_STATUS_OK,
+            wall_time_s=0.1,
+            is_colorable=True,
+            n_vertices=2,
+            m_edges=1,
+            details={},
+            error=None,
+        )
+
+        with patch(
+            "three_col_circle_code.solvers.registry.solve_sosa_3_col_native_from_path",
+            return_value=fake_result,
+        ) as solve:
+            result = run_solver_from_path(path, config)
+
+        solve.assert_called_once_with(
+            path,
+            params={"base_case_n": 16},
+            validate_instance_artifact=False,
+        )
         self.assertIs(result, fake_result)
 
 

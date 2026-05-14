@@ -4,6 +4,7 @@ from three_col_circle_code.generation.circle_state import (
     IncrementalCircleState,
     build_graph_from_state,
 )
+from three_col_circle_code.generation.color_utils import available_colors, validate_num_colors
 
 
 def generate_random_circle_graph_fast(size, *, rng=None, max_attempts_per_node=None):
@@ -16,13 +17,18 @@ def generate_random_circle_graph_fast(size, *, rng=None, max_attempts_per_node=N
     return build_graph_from_state(state)
 
 
-def generate_random_circle_graph_yes_fast(size, *, rng=None, max_attempts_per_node=None):
-    """Generate a connected K4-free 3-colorable circle graph using the legacy insertion model."""
+def generate_random_circle_graph_yes_fast(size, *, rng=None, max_attempts_per_node=None, num_colors=3):
+    """Generate a connected K4-free k-colorable circle graph using the legacy insertion model."""
+    validate_num_colors(num_colors)
     state = _generate_incremental_circle_state(
         size,
         rng=rng,
         max_attempts_per_node=max_attempts_per_node,
-        color_selector=_choose_legacy_compatible_color,
+        color_selector=lambda neighbors, colors: _choose_compatible_color(
+            neighbors,
+            colors,
+            num_colors,
+        ),
     )
     return build_graph_from_state(state)
 
@@ -62,13 +68,14 @@ def _generate_incremental_circle_state(
                     attempts += 1
                     continue
 
-            candidate_order = _build_candidate_order(
-                state.endpoint_order,
+            _commit_candidate(
+                state,
                 node_id,
                 first_position,
                 second_position,
+                neighbors,
+                color=color,
             )
-            _commit_candidate(state, node_id, candidate_order, neighbors, color=color)
             searching = False
             attempts += 1
         if searching:
@@ -84,11 +91,9 @@ def _validate_generation_request(size, max_attempts_per_node):
         raise ValueError("max_attempts_per_node must be at least 1")
 
 
-def _build_candidate_order(endpoint_order, node_id, first_position, second_position):
-    candidate_order = endpoint_order.copy()
-    candidate_order.insert(first_position, node_id)
-    candidate_order.insert(second_position, node_id)
-    return candidate_order
+def _insert_node_at_positions(endpoint_order, node_id, first_position, second_position):
+    endpoint_order.insert(first_position, node_id)
+    endpoint_order.insert(second_position, node_id)
 
 
 def _sample_insert_positions(endpoint_order_len, *, rng):
@@ -120,6 +125,8 @@ def _candidate_is_connected(node_id, neighbors):
 
 
 def _contains_triangle(neighbors, adjacency):
+    if len(neighbors) < 3:
+        return False
     neighbor_list = tuple(neighbors)
     for index, left in enumerate(neighbor_list):
         left_neighbors = adjacency[left]
@@ -131,8 +138,8 @@ def _contains_triangle(neighbors, adjacency):
     return False
 
 
-def _commit_candidate(state, node_id, candidate_order, neighbors, *, color=None):
-    state.endpoint_order = candidate_order
+def _commit_candidate(state, node_id, first_position, second_position, neighbors, *, color=None):
+    _insert_node_at_positions(state.endpoint_order, node_id, first_position, second_position)
     state.adjacency[node_id] = set(neighbors)
     for neighbor in neighbors:
         state.adjacency[neighbor].add(node_id)
@@ -140,9 +147,8 @@ def _commit_candidate(state, node_id, candidate_order, neighbors, *, color=None)
         state.colors[node_id] = color
 
 
-def _choose_legacy_compatible_color(neighbors, colors):
-    used_colors = {colors[neighbor] for neighbor in neighbors}
-    remaining_colors = {1, 2, 3} - used_colors
+def _choose_compatible_color(neighbors, colors, num_colors):
+    remaining_colors = available_colors(colors, neighbors, num_colors)
     if remaining_colors:
-        return remaining_colors.pop()
+        return remaining_colors[0]
     return None

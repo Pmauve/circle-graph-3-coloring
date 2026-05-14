@@ -1,0 +1,104 @@
+{
+  "instance_pool_root": "eval/instances",
+  "instances": [
+    {
+      "family": "rc_fast",
+      "num_colors": 3,
+      "n_values": [2000],
+      "seeds": [42]
+    },
+    {
+      "family": "rcy_fast",
+      "num_colors": 3,
+      "n_values": [2000],
+      "seeds": [42]
+    },
+    {
+      "family": "rccy_tuned",
+      "num_colors": 3,
+      "n_values": [2000],
+      "seeds": [42]
+    },
+    {
+      "family": "rccy_full_sweep_weighted_active",
+      "num_colors": 3,
+      "n_values": [6000],
+      "seeds": [42]
+    },
+    {
+      "family": "rccy_full_sweep_max_active",
+      "num_colors": 3,
+      "n_values": [6000],
+      "seeds": [42]
+    }
+  ],
+  "solvers": [
+    {
+      "target": "sat-3-col-native",
+      "label": "SAT CaDiCaL",
+      "params": {
+        "backend": "cadical-rustsat",
+        "timeout_s": 600
+      }
+    },
+    {
+      "target": "sat-3-col-native",
+      "label": "SAT Kissat",
+      "params": {
+        "backend": "kissat-rustsat",
+        "timeout_s": 600
+      }
+    },
+    {
+      "target": "sosa-3-col-native",
+      "label": "SOSA base=128",
+      "params": {
+        "base_case_n": 128,
+        "timeout_s": 600
+      }
+    },
+    {
+      "target": "sosa-3-col-native",
+      "label": "SOSA base=512 Kissat",
+      "params": {
+        "base_case_n": 512,
+        "base_case_algorithm": "kissat-rustsat",
+        "timeout_s": 600
+      }
+    },
+    {
+      "target": "zykovcolor",
+      "label": "ZykovColor preprocess",
+      "params": {
+        "mode": "single-k",
+        "decision_num_colors": 3,
+        "configuration": "custom",
+        "solver": "cadical",
+        "timeout_s": 600,
+        "extra_args": [
+          "--encoding", "5",
+          "--reduce-graph",
+          "--use-clique",
+          "--mycielski-bound",
+          "--dominated-decisions",
+          "--positive-pruning",
+          "--clique-explanations"
+        ]
+      }
+    },
+    {
+      "target": "zykovcolor",
+      "label": "ZykovColor minimal",
+      "params": {
+        "mode": "single-k",
+        "decision_num_colors": 3,
+        "configuration": "custom",
+        "solver": "cadical",
+        "timeout_s": 600,
+        "extra_args": []
+      }
+    }
+  ],
+  "repetitions": 1,
+  "warmup_repetitions": 0
+}

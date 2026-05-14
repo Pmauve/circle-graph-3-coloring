@@ -1,0 +1,13 @@
+{
+  "run_id": "native-density-yes-main-seed10-v2",
+  "created_at": "2026-05-13T19:18:58.384602+00:00",
+  "execution_mode": "merged_trial_outputs",
+  "n_instances": 5000,
+  "n_trials": 40000,
+  "repetitions": 1,
+  "warmup_repetitions": 0,
+  "notes": [
+    "Sanitized public metadata for the main benchmark run.",
+    "Environment-specific paths, hostnames, and raw trial rows are intentionally omitted."
+  ]
+}

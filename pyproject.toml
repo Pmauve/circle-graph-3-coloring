@@ -5,13 +5,10 @@ build-backend = "hatchling.build"
 [project]
 name = "three_col_circle_code"
 version = '0.1.0'
-description = ''
+description = 'Experimental infrastructure for circle graph 3-coloring benchmarks'
 requires-python = ">=3.7"
 license = "MIT"
 keywords = []
-authors = [
-  { name = "Patricia Bachmann", email = "bachmanp@fim.uni-passau.de" },
-]
 classifiers = [
   "Development Status :: 4 - Beta",
   "Programming Language :: Python",
@@ -37,14 +34,18 @@ dependencies = [
   #"scipy",
 ]
 
+[project.optional-dependencies]
+dev = [
+  "pytest",
+]
+
 [project.scripts]
-counterexampler = "three_col_circle_code.counterexampler:main"
-#graph_generator = "three_col_circle_code.graph_generator:main"
-evaluate_graphs = "three_col_circle_code.sat.main:main"
-evaluate_greedy = "three_col_circle_code.greedy.eval_greedy:main"
-evaluate_coloring = "three_col_circle_code.col.eval_coloring:main"
-bt_eval = "three_col_circle_code.col.eval_backtracking:main"
-var_bt_eval = "three_col_circle_code.col.eval_var_bt:main"
-var_bt_eval_limited = "three_col_circle_code.col.eval_var_bt_w_limit:main"
-instance_generate = "three_col_circle_code.generation.random_instances:main"
 benchmark_run = "three_col_circle_code.bench.runner:main"
+benchmark_plan = "three_col_circle_code.bench.plan:main"
+benchmark_generate_instance = "three_col_circle_code.bench.generate_instance:main"
+benchmark_generate_instance_sequence = "three_col_circle_code.bench.generate_instance:sequence_main"
+benchmark_run_instance_sequence = "three_col_circle_code.bench.run_sequence:main"
+benchmark_run_trial = "three_col_circle_code.bench.run_trial:main"
+benchmark_merge = "three_col_circle_code.bench.merge:main"
+benchmark_status = "three_col_circle_code.bench.status:main"
+instance_export_dimacs_circle = "three_col_circle_code.instances.dimacs_circle:main"

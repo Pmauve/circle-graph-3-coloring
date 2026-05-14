@@ -1,0 +1,22 @@
+{
+  "instance_pool_root": "eval/instances",
+  "instances": [
+    {
+      "family": "rc",
+      "n_values": [4],
+      "seeds": [1]
+    }
+  ],
+  "solvers": [
+    {
+      "target": "sosa-3-col-exact",
+      "label": "SOSA exact smoke",
+      "params": {
+        "base_case_n": 8,
+        "base_case_algorithm": "backtracking",
+        "num_colors": 3,
+        "produce_witness": false
+      }
+    }
+  ]
+}

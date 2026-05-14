@@ -1,8 +1,10 @@
 import json
+import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+from three_col_circle_code.generation.color_utils import validate_num_colors
 from three_col_circle_code.generation.families import seeded_families
 from three_col_circle_code.instances.catalog import DEFAULT_INSTANCE_ROOT
 from three_col_circle_code.solvers.common import SolverConfig
@@ -15,6 +17,11 @@ class InstanceRequest:
     family: str
     n: int
     seed: int
+    num_colors: int
+    generator_params: dict[str, Any]
+    family_label: str | None = None
+    output_format: str = "circle"
+    sequence_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -22,6 +29,8 @@ class RunSpec:
     instance_pool_root: Path
     instance_requests: tuple[InstanceRequest, ...]
     solver_configs: tuple[SolverConfig, ...]
+    repetitions: int = 1
+    warmup_repetitions: int = 0
 
 
 def load_run_spec(spec_path: Path) -> tuple[str, RunSpec]:
@@ -56,6 +65,11 @@ def normalize_run_spec(payload: Any) -> RunSpec:
         instance_pool_root=Path(payload.get("instance_pool_root", DEFAULT_INSTANCE_ROOT)),
         instance_requests=_expand_instance_requests(normalized_instance_blocks),
         solver_configs=_resolve_solver_configs([_normalize_solver_block(block) for block in solvers]),
+        repetitions=_positive_int(payload.get("repetitions", 1), field_name="repetitions"),
+        warmup_repetitions=_nonnegative_int(
+            payload.get("warmup_repetitions", 0),
+            field_name="warmup_repetitions",
+        ),
     )
 
 
@@ -88,6 +102,10 @@ def _normalize_instance_block(block: Any) -> dict[str, Any]:
     normalized_block: dict[str, Any] = {
         "family": family,
         "seeds": sorted(normalized_seeds),
+        "num_colors": _normalize_num_colors(block.get("num_colors", 3)),
+        "params": _normalize_generator_params(family, block.get("params", {})),
+        "label": _normalize_optional_label(block.get("label")),
+        "output_format": _normalize_output_format(block.get("output_format", "circle")),
     }
     if has_n_values:
         n_values = block["n_values"]
@@ -126,17 +144,38 @@ def _normalize_solver_block(block: Any) -> dict[str, Any]:
     params = block.get("params", {})
     if not isinstance(params, Mapping):
         raise ValueError("run spec solver block field 'params' must be an object")
-    return {"target": str(block["target"]), "params": dict(params)}
+    normalized: dict[str, Any] = {"target": str(block["target"]), "params": dict(params)}
+    if "label" in block:
+        label = str(block["label"]).strip()
+        if not label:
+            raise ValueError("run spec solver block field 'label' must not be empty")
+        normalized["label"] = label
+    return normalized
 
 
 def _expand_instance_requests(instance_blocks: Sequence[Mapping[str, Any]]) -> tuple[InstanceRequest, ...]:
     requests: list[InstanceRequest] = []
     seen_instance_ids: set[str] = set()
-    for block in instance_blocks:
-        n_values = list(block["n_values"]) if "n_values" in block else _expand_n_range(block["n"])
+    for block_index, block in enumerate(instance_blocks, start=1):
+        from_range = "n" in block
+        n_values = list(block["n_values"]) if not from_range else _expand_n_range(block["n"])
         for n_value in n_values:
             for seed_value in block["seeds"]:
-                instance_id = instance_id_for_request(family=block["family"], n=n_value, seed=seed_value)
+                instance_id = instance_id_for_request(
+                    family=block["family"],
+                    n=n_value,
+                    seed=seed_value,
+                    num_colors=block["num_colors"],
+                    generator_params=block["params"],
+                )
+                sequence_id = None
+                if from_range:
+                    sequence_id = (
+                        f"block{block_index}:"
+                        f"{block['family']}:{params_id_part(block['params'])}:"
+                        f"k{block['num_colors']:02d}:seed{seed_value}:"
+                        f"{block['output_format']}"
+                    )
                 if instance_id in seen_instance_ids:
                     raise ValueError(f"benchmark run spec contains duplicate instance request {instance_id!r}")
                 seen_instance_ids.add(instance_id)
@@ -146,9 +185,14 @@ def _expand_instance_requests(instance_blocks: Sequence[Mapping[str, Any]]) -> t
                         family=block["family"],
                         n=n_value,
                         seed=seed_value,
+                        num_colors=block["num_colors"],
+                        generator_params=dict(block["params"]),
+                        family_label=block["label"],
+                        output_format=block["output_format"],
+                        sequence_id=sequence_id,
                     )
                 )
-    return tuple(sorted(requests, key=lambda item: (item.family, item.n, item.seed)))
+    return tuple(sorted(requests, key=lambda item: (item.family, item.num_colors, item.n, item.seed)))
 
 
 def _expand_n_range(n_range: Mapping[str, Any]) -> list[int]:
@@ -158,13 +202,23 @@ def _expand_n_range(n_range: Mapping[str, Any]) -> list[int]:
 def _resolve_solver_configs(solver_blocks: Sequence[Mapping[str, Any]]) -> tuple[SolverConfig, ...]:
     configs: list[SolverConfig] = []
     seen_configs: set[tuple[str, str]] = set()
+    seen_labels: set[str] = set()
     for block in solver_blocks:
         resolved = resolve_solver_configs((block["target"],))
         for config in resolved:
+            label = block.get("label")
+            if label is not None:
+                label = str(label)
+                if label in seen_labels:
+                    raise ValueError(
+                        f"benchmark run spec contains duplicate solver label {label!r}"
+                    )
+                seen_labels.add(label)
             configured = SolverConfig(
                 solver=config.solver,
                 backend=config.backend,
                 params=dict(block["params"]),
+                label=label,
             )
             config_key = (configured.target, canonical_params_json(configured.params))
             if config_key in seen_configs:
@@ -176,9 +230,97 @@ def _resolve_solver_configs(solver_blocks: Sequence[Mapping[str, Any]]) -> tuple
     return tuple(sorted(configs, key=lambda config: config.target))
 
 
-def instance_id_for_request(*, family: str, n: int, seed: int) -> str:
-    return f"{family}-n{n:04d}-seed{seed}"
+def instance_id_for_request(
+    *,
+    family: str,
+    n: int,
+    seed: int,
+    num_colors: int,
+    generator_params: Mapping[str, Any] | None = None,
+) -> str:
+    params_part = params_id_part(generator_params or {})
+    if params_part:
+        return f"{family}-{params_part}-k{num_colors:02d}-n{n:04d}-seed{seed}"
+    return f"{family}-k{num_colors:02d}-n{n:04d}-seed{seed}"
+
+
+def params_id_part(params: Mapping[str, Any]) -> str:
+    if not params:
+        return ""
+    parts = []
+    for key in sorted(params):
+        value = params[key]
+        if key == "alpha":
+            parts.append(f"alpha{_float_id_label(float(value))}")
+        else:
+            parts.append(f"{key}{_value_id_label(value)}")
+    return "-".join(parts)
+
+
+def _normalize_num_colors(value: Any) -> int:
+    num_colors = int(value)
+    validate_num_colors(num_colors)
+    return num_colors
+
+
+def _normalize_generator_params(family: str, value: Any) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        raise ValueError("run spec instance block field 'params' must be an object")
+    params = dict(value)
+    if family == "rccy_alpha":
+        allowed = {"alpha"}
+        unknown = sorted(set(params).difference(allowed))
+        if unknown:
+            raise ValueError(f"unsupported rccy_alpha params: {unknown}")
+        alpha = float(params.get("alpha", 0.0))
+        if alpha < 0.0 or not math.isfinite(alpha):
+            raise ValueError("rccy_alpha parameter 'alpha' must be finite and non-negative")
+        return {"alpha": alpha}
+    if params:
+        raise ValueError(f"family {family!r} does not support generator params")
+    return {}
+
+
+def _normalize_optional_label(value: Any) -> str | None:
+    if value is None:
+        return None
+    label = str(value).strip()
+    if not label:
+        raise ValueError("run spec instance block field 'label' must not be empty")
+    return label
+
+
+def _normalize_output_format(value: Any) -> str:
+    output_format = str(value)
+    if output_format not in {"col", "circle"}:
+        raise ValueError("run spec instance block field 'output_format' must be 'col' or 'circle'")
+    return output_format
+
+
+def _float_id_label(value: float) -> str:
+    label = f"{value:.12f}".rstrip("0").rstrip(".")
+    return label.replace(".", "p")
+
+
+def _value_id_label(value: Any) -> str:
+    if isinstance(value, float):
+        return _float_id_label(value)
+    return str(value).replace(".", "p")
 
 
 def canonical_params_json(params: Mapping[str, Any]) -> str:
     return json.dumps(dict(params), sort_keys=True, separators=(",", ":"))
+
+
+def _positive_int(value: Any, *, field_name: str) -> int:
+    normalized = int(value)
+    if normalized < 1:
+        raise ValueError(f"benchmark run spec field '{field_name}' must be a positive integer")
+    return normalized
+
+
+def _nonnegative_int(value: Any, *, field_name: str) -> int:
+    normalized = int(value)
+    if normalized < 0:
+        raise ValueError(f"benchmark run spec field '{field_name}' must be non-negative")
+    return normalized

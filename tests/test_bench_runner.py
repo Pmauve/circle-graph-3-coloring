@@ -3,8 +3,8 @@ import json
 import sys
 import tempfile
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Optional
 from unittest.mock import patch
 
@@ -12,22 +12,22 @@ import networkx as nx
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from three_col_circle_code.bench.plan_io import instance_result_path
 from three_col_circle_code.bench.report_data import (
     SUMMARY_BY_BUCKET_FILENAME,
     SUMMARY_BY_N_FILENAME,
     SUMMARY_OVERALL_FILENAME,
 )
 from three_col_circle_code.bench.results import MANIFEST_FILENAME, RESULTS_FILENAME
-from three_col_circle_code.bench.runner import BenchmarkTask, _execute_benchmark_task, main, run_benchmark
-from three_col_circle_code.bench.specs import InstanceRequest
-from three_col_circle_code.instances.io import load_instance, save_instance
+from three_col_circle_code.bench.runner import main, run_benchmark
+from three_col_circle_code.instances.io import save_instance
 from three_col_circle_code.instances.model import InstanceMetadata, InstanceRecord
-from three_col_circle_code.solvers.common import SOLVER_STATUS_OK, SolverConfig, SolverResult
+from three_col_circle_code.solvers.common import SOLVER_STATUS_OK, SolverResult
 from three_col_circle_code.solvers.sat import SAT_BASELINE_SOLVER
 
 
 class BenchRunnerTests(unittest.TestCase):
-    def test_run_benchmark_writes_manifest_results_and_summaries(self) -> None:
+    def test_run_benchmark_orchestrates_plan_tasks_merge_and_report(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_root = Path(tmpdir)
             spec_path = _write_spec(
@@ -35,190 +35,90 @@ class BenchRunnerTests(unittest.TestCase):
                 {
                     "instance_pool_root": str(tmp_root / "instances"),
                     "instances": [{"family": "rc", "n_values": [2], "seeds": [1]}],
-                    "solvers": [{"target": "sat-baseline:legacy-pysmt-msat", "params": {"cutoff": 5}}],
+                    "solvers": [
+                        {
+                            "target": "sat-baseline:legacy-pysmt-msat",
+                            "label": "MathSAT legacy",
+                            "params": {"cutoff": 5},
+                        }
+                    ],
                 },
             )
-            first = tmp_root / "instances" / "rc" / "s" / "rc-n0002-seed1.json"
+            progress = io.StringIO()
 
             with patch(
-                "three_col_circle_code.bench.runner.collect_environment_metadata",
-                return_value={"python_version": "test"},
+                "three_col_circle_code.bench.generate_instance.generate_col_with_native",
+                side_effect=_write_native_generated_instance,
             ), patch(
-                "three_col_circle_code.bench.runner.generate_instance",
-                return_value=_build_record(instance_id="rc-n0002-seed1", family="rc", seed=1),
+                "three_col_circle_code.bench.generate_instance.inspect_col_with_native",
+                return_value=None,
             ), patch(
-                "three_col_circle_code.bench.runner.run_solver",
+                "three_col_circle_code.bench.run_trial.run_solver",
                 return_value=_fake_solver_result(backend="legacy-pysmt-msat", wall_time_s=0.25),
-            ) as run_solver:
+            ) as run_solver, patch(
+                "three_col_circle_code.bench.run_trial.staged_runtime_instance",
+                side_effect=_fake_staged_runtime_instance,
+            ):
                 run_dir = run_benchmark(
                     output_root=tmp_root / "runs",
                     spec_path=spec_path,
+                    plan_root=tmp_root / "plans",
+                    work_root=tmp_root / "work",
+                    progress_stream=progress,
                 )
 
             manifest = json.loads((run_dir / MANIFEST_FILENAME).read_text(encoding="utf-8"))
-            lines = (run_dir / RESULTS_FILENAME).read_text(encoding="utf-8").strip().splitlines()
+            result_lines = (run_dir / RESULTS_FILENAME).read_text(encoding="utf-8").strip().splitlines()
+            result = json.loads(result_lines[0])
+            plan_dir = tmp_root / "plans" / "sat-smoke"
+            work_root = tmp_root / "work" / "sat-smoke"
+            has_instance_plan = (plan_dir / "instances.jsonl").exists()
+            has_trial_plan = (plan_dir / "trials.jsonl").exists()
+            has_instance_result = (work_root / "instances" / "000001" / "result.json").exists()
+            has_trial_result = (work_root / "trials" / "000001" / "result.json").exists()
             has_summary_by_n = (run_dir / SUMMARY_BY_N_FILENAME).exists()
             has_summary_by_bucket = (run_dir / SUMMARY_BY_BUCKET_FILENAME).exists()
             has_summary_overall = (run_dir / SUMMARY_OVERALL_FILENAME).exists()
             has_report = (run_dir / "report.html").exists()
+            progress_output = progress.getvalue()
 
         self.assertEqual(run_dir.name, "sat-smoke")
-        self.assertEqual(manifest["run_id"], run_dir.name)
+        self.assertEqual(manifest["run_id"], "sat-smoke")
+        self.assertEqual(manifest["execution_mode"], "merged_trial_outputs")
         self.assertEqual(manifest["n_instances"], 1)
         self.assertEqual(manifest["n_tasks"], 1)
-        self.assertEqual(
-            manifest["solvers"],
-            [
-                {
-                    "solver": "sat-baseline",
-                    "backend": "legacy-pysmt-msat",
-                    "target": "sat-baseline:legacy-pysmt-msat",
-                    "params": {"cutoff": 5},
-                }
-            ],
-        )
-        self.assertEqual(
-            manifest["instance_requests"],
-            [{"instance_id": "rc-n0002-seed1", "family": "rc", "n": 2, "seed": 1}],
-        )
-        self.assertEqual(manifest["environment"], {"python_version": "test"})
-        self.assertEqual(len(lines), 1)
-        result = json.loads(lines[0])
-        self.assertEqual(result["instance_id"], "rc-n0002-seed1")
+        self.assertEqual(len(result_lines), 1)
+        self.assertEqual(result["instance_id"], "rc-k03-n0002-seed1")
         self.assertEqual(result["solver_target"], "sat-baseline:legacy-pysmt-msat")
         self.assertEqual(result["solver_params"], {"cutoff": 5})
+        self.assertEqual(result["solver_label"], "MathSAT legacy")
         self.assertEqual(result["solver"], SAT_BASELINE_SOLVER)
         self.assertEqual(result["backend"], "legacy-pysmt-msat")
         self.assertTrue(result["validation_ok"])
-        self.assertIn(str(first), result["instance_path"])
+        self.assertFalse(has_instance_plan)
+        self.assertFalse(has_trial_plan)
+        self.assertFalse(has_instance_result)
+        self.assertFalse(has_trial_result)
         self.assertTrue(has_summary_by_n)
         self.assertTrue(has_summary_by_bucket)
         self.assertTrue(has_summary_overall)
         self.assertTrue(has_report)
+        self.assertIn("Planning benchmark from", progress_output)
+        self.assertIn("Preparing 1 instance(s) with jobs=1", progress_output)
+        self.assertIn("instance preparation: generated rc-k03-n0002-seed1", progress_output)
+        self.assertIn("Instance preparation summary: reused existing=0, generated new=1", progress_output)
+        self.assertIn("Cleaned benchmark temporary directory", progress_output)
+        self.assertIn("Running 1 trial(s) with jobs=1", progress_output)
+        self.assertIn("Merging trial outputs", progress_output)
         run_solver.assert_called_once()
-
-    def test_run_benchmark_emits_progress_updates(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            tmp_root = Path(tmpdir)
-            spec_path = _write_spec(
-                tmp_root / "progress-run.json",
-                {
-                    "instance_pool_root": str(tmp_root / "instances"),
-                    "instances": [{"family": "rc", "n_values": [2], "seeds": [1]}],
-                    "solvers": [{"target": "sat-baseline:pysat-cadical", "params": {"cutoff": 5}}],
-                },
-            )
-            progress = io.StringIO()
-
-            with patch(
-                "three_col_circle_code.bench.runner.collect_environment_metadata",
-                return_value={},
-            ), patch(
-                "three_col_circle_code.bench.runner.generate_instance",
-                return_value=_build_record(instance_id="rc-n0002-seed1", family="rc", seed=1),
-            ), patch(
-                "three_col_circle_code.bench.runner.run_solver",
-                return_value=_fake_solver_result(backend="pysat-cadical", wall_time_s=0.25),
-            ):
-                run_benchmark(
-                    output_root=tmp_root / "runs",
-                    spec_path=spec_path,
-                    progress_stream=progress,
-                )
-
-        rendered = progress.getvalue()
-        self.assertIn("Starting benchmark run 'progress-run'", rendered)
-        self.assertIn("Resolving 1 requested instances...", rendered)
-        self.assertIn("Generating missing instances (1 total)...", rendered)
-        self.assertIn("Generated 1/1 missing instances", rendered)
-        self.assertIn("Planned tasks: 1 across 1 instances and 1 solver configs", rendered)
-        self.assertIn("[1/1] rc-n0002-seed1 | sat-baseline:pysat-cadical", rendered)
-        self.assertIn("-> ok in 0.2500s", rendered)
-        self.assertIn("Completed run 'progress-run': ok=1, error=0, invalid=0", rendered)
-
-    def test_run_benchmark_limits_generation_progress_output(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            tmp_root = Path(tmpdir)
-            spec_path = _write_spec(
-                tmp_root / "generation-progress-run.json",
-                {
-                    "instance_pool_root": str(tmp_root / "instances"),
-                    "instances": [{"family": "rc", "n": {"start": 2, "stop": 12, "step": 1}, "seeds": [1]}],
-                    "solvers": [{"target": "sat-baseline:pysat-cadical", "params": {}}],
-                },
-            )
-            progress = io.StringIO()
-
-            with patch(
-                "three_col_circle_code.bench.runner.collect_environment_metadata",
-                return_value={},
-            ), patch(
-                "three_col_circle_code.bench.runner.generate_instance",
-                side_effect=lambda family, n, seed: _build_record(
-                    instance_id=f"{family}-n{n:04d}-seed{seed}",
-                    family=family,
-                    seed=seed,
-                    n=n,
-                ),
-            ), patch(
-                "three_col_circle_code.bench.runner.run_solver",
-                return_value=_fake_solver_result(backend="pysat-cadical", wall_time_s=0.1),
-            ):
-                run_benchmark(
-                    output_root=tmp_root / "runs",
-                    spec_path=spec_path,
-                    progress_stream=progress,
-                )
-
-        rendered = progress.getvalue()
-        self.assertIn("Resolving 11 requested instances...", rendered)
-        self.assertIn("Generating missing instances (11 total)...", rendered)
-        self.assertIn("Generated 1/11 missing instances", rendered)
-        self.assertIn("Generated 10/11 missing instances", rendered)
-        self.assertIn("Generated 11/11 missing instances", rendered)
-        self.assertNotIn("Generated 2/11 missing instances", rendered)
-        self.assertNotIn("Generated 9/11 missing instances", rendered)
-
-    def test_execute_benchmark_task_records_invalid_instance(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            tmp_root = Path(tmpdir)
-            run_dir = tmp_root / "run"
-            run_dir.mkdir()
-            invalid_path = tmp_root / "broken.json"
-            invalid_path.write_text("{not json", encoding="utf-8")
-
-            _execute_benchmark_task(
-                run_dir=run_dir,
-                run_id="run-1",
-                task=BenchmarkTask(
-                    instance_request=InstanceRequest(
-                        instance_id="rc-n0002-seed1",
-                        family="rc",
-                        n=2,
-                        seed=1,
-                    ),
-                    instance_path=invalid_path,
-                    solver_config=SolverConfig(solver=SAT_BASELINE_SOLVER, backend="pysat-cadical"),
-                ),
-            )
-
-            result = json.loads((run_dir / RESULTS_FILENAME).read_text(encoding="utf-8").strip())
-
-        self.assertEqual(result["status"], "invalid")
-        self.assertEqual(result["solver_target"], "sat-baseline:pysat-cadical")
-        self.assertEqual(result["solver_params"], {})
-        self.assertFalse(result["validation_ok"])
-        self.assertEqual(result["family"], "rc")
-        self.assertEqual(result["n"], 2)
-        self.assertEqual(result["seed"], 1)
 
     def test_run_benchmark_reuses_existing_pooled_instances(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_root = Path(tmpdir)
             instance_pool_root = tmp_root / "instances"
             _write_instance(
-                instance_pool_root / "rc" / "s" / "rc-n0002-seed1.json",
-                instance_id="rc-n0002-seed1",
+                instance_pool_root / "rc" / "s" / "rc-k03-n0002-seed1.circle",
+                instance_id="rc-k03-n0002-seed1",
                 family="rc",
                 seed=1,
             )
@@ -232,100 +132,33 @@ class BenchRunnerTests(unittest.TestCase):
             )
 
             with patch(
-                "three_col_circle_code.bench.runner.collect_environment_metadata",
-                return_value={},
-            ), patch(
-                "three_col_circle_code.bench.runner.generate_instance",
+                "three_col_circle_code.bench.generate_instance.generate_col_with_native",
             ) as generate_instance_mock, patch(
-                "three_col_circle_code.bench.runner.run_solver",
-                return_value=_fake_solver_result(backend="pysat-cadical", wall_time_s=0.1),
-            ):
-                run_dir = run_benchmark(output_root=tmp_root / "runs", spec_path=spec_path)
-
-            manifest = json.loads((run_dir / MANIFEST_FILENAME).read_text(encoding="utf-8"))
-
-        self.assertEqual(manifest["run_id"], "reuse-pool")
-        self.assertEqual(manifest["n_instances"], 1)
-        self.assertEqual(manifest["n_tasks"], 1)
-        generate_instance_mock.assert_not_called()
-
-    def test_run_benchmark_generates_missing_pooled_instances(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            tmp_root = Path(tmpdir)
-            instance_pool_root = tmp_root / "instances"
-            spec_path = _write_spec(
-                tmp_root / "generate-pool.json",
-                {
-                    "instance_pool_root": str(instance_pool_root),
-                    "instances": [{"family": "rc", "n_values": [2], "seeds": [1]}],
-                    "solvers": [{"target": "sat-baseline:pysat-cadical", "params": {}}],
-                },
-            )
-
-            with patch(
-                "three_col_circle_code.bench.runner.collect_environment_metadata",
-                return_value={},
+                "three_col_circle_code.bench.generate_instance.inspect_col_with_native",
+                return_value=None,
             ), patch(
-                "three_col_circle_code.bench.runner.generate_instance",
-                return_value=_build_record(instance_id="rc-n0002-seed1", family="rc", seed=1),
-            ) as generate_instance_mock, patch(
-                "three_col_circle_code.bench.runner.run_solver",
+                "three_col_circle_code.bench.run_trial.run_solver",
                 return_value=_fake_solver_result(backend="pysat-cadical", wall_time_s=0.1),
-            ):
-                run_benchmark(output_root=tmp_root / "runs", spec_path=spec_path)
-                generated_exists = (instance_pool_root / "rc" / "s" / "rc-n0002-seed1.json").exists()
-
-        self.assertTrue(generated_exists)
-        generate_instance_mock.assert_called_once_with(family="rc", n=2, seed=1)
-
-    def test_run_benchmark_range_expands_and_is_copied(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            tmp_root = Path(tmpdir)
-            spec_payload = {
-                "instance_pool_root": str(tmp_root / "instances"),
-                "instances": [{"family": "rc", "n": {"start": 2, "stop": 4, "step": 1}, "seeds": [1, 3]}],
-                "solvers": [{"target": "sat-baseline:pysat-cadical", "params": {}}],
-            }
-            spec_path = _write_spec(tmp_root / "range-expand.json", spec_payload)
-
-            with patch(
-                "three_col_circle_code.bench.runner.collect_environment_metadata",
-                return_value={},
             ), patch(
-                "three_col_circle_code.bench.runner.generate_instance",
-                side_effect=lambda family, n, seed: _build_record(
-                    instance_id=f"{family}-n{n:04d}-seed{seed}",
-                    family=family,
-                    seed=seed,
-                    n=n,
-                ),
-            ), patch(
-                "three_col_circle_code.bench.runner.run_solver",
-                return_value=_fake_solver_result(backend="pysat-cadical", wall_time_s=0.1),
+                "three_col_circle_code.bench.run_trial.staged_runtime_instance",
+                side_effect=_fake_staged_runtime_instance,
             ):
+                progress = io.StringIO()
                 run_dir = run_benchmark(
                     output_root=tmp_root / "runs",
                     spec_path=spec_path,
+                    plan_root=tmp_root / "plans",
+                    work_root=tmp_root / "work",
+                    progress_stream=progress,
                 )
+                progress_output = progress.getvalue()
 
-            manifest = json.loads((run_dir / MANIFEST_FILENAME).read_text(encoding="utf-8"))
-            copied_spec = json.loads((run_dir / "spec.json").read_text(encoding="utf-8"))
+        self.assertEqual(run_dir.name, "reuse-pool")
+        self.assertIn("instance preparation: reused rc-k03-n0002-seed1", progress_output)
+        self.assertIn("reused existing=1, generated new=0", progress_output)
+        generate_instance_mock.assert_not_called()
 
-        self.assertEqual(run_dir.name, "range-expand")
-        self.assertEqual(copied_spec, spec_payload)
-        self.assertEqual(
-            manifest["instance_requests"],
-            [
-                {"instance_id": "rc-n0002-seed1", "family": "rc", "n": 2, "seed": 1},
-                {"instance_id": "rc-n0002-seed3", "family": "rc", "n": 2, "seed": 3},
-                {"instance_id": "rc-n0003-seed1", "family": "rc", "n": 3, "seed": 1},
-                {"instance_id": "rc-n0003-seed3", "family": "rc", "n": 3, "seed": 3},
-                {"instance_id": "rc-n0004-seed1", "family": "rc", "n": 4, "seed": 1},
-                {"instance_id": "rc-n0004-seed3", "family": "rc", "n": 4, "seed": 3},
-            ],
-        )
-
-    def test_run_benchmark_resume_skips_completed_tasks(self) -> None:
+    def test_run_benchmark_cleans_isolated_outputs_after_success(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_root = Path(tmpdir)
             spec_path = _write_spec(
@@ -338,116 +171,90 @@ class BenchRunnerTests(unittest.TestCase):
             )
 
             with patch(
-                "three_col_circle_code.bench.runner.collect_environment_metadata",
-                return_value={},
+                "three_col_circle_code.bench.generate_instance.generate_col_with_native",
+                side_effect=_write_native_generated_instance,
+            ) as generate_instance_mock, patch(
+                "three_col_circle_code.bench.generate_instance.inspect_col_with_native",
+                return_value=None,
             ), patch(
-                "three_col_circle_code.bench.runner.generate_instance",
-                return_value=_build_record(instance_id="rc-n0002-seed1", family="rc", seed=1),
-            ), patch(
-                "three_col_circle_code.bench.runner.run_solver",
+                "three_col_circle_code.bench.run_trial.run_solver",
                 return_value=_fake_solver_result(backend="pysat-cadical", wall_time_s=0.1),
-            ) as run_solver:
+            ) as run_solver_mock, patch(
+                "three_col_circle_code.bench.run_trial.staged_runtime_instance",
+                side_effect=_fake_staged_runtime_instance,
+            ):
                 first_run_dir = run_benchmark(
                     output_root=tmp_root / "runs",
                     spec_path=spec_path,
+                    plan_root=tmp_root / "plans",
+                    work_root=tmp_root / "work",
                 )
-                first_manifest = json.loads((first_run_dir / MANIFEST_FILENAME).read_text(encoding="utf-8"))
                 second_run_dir = run_benchmark(
                     output_root=tmp_root / "runs",
                     spec_path=spec_path,
+                    plan_root=tmp_root / "plans",
+                    work_root=tmp_root / "work",
                 )
-                second_manifest = json.loads((second_run_dir / MANIFEST_FILENAME).read_text(encoding="utf-8"))
 
         self.assertEqual(first_run_dir, second_run_dir)
-        self.assertEqual(first_manifest["created_at"], second_manifest["created_at"])
-        self.assertEqual(run_solver.call_count, 1)
-
-    def test_run_benchmark_loads_and_validates_each_instance_once_across_solver_configs(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            tmp_root = Path(tmpdir)
-            instance_pool_root = tmp_root / "instances"
-            instance_path = _write_instance(
-                instance_pool_root / "rc" / "s" / "rc-n0002-seed1.json",
-                instance_id="rc-n0002-seed1",
-                family="rc",
-                seed=1,
-            )
-            spec_path = _write_spec(
-                tmp_root / "cache-run.json",
-                {
-                    "instance_pool_root": str(instance_pool_root),
-                    "instances": [{"family": "rc", "n_values": [2], "seeds": [1]}],
-                    "solvers": [
-                        {"target": "sat-baseline:pysat-cadical", "params": {"limit": 1}},
-                        {"target": "sat-baseline:pysat-cadical", "params": {"limit": 2}},
-                    ],
-                },
-            )
-
-            with patch(
-                "three_col_circle_code.bench.runner.collect_environment_metadata",
-                return_value={},
-            ), patch(
-                "three_col_circle_code.bench.runner.load_instance",
-                wraps=load_instance,
-            ) as load_instance_mock, patch(
-                "three_col_circle_code.bench.runner.validate_instance",
-                return_value=SimpleNamespace(ok=True, errors=[]),
-            ) as validate_instance_mock, patch(
-                "three_col_circle_code.bench.runner.run_solver",
-                return_value=_fake_solver_result(backend="pysat-cadical", wall_time_s=0.1),
-            ) as run_solver_mock:
-                run_dir = run_benchmark(output_root=tmp_root / "runs", spec_path=spec_path)
-
-            results = [
-                json.loads(line)
-                for line in (run_dir / RESULTS_FILENAME).read_text(encoding="utf-8").strip().splitlines()
-            ]
-
-        self.assertEqual(len(results), 2)
-        load_instance_mock.assert_called_once_with(instance_path)
-        validate_instance_mock.assert_called_once()
+        self.assertEqual(generate_instance_mock.call_count, 1)
         self.assertEqual(run_solver_mock.call_count, 2)
+        self.assertFalse((tmp_root / "plans" / "resume-run").exists())
+        self.assertFalse((tmp_root / "work" / "resume-run").exists())
 
-    def test_run_benchmark_different_solver_params_are_distinct_tasks(self) -> None:
+    def test_run_benchmark_stops_before_trials_when_instance_generation_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_root = Path(tmpdir)
             spec_path = _write_spec(
-                tmp_root / "param-distinct.json",
+                tmp_root / "bad-generation.json",
                 {
                     "instance_pool_root": str(tmp_root / "instances"),
                     "instances": [{"family": "rc", "n_values": [2], "seeds": [1]}],
-                    "solvers": [
-                        {"target": "sat-baseline:pysat-cadical", "params": {"limit": 1}},
-                        {"target": "sat-baseline:pysat-cadical", "params": {"limit": 2}},
-                    ],
+                    "solvers": [{"target": "sat-baseline:pysat-cadical", "params": {}}],
                 },
             )
 
+            def write_failed_instance_result(plan_dir: Path, index: int, force: bool) -> Path:
+                work_root = tmp_root / "work" / "bad-generation"
+                result_path = instance_result_path(work_root, index)
+                result_path.parent.mkdir(parents=True, exist_ok=True)
+                result_path.write_text(
+                    json.dumps({"index": index, "status": "error", "error": "boom"}),
+                    encoding="utf-8",
+                )
+                return result_path
+
             with patch(
-                "three_col_circle_code.bench.runner.collect_environment_metadata",
-                return_value={},
-            ), patch(
-                "three_col_circle_code.bench.runner.generate_instance",
-                return_value=_build_record(instance_id="rc-n0002-seed1", family="rc", seed=1),
-            ), patch(
-                "three_col_circle_code.bench.runner.run_solver",
-                return_value=_fake_solver_result(backend="pysat-cadical", wall_time_s=0.1),
-            ):
-                run_dir = run_benchmark(output_root=tmp_root / "runs", spec_path=spec_path)
+                "three_col_circle_code.bench.runner.run_instance_generation",
+                side_effect=write_failed_instance_result,
+            ), patch("three_col_circle_code.bench.runner.run_trial") as run_trial_mock:
+                with self.assertRaisesRegex(ValueError, "instance generation did not complete"):
+                    run_benchmark(
+                        output_root=tmp_root / "runs",
+                        spec_path=spec_path,
+                        plan_root=tmp_root / "plans",
+                        work_root=tmp_root / "work",
+                    )
 
-            results = [
-                json.loads(line)
-                for line in (run_dir / RESULTS_FILENAME).read_text(encoding="utf-8").strip().splitlines()
-            ]
+        run_trial_mock.assert_not_called()
 
-        self.assertEqual(len(results), 2)
-        self.assertEqual(
-            {json.dumps(row["solver_params"], sort_keys=True) for row in results},
-            {'{"limit": 1}', '{"limit": 2}'},
-        )
+    def test_run_benchmark_rejects_invalid_jobs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            spec_path = _write_spec(tmp_root / "unused.json", {})
 
-    def test_run_benchmark_rejects_invalid_specs(self) -> None:
+            with self.assertRaisesRegex(ValueError, "jobs"):
+                run_benchmark(
+                    output_root=tmp_root / "runs",
+                    spec_path=spec_path,
+                    plan_root=tmp_root / "plans",
+                    work_root=tmp_root / "work",
+                    jobs=0,
+                )
+
+        self.assertFalse((tmp_root / "plans").exists())
+
+    def test_run_benchmark_rejects_invalid_specs_before_creating_plan(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_root = Path(tmpdir)
             missing_fields = _write_spec(tmp_root / "missing.json", {})
@@ -459,38 +266,26 @@ class BenchRunnerTests(unittest.TestCase):
                     "solvers": [{"target": "sat-baseline:pysat-cadical"}],
                 },
             )
-            both_n_shapes = _write_spec(
-                tmp_root / "both.json",
-                {
-                    "instances": [
-                        {
-                            "family": "rc",
-                            "n_values": [2],
-                            "n": {"start": 2, "stop": 4, "step": 1},
-                            "seeds": [1],
-                        }
-                    ],
-                    "solvers": [{"target": "sat-baseline:pysat-cadical"}],
-                },
-            )
-            empty_seeds = _write_spec(
-                tmp_root / "empty.json",
-                {
-                    "instances": [{"family": "rc", "n_values": [2], "seeds": []}],
-                    "solvers": [{"target": "sat-baseline:pysat-cadical"}],
-                },
-            )
 
             with self.assertRaises(ValueError):
-                run_benchmark(output_root=tmp_root / "runs", spec_path=missing_fields)
+                run_benchmark(
+                    output_root=tmp_root / "runs",
+                    spec_path=missing_fields,
+                    plan_root=tmp_root / "plans",
+                    work_root=tmp_root / "work",
+                )
             with self.assertRaises(ValueError):
-                run_benchmark(output_root=tmp_root / "runs", spec_path=removed_name)
-            with self.assertRaises(ValueError):
-                run_benchmark(output_root=tmp_root / "runs", spec_path=both_n_shapes)
-            with self.assertRaises(ValueError):
-                run_benchmark(output_root=tmp_root / "runs", spec_path=empty_seeds)
+                run_benchmark(
+                    output_root=tmp_root / "runs",
+                    spec_path=removed_name,
+                    plan_root=tmp_root / "plans",
+                    work_root=tmp_root / "work",
+                )
 
-    def test_run_benchmark_rejects_kissat404_on_windows_before_creating_run_dir(self) -> None:
+        self.assertFalse((tmp_root / "plans" / "missing").exists())
+        self.assertFalse((tmp_root / "plans" / "removed-name").exists())
+
+    def test_run_benchmark_rejects_kissat404_on_windows_before_creating_plan(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_root = Path(tmpdir)
             spec_path = _write_spec(
@@ -502,13 +297,18 @@ class BenchRunnerTests(unittest.TestCase):
                 },
             )
 
-            with patch("three_col_circle_code.bench.runner.platform.system", return_value="Windows"):
+            with patch("three_col_circle_code.bench.planning.platform.system", return_value="Windows"):
                 with self.assertRaisesRegex(ValueError, "not supported on Windows"):
-                    run_benchmark(output_root=tmp_root / "runs", spec_path=spec_path)
+                    run_benchmark(
+                        output_root=tmp_root / "runs",
+                        spec_path=spec_path,
+                        plan_root=tmp_root / "plans",
+                        work_root=tmp_root / "work",
+                    )
 
-            self.assertFalse((tmp_root / "runs" / "kissat-on-windows").exists())
+        self.assertFalse((tmp_root / "plans" / "kissat-on-windows").exists())
 
-    def test_cli_supports_spec_only(self) -> None:
+    def test_cli_supports_local_pipeline_flags(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_root = Path(tmpdir)
             spec_path = _write_spec(
@@ -521,14 +321,17 @@ class BenchRunnerTests(unittest.TestCase):
             )
 
             with patch(
-                "three_col_circle_code.bench.runner.collect_environment_metadata",
-                return_value={},
+                "three_col_circle_code.bench.generate_instance.generate_col_with_native",
+                side_effect=_write_native_generated_instance,
             ), patch(
-                "three_col_circle_code.bench.runner.generate_instance",
-                return_value=_build_record(instance_id="rc-n0002-seed1", family="rc", seed=1),
+                "three_col_circle_code.bench.generate_instance.inspect_col_with_native",
+                return_value=None,
             ), patch(
-                "three_col_circle_code.bench.runner.run_solver",
+                "three_col_circle_code.bench.run_trial.run_solver",
                 return_value=_fake_solver_result(backend="pysat-cadical", wall_time_s=0.1),
+            ), patch(
+                "three_col_circle_code.bench.run_trial.staged_runtime_instance",
+                side_effect=_fake_staged_runtime_instance,
             ):
                 exit_code = main(
                     [
@@ -536,6 +339,12 @@ class BenchRunnerTests(unittest.TestCase):
                         str(spec_path),
                         "--output-root",
                         str(tmp_root / "runs"),
+                        "--plan-root",
+                        str(tmp_root / "plans"),
+                        "--work-root",
+                        str(tmp_root / "work"),
+                        "--jobs",
+                        "1",
                     ]
                 )
                 has_manifest = (tmp_root / "runs" / "cli-run" / MANIFEST_FILENAME).exists()
@@ -545,8 +354,57 @@ class BenchRunnerTests(unittest.TestCase):
 
 
 def _write_instance(path: Path, *, instance_id: str, family: str, seed: int) -> Path:
-    save_instance(_build_record(instance_id=instance_id, family=family, seed=seed), path)
+    record = _build_record(instance_id=instance_id, family=family, seed=seed)
+    if path.suffix == ".circle":
+        _write_circle_fixture(path, record)
+    else:
+        save_instance(record, path)
     return path
+
+
+def _write_native_generated_instance(*, instance_path: Path, family: str, n: int, seed: int, **_kwargs) -> None:
+    instance_id = f"{family}-k03-n{n:04d}-seed{seed}"
+    record = _build_record(instance_id=instance_id, family=family, seed=seed, n=n)
+    if instance_path.suffix == ".circle":
+        _write_circle_fixture(instance_path, record)
+    else:
+        save_instance(record, instance_path)
+
+
+@contextmanager
+def _fake_staged_runtime_instance(instance_path: Path):
+    runtime_path = Path(str(instance_path) + ".col")
+    record = _build_record(instance_id=instance_path.stem, family="rc", seed=1)
+    save_instance(record, runtime_path)
+    yield runtime_path
+
+
+def _write_circle_fixture(path: Path, record: InstanceRecord) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    n = record.metadata.n
+    m = record.metadata.m
+    path.write_text(
+        "\n".join(
+            [
+                "c format version 1",
+                f"c instance id {record.metadata.instance_id}",
+                f"c family {record.metadata.family}",
+                f"c seed {record.metadata.seed}",
+                f"c n {n}",
+                f"c m {m}",
+                f"c num colors {record.metadata.num_colors}",
+                "c source generated",
+                "c generator test_fixture",
+                "c created at 2026-04-13T00:00:00Z",
+                "c hord endpoint order START",
+                "c " + " ".join(str(vertex) for vertex in range(1, n + 1) for _ in range(2)),
+                "c hord endpoint order END",
+                f"p circle {n} {m}",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
 
 
 def _build_record(*, instance_id: str, family: str, seed: int, n: int = 2) -> InstanceRecord:
@@ -588,7 +446,7 @@ def _fake_solver_result(
         backend=backend,
         status=SOLVER_STATUS_OK,
         wall_time_s=wall_time_s,
-        is_three_colorable=True,
+        is_colorable=True,
         n_vertices=2,
         m_edges=1,
         details=details or {"requested_params": {}},

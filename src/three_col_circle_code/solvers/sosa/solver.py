@@ -18,11 +18,15 @@ from three_col_circle_code.solvers.common import (
     SolverResult,
 )
 from three_col_circle_code.solvers.sosa.arc_ops import restrict_state_to_arc
-from three_col_circle_code.solvers.sosa.colors import ALL_COLOR_MASK, COLOR_MASK_ORDER, mask_to_names
+from three_col_circle_code.solvers.sosa.base_case import (
+    BaseCaseResult,
+    solve_base_case_backtracking,
+    solve_base_case_sat,
+)
+from three_col_circle_code.solvers.sosa.colors import mask_to_names
 from three_col_circle_code.solvers.sosa.config import SosaConfig
 from three_col_circle_code.solvers.sosa.geometry import SosaGeometry
 from three_col_circle_code.solvers.sosa.lemma_38 import iter_lemma_33_family
-from three_col_circle_code.solvers.sosa.mask_ops import iter_mask_indices
 from three_col_circle_code.solvers.sosa.types import (
     FullySeparatedInstance,
     SosaSearchState,
@@ -32,26 +36,59 @@ from three_col_circle_code.solvers.sosa.types import (
 )
 
 
-SOSA_SOLVER = "sosa"
+SOSA_3_COL_EXACT_SOLVER = "sosa-3-col-exact"
+SOSA_K_COL_HEURISTIC_SOLVER = "sosa-k-col-heuristic"
 IMPLEMENTATION_STATUS = "paper-faithful-v1"
 
 
-def solve_sosa(
+def solve_sosa_3_col_exact(
     graph: nx.Graph,
     *,
     params: Optional[Mapping[str, Any]] = None,
 ) -> SolverResult:
-    """Run the paper-faithful SOSA solver on a canonical circle-graph instance.
+    """Run the theorem-backed exact 3-color SOSA solver.
 
     Precondition:
     - `graph` must already be a valid canonical chord-annotated
       circle graph.
     """
+    return _solve_sosa(
+        graph,
+        solver=SOSA_3_COL_EXACT_SOLVER,
+        params=params,
+        validate_config=_validate_sosa_3_col_exact_config,
+    )
+
+
+def solve_sosa_k_col_heuristic(
+    graph: nx.Graph,
+    *,
+    params: Optional[Mapping[str, Any]] = None,
+) -> SolverResult:
+    """Run experimental SOSA branching with a k-color base-case check."""
+    return _solve_sosa(
+        graph,
+        solver=SOSA_K_COL_HEURISTIC_SOLVER,
+        params=params,
+        validate_config=_validate_sosa_k_col_heuristic_config,
+    )
+
+
+def _solve_sosa(
+    graph: nx.Graph,
+    *,
+    solver: str,
+    params: Optional[Mapping[str, Any]],
+    validate_config: Any,
+) -> SolverResult:
+    """Run one validated SOSA variant on a canonical circle-graph instance."""
     try:
         config = SosaConfig.from_mapping(params)
+        validate_config(config)
     except Exception as exc:
         return _error_result(
             graph=graph,
+            solver=solver,
             config_dict=None,
             stats=SosaStats(),
             error=f"invalid SOSA parameters: {exc}",
@@ -61,26 +98,28 @@ def solve_sosa(
     started_at = perf_counter()
     geometry = SosaGeometry.from_graph(graph)
     initial_state = SosaSearchState.initial(n_vertices=geometry.n_vertices)
-    witness = _solve_state_recursively(
+    solve_result = _solve_state_recursively(
         geometry=geometry,
         state=initial_state,
         config=config,
         stats=stats,
         depth=0,
     )
+    elapsed_s = perf_counter() - started_at
     return SolverResult(
-        solver=SOSA_SOLVER,
+        solver=solver,
         backend=None,
         status=SOLVER_STATUS_OK,
-        wall_time_s=perf_counter() - started_at,
-        is_three_colorable=witness is not None,
+        wall_time_s=elapsed_s,
+        core_time_s=elapsed_s,
+        is_colorable=solve_result.is_colorable,
         n_vertices=geometry.n_vertices,
         m_edges=geometry.m_edges,
         details=_result_details(
             config_dict=config.to_dict(),
             stats=stats,
             geometry=geometry,
-            witness=witness,
+            witness=solve_result.witness,
         ),
         error=None,
     )
@@ -93,7 +132,7 @@ def _solve_state_recursively(
     config: SosaConfig,
     stats: SosaStats,
     depth: int,
-) -> VertexColoring | None:
+) -> BaseCaseResult:
     """Run ALG-3-Color-Circle-Graph on one list-coloring subinstance `I`."""
     stats.solver_calls += 1
     stats.record_depth(depth)
@@ -103,6 +142,7 @@ def _solve_state_recursively(
         return _solve_base_case(
             geometry=geometry,
             state=state,
+            config=config,
             stats=stats,
             depth=depth,
         )
@@ -118,79 +158,59 @@ def _solve_state_recursively(
             geometry=geometry,
             full_instance=full_instance,
         )
-        child_witnesses: list[VertexColoring] = []
+        child_results: list[BaseCaseResult] = []
         branch_failed = False
         for child_state in child_instances:
-            child_witness = _solve_state_recursively(
+            child_result = _solve_state_recursively(
                 geometry=geometry,
                 state=child_state,
                 config=config,
                 stats=stats,
                 depth=depth + 1,
             )
-            if child_witness is None:
+            if not child_result.is_colorable:
                 branch_failed = True
                 break
-            child_witnesses.append(child_witness)
+            child_results.append(child_result)
         if not branch_failed:
-            return _merge_vertex_colorings(
-                fixed_colors_to_dict(full_instance.fixed_colors),
-                *child_witnesses,
+            if any(child_result.witness is None for child_result in child_results):
+                return BaseCaseResult(is_colorable=True, witness=None)
+            child_witnesses = [child_result.witness for child_result in child_results]
+            return BaseCaseResult(
+                is_colorable=True,
+                witness=_merge_vertex_colorings(
+                    fixed_colors_to_dict(full_instance.fixed_colors),
+                    *child_witnesses,
+                ),
             )
-    return None
+    return BaseCaseResult(is_colorable=False, witness=None)
 
 
 def _solve_base_case(
     *,
     geometry: SosaGeometry,
     state: SosaSearchState,
+    config: SosaConfig,
     stats: SosaStats,
     depth: int,
-) -> VertexColoring | None:
-    """Solve one small list-coloring state exactly with backtracking."""
-    stats.base_case_calls += 1
-    stats.record_depth(depth)
-
-    active_indices = tuple(iter_mask_indices(state.active_vertices_mask))
-    if any(state.allowed_color_masks[index] == 0 for index in active_indices):
-        return None
-
-    order = sorted(
-        active_indices,
-        key=lambda index: _active_degree(
+) -> BaseCaseResult:
+    """Dispatch the exact base-case solver configured for SOSA."""
+    if config.base_case_algorithm == "sat":
+        return solve_base_case_sat(
             geometry=geometry,
             state=state,
-            vertex_index=index,
-        ),
-        reverse=True,
+            stats=stats,
+            depth=depth,
+            num_colors=config.num_colors,
+        )
+    return solve_base_case_backtracking(
+        geometry=geometry,
+        state=state,
+        stats=stats,
+        depth=depth,
+        num_colors=config.num_colors,
+        produce_witness=config.produce_witness,
     )
-    colors: VertexColoring = {}
-
-    def backtrack(position: int) -> VertexColoring | None:
-        stats.base_case_search_nodes += 1
-        stats.record_depth(depth + position)
-        if position == len(order):
-            return dict(colors)
-
-        vertex_index = order[position]
-        allowed_mask = state.allowed_color_masks[vertex_index]
-        used_mask = 0
-        for neighbor_index in geometry.neighbor_indices[vertex_index]:
-            neighbor_color = colors.get(neighbor_index)
-            if neighbor_color is not None:
-                used_mask |= neighbor_color
-        available_mask = allowed_mask & (ALL_COLOR_MASK ^ used_mask)
-        for color_mask in COLOR_MASK_ORDER:
-            if not (available_mask & color_mask):
-                continue
-            colors[vertex_index] = color_mask
-            witness = backtrack(position + 1)
-            if witness is not None:
-                return witness
-            del colors[vertex_index]
-        return None
-
-    return backtrack(0)
 
 
 def _ordered_child_subinstances(
@@ -217,16 +237,6 @@ def _ordered_child_subinstances(
     return ordered_children[0][2], ordered_children[1][2]
 
 
-def _active_degree(
-    *,
-    geometry: SosaGeometry,
-    state: SosaSearchState,
-    vertex_index: int,
-) -> int:
-    """Count active neighbors of one vertex in the current search state."""
-    return (geometry.adjacency_masks[vertex_index] & state.active_vertices_mask).bit_count()
-
-
 def _merge_vertex_colorings(*colorings: Mapping[int, int]) -> VertexColoring:
     """Merge disjoint or identical partial colorings into one map."""
     merged: VertexColoring = {}
@@ -242,6 +252,7 @@ def _merge_vertex_colorings(*colorings: Mapping[int, int]) -> VertexColoring:
 def _error_result(
     *,
     graph: nx.Graph,
+    solver: str,
     config_dict: Optional[dict[str, Any]],
     stats: SosaStats,
     error: str,
@@ -249,16 +260,31 @@ def _error_result(
     """Build a standardized SOSA error result."""
     details = _result_details(config_dict=config_dict, stats=stats, geometry=None, witness=None)
     return SolverResult(
-        solver=SOSA_SOLVER,
+        solver=solver,
         backend=None,
         status=SOLVER_STATUS_ERROR,
         wall_time_s=None,
-        is_three_colorable=None,
+        core_time_s=None,
+        is_colorable=None,
         n_vertices=graph.number_of_nodes(),
         m_edges=graph.number_of_edges(),
         details=details,
         error=error,
     )
+
+
+def _validate_sosa_3_col_exact_config(config: SosaConfig) -> None:
+    if config.num_colors != 3:
+        raise ValueError("SOSA exact 3-color solver requires 'num_colors' to be 3")
+    if config.base_case_algorithm == "sat" and config.produce_witness:
+        raise ValueError("SOSA SAT base-case solver does not support witness output")
+
+
+def _validate_sosa_k_col_heuristic_config(config: SosaConfig) -> None:
+    if config.num_colors < 4:
+        raise ValueError("SOSA k-color heuristic solver requires 'num_colors' to be at least 4")
+    if config.produce_witness:
+        raise ValueError("SOSA k-color heuristic solver does not support witness output")
 
 
 def _result_details(
@@ -272,6 +298,7 @@ def _result_details(
     details: dict[str, Any] = {
         "implementation_status": IMPLEMENTATION_STATUS,
         "config": config_dict or {},
+        "core_time_source": "sosa_after_parse_timer",
     }
     details.update(stats.to_details_dict())
     if geometry is not None and witness is not None:

@@ -29,8 +29,10 @@ class InstanceMetadata:
     bucket: str
     source: str
     created_at: str
+    num_colors: int = 3
     generation_time_seconds: Optional[float] = None
     max_attempts_per_node: Optional[int] = None
+    average_degree: Optional[float] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """Return metadata as a plain dictionary for JSON serialization."""
@@ -61,6 +63,7 @@ class InstanceMetadata:
             generator=str(data["generator"]),
             n=int(data["n"]),
             m=int(data["m"]),
+            num_colors=int(data.get("num_colors", 3)),
             bucket=str(data["bucket"]),
             source=str(data["source"]),
             created_at=str(data["created_at"]),
@@ -73,6 +76,11 @@ class InstanceMetadata:
                 None
                 if data.get("max_attempts_per_node") is None
                 else int(data["max_attempts_per_node"])
+            ),
+            average_degree=(
+                None
+                if data.get("average_degree") is None
+                else float(data["average_degree"])
             ),
         )
 
@@ -125,6 +133,7 @@ def build_legacy_metadata(
         generator="legacy_node_link",
         n=n,
         m=m,
+        num_colors=3,
         bucket=bucket_for_n(n),
         source="legacy",
         created_at=created_at or datetime.now(UTC).isoformat(),

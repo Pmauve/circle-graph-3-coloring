@@ -1,0 +1,335 @@
+import json
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
+from three_col_circle_code.bench.plan import create_benchmark_plan, main
+from three_col_circle_code.bench.plan_io import (
+    INSTANCES_FILENAME,
+    PLAN_MANIFEST_FILENAME,
+    PLAN_SPEC_FILENAME,
+    TRIALS_FILENAME,
+    load_instance_plan,
+    load_trial_plan,
+)
+
+
+class BenchPlanTests(unittest.TestCase):
+    def test_create_benchmark_plan_writes_expected_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            spec_path = _write_spec(
+                tmp_root / "smoke.json",
+                {
+                    "instance_pool_root": str(tmp_root / "instances"),
+                    "instances": [{"family": "rc", "n_values": [2], "seeds": [1, 3]}],
+                    "solvers": [
+                        {
+                            "target": "sat-baseline:pysat-cadical",
+                            "label": "CaDiCaL",
+                            "params": {"cutoff": 5},
+                        },
+                        {
+                            "target": "sosa-3-col-exact",
+                            "label": "SOSA exact",
+                            "params": {"base_case_n": 8},
+                        },
+                    ],
+                },
+            )
+
+            plan_dir = create_benchmark_plan(
+                spec_path=spec_path,
+                plan_root=tmp_root / "plans",
+                work_root=tmp_root / "work",
+            )
+
+            manifest = json.loads((plan_dir / PLAN_MANIFEST_FILENAME).read_text(encoding="utf-8"))
+            instances = load_instance_plan(plan_dir)
+            trials = load_trial_plan(plan_dir, instances=instances)
+            has_spec = (plan_dir / PLAN_SPEC_FILENAME).exists()
+            has_instances = (plan_dir / INSTANCES_FILENAME).exists()
+            has_trials = (plan_dir / TRIALS_FILENAME).exists()
+
+        self.assertEqual(plan_dir.name, "smoke")
+        self.assertTrue(has_spec)
+        self.assertTrue(has_instances)
+        self.assertTrue(has_trials)
+        self.assertEqual(manifest["run_id"], "smoke")
+        self.assertEqual(manifest["n_instances"], 2)
+        self.assertEqual(manifest["n_trials"], 4)
+        self.assertEqual(manifest["work_root"], str(tmp_root / "work" / "smoke"))
+        self.assertEqual(
+            set(manifest),
+            {
+                "created_at",
+                "n_instances",
+                "n_trials",
+                "repetitions",
+                "run_id",
+                "warmup_repetitions",
+                "work_root",
+            },
+        )
+        self.assertEqual([row.index for row in instances], [1, 2])
+        self.assertEqual([row.index for row in trials], [1, 2, 3, 4])
+        self.assertEqual({row.solver_label for row in trials}, {"CaDiCaL", "SOSA exact"})
+        self.assertEqual({row.repetitions for row in trials}, {1})
+        self.assertEqual({row.warmup_repetitions for row in trials}, {0})
+
+    def test_create_benchmark_plan_uses_existing_flat_instance_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            instance_pool = tmp_root / "instances"
+            flat_path = instance_pool / "rc-k03-n0002-seed1.circle"
+            flat_path.parent.mkdir(parents=True)
+            flat_path.write_text("{}", encoding="utf-8")
+            spec_path = _write_spec(
+                tmp_root / "existing.json",
+                {
+                    "instance_pool_root": str(instance_pool),
+                    "instances": [{"family": "rc", "n_values": [2], "seeds": [1]}],
+                    "solvers": [{"target": "sosa-3-col-exact"}],
+                },
+            )
+
+            plan_dir = create_benchmark_plan(
+                spec_path=spec_path,
+                plan_root=tmp_root / "plans",
+                work_root=tmp_root / "work",
+            )
+            instances = load_instance_plan(plan_dir)
+            trials = load_trial_plan(plan_dir, instances=instances)
+
+        self.assertEqual(instances[0].instance_path, flat_path)
+        self.assertEqual(trials[0].instance_path, flat_path)
+
+    def test_create_benchmark_plan_carries_repetition_settings(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            spec_path = _write_spec(
+                tmp_root / "repeated.json",
+                {
+                    "repetitions": 5,
+                    "warmup_repetitions": 2,
+                    "instances": [{"family": "rc", "n_values": [2], "seeds": [1]}],
+                    "solvers": [{"target": "sosa-3-col-exact"}],
+                },
+            )
+
+            plan_dir = create_benchmark_plan(
+                spec_path=spec_path,
+                plan_root=tmp_root / "plans",
+                work_root=tmp_root / "work",
+            )
+            manifest = json.loads((plan_dir / PLAN_MANIFEST_FILENAME).read_text(encoding="utf-8"))
+            instances = load_instance_plan(plan_dir)
+            trials = load_trial_plan(plan_dir, instances=instances)
+
+        self.assertEqual(manifest["repetitions"], 5)
+        self.assertEqual(manifest["warmup_repetitions"], 2)
+        self.assertEqual(len(trials), 1)
+        self.assertEqual(trials[0].repetitions, 5)
+        self.assertEqual(trials[0].warmup_repetitions, 2)
+
+    def test_create_benchmark_plan_carries_instance_num_colors(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            spec_path = _write_spec(
+                tmp_root / "k-color.json",
+                {
+                    "instance_pool_root": str(tmp_root / "instances"),
+                    "instances": [{"family": "rcy_fast", "num_colors": 4, "n_values": [2], "seeds": [1]}],
+                    "solvers": [{"target": "sosa-k-col-heuristic", "params": {"num_colors": 4}}],
+                },
+            )
+
+            plan_dir = create_benchmark_plan(
+                spec_path=spec_path,
+                plan_root=tmp_root / "plans",
+                work_root=tmp_root / "work",
+            )
+            instances = load_instance_plan(plan_dir)
+            trials = load_trial_plan(plan_dir, instances=instances)
+
+        expected_path = tmp_root / "instances" / "rcy_fast" / "s" / "rcy_fast-k04-n0002-seed1.circle"
+        self.assertEqual(instances[0].instance_id, "rcy_fast-k04-n0002-seed1")
+        self.assertEqual(instances[0].num_colors, 4)
+        self.assertEqual(instances[0].instance_path, expected_path)
+        self.assertEqual(trials[0].num_colors, 4)
+
+    def test_create_benchmark_plan_carries_generator_params_label_and_output_format(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            spec_path = _write_spec(
+                tmp_root / "alpha.json",
+                {
+                    "instance_pool_root": str(tmp_root / "instances"),
+                    "instances": [
+                        {
+                            "family": "rccy_alpha",
+                            "label": "Dense-ish",
+                            "params": {"alpha": 0.5},
+                            "output_format": "circle",
+                            "n_values": [8],
+                            "seeds": [1],
+                        }
+                    ],
+                    "solvers": [{"target": "sosa-3-col-native"}],
+                },
+            )
+
+            plan_dir = create_benchmark_plan(
+                spec_path=spec_path,
+                plan_root=tmp_root / "plans",
+                work_root=tmp_root / "work",
+            )
+            instances = load_instance_plan(plan_dir)
+            trials = load_trial_plan(plan_dir, instances=instances)
+
+        expected_path = (
+            tmp_root
+            / "instances"
+            / "rccy_alpha"
+            / "s"
+            / "rccy_alpha-alpha0p5-k03-n0008-seed1.circle"
+        )
+        self.assertEqual(instances[0].instance_id, "rccy_alpha-alpha0p5-k03-n0008-seed1")
+        self.assertEqual(instances[0].generator_params, {"alpha": 0.5})
+        self.assertEqual(instances[0].family_label, "Dense-ish")
+        self.assertEqual(instances[0].output_format, "circle")
+        self.assertEqual(instances[0].instance_path, expected_path)
+        self.assertEqual(trials[0].generator_params, {"alpha": 0.5})
+        self.assertEqual(trials[0].family_label, "Dense-ish")
+        self.assertEqual(trials[0].output_format, "circle")
+
+    def test_create_benchmark_plan_uses_expected_nested_path_for_missing_instance(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            instance_pool = tmp_root / "instances"
+            spec_path = _write_spec(
+                tmp_root / "missing.json",
+                {
+                    "instance_pool_root": str(instance_pool),
+                    "instances": [{"family": "rc", "n_values": [2], "seeds": [1]}],
+                    "solvers": [{"target": "sosa-3-col-exact"}],
+                },
+            )
+
+            plan_dir = create_benchmark_plan(
+                spec_path=spec_path,
+                plan_root=tmp_root / "plans",
+                work_root=tmp_root / "work",
+            )
+            instances = load_instance_plan(plan_dir)
+            trials = load_trial_plan(plan_dir, instances=instances)
+
+        expected = instance_pool / "rc" / "s" / "rc-k03-n0002-seed1.circle"
+        self.assertEqual(instances[0].instance_path, expected)
+        self.assertEqual(trials[0].instance_path, expected)
+
+    def test_create_benchmark_plan_rejects_existing_plan_with_different_spec(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            first = _write_spec(
+                tmp_root / "first.json",
+                {
+                    "instances": [{"family": "rc", "n_values": [2], "seeds": [1]}],
+                    "solvers": [{"target": "sosa-3-col-exact"}],
+                },
+            )
+            second = _write_spec(
+                tmp_root / "second.json",
+                {
+                    "instances": [{"family": "rc", "n_values": [3], "seeds": [1]}],
+                    "solvers": [{"target": "sosa-3-col-exact"}],
+                },
+            )
+            create_benchmark_plan(
+                spec_path=first,
+                plan_root=tmp_root / "plans",
+                work_root=tmp_root / "work",
+                run_id="same",
+            )
+
+            with self.assertRaisesRegex(ValueError, "different spec"):
+                create_benchmark_plan(
+                    spec_path=second,
+                    plan_root=tmp_root / "plans",
+                    work_root=tmp_root / "work",
+                    run_id="same",
+                )
+
+    def test_create_benchmark_plan_force_replaces_existing_spec_copy(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            first = _write_spec(
+                tmp_root / "first.json",
+                {
+                    "instances": [{"family": "rc", "n_values": [2], "seeds": [1]}],
+                    "solvers": [{"target": "sosa-3-col-exact"}],
+                },
+            )
+            second = _write_spec(
+                tmp_root / "second.json",
+                {
+                    "instances": [{"family": "rc", "n_values": [3], "seeds": [1]}],
+                    "solvers": [{"target": "sosa-3-col-exact"}],
+                },
+            )
+
+            plan_dir = create_benchmark_plan(
+                spec_path=first,
+                plan_root=tmp_root / "plans",
+                work_root=tmp_root / "work",
+                run_id="same",
+            )
+            create_benchmark_plan(
+                spec_path=second,
+                plan_root=tmp_root / "plans",
+                work_root=tmp_root / "work",
+                run_id="same",
+                force=True,
+            )
+            instances = load_instance_plan(plan_dir)
+
+        self.assertEqual(instances[0].n, 3)
+
+    def test_cli_prints_plan_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            spec_path = _write_spec(
+                tmp_root / "cli.json",
+                {
+                    "instances": [{"family": "rc", "n_values": [2], "seeds": [1]}],
+                    "solvers": [{"target": "sosa-3-col-exact"}],
+                },
+            )
+
+            exit_code = main(
+                [
+                    "--spec",
+                    str(spec_path),
+                    "--plan-root",
+                    str(tmp_root / "plans"),
+                    "--work-root",
+                    str(tmp_root / "work"),
+                ]
+            )
+            has_plan_dir = (tmp_root / "plans" / "cli").exists()
+
+        self.assertEqual(exit_code, 0)
+        self.assertTrue(has_plan_dir)
+
+
+def _write_spec(path: Path, payload: dict) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return path
+
+
+if __name__ == "__main__":
+    unittest.main()

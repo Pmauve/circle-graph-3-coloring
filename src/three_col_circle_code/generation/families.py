@@ -4,6 +4,8 @@ from importlib import import_module
 import random
 from typing import Iterable
 
+from three_col_circle_code.generation.color_utils import validate_num_colors
+
 
 @dataclass(frozen=True)
 class FamilySpec:
@@ -13,6 +15,7 @@ class FamilySpec:
     seeded_supported: bool
     seeded_generator_name: str | None
     legacy_path_tokens: tuple[str, ...]
+    k_color_yes_supported: bool = False
 
 
 FAMILY_SPECS: tuple[FamilySpec, ...] = (
@@ -63,6 +66,7 @@ FAMILY_SPECS: tuple[FamilySpec, ...] = (
         seeded_supported=True,
         seeded_generator_name="seeded_random_circle_graph_yes_fast_legacy_like",
         legacy_path_tokens=("rcy_fast",),
+        k_color_yes_supported=True,
     ),
     FamilySpec(
         family="rccy",
@@ -71,6 +75,7 @@ FAMILY_SPECS: tuple[FamilySpec, ...] = (
         seeded_supported=True,
         seeded_generator_name="seeded_random_circle_graph_yes_constructive_tuned",
         legacy_path_tokens=("rccy",),
+        k_color_yes_supported=True,
     ),
     FamilySpec(
         family="rccy_tuned",
@@ -79,6 +84,7 @@ FAMILY_SPECS: tuple[FamilySpec, ...] = (
         seeded_supported=True,
         seeded_generator_name="seeded_random_circle_graph_yes_constructive_tuned",
         legacy_path_tokens=("rccy_tuned",),
+        k_color_yes_supported=True,
     ),
     FamilySpec(
         family="rccy_baseline",
@@ -87,6 +93,7 @@ FAMILY_SPECS: tuple[FamilySpec, ...] = (
         seeded_supported=True,
         seeded_generator_name="seeded_random_circle_graph_yes_constructive_baseline",
         legacy_path_tokens=("rccy_baseline",),
+        k_color_yes_supported=True,
     ),
     FamilySpec(
         family="rccy_full_sweep_weighted_active",
@@ -95,6 +102,7 @@ FAMILY_SPECS: tuple[FamilySpec, ...] = (
         seeded_supported=True,
         seeded_generator_name="seeded_random_circle_graph_yes_constructive_full_sweep_weighted_active",
         legacy_path_tokens=("rccy_full_sweep_weighted_active",),
+        k_color_yes_supported=True,
     ),
     FamilySpec(
         family="rccy_full_sweep_max_active",
@@ -103,6 +111,34 @@ FAMILY_SPECS: tuple[FamilySpec, ...] = (
         seeded_supported=True,
         seeded_generator_name="seeded_random_circle_graph_yes_constructive_full_sweep_max_active",
         legacy_path_tokens=("rccy_full_sweep_max_active",),
+        k_color_yes_supported=True,
+    ),
+    FamilySpec(
+        family="rccy_alpha",
+        graph_generator_attr="",
+        legacy_cli_supported=False,
+        seeded_supported=True,
+        seeded_generator_name="seeded_random_circle_graph_yes_alpha",
+        legacy_path_tokens=("rccy_alpha",),
+        k_color_yes_supported=True,
+    ),
+    FamilySpec(
+        family="rccy_alpha0",
+        graph_generator_attr="",
+        legacy_cli_supported=False,
+        seeded_supported=True,
+        seeded_generator_name="seeded_random_circle_graph_yes_alpha0",
+        legacy_path_tokens=("rccy_alpha0",),
+        k_color_yes_supported=True,
+    ),
+    FamilySpec(
+        family="rccy_alpha1",
+        graph_generator_attr="",
+        legacy_cli_supported=False,
+        seeded_supported=True,
+        seeded_generator_name="seeded_random_circle_graph_yes_alpha1",
+        legacy_path_tokens=("rccy_alpha1",),
+        k_color_yes_supported=True,
     ),
 )
 
@@ -124,17 +160,24 @@ def seeded_families() -> tuple[str, ...]:
     return tuple(spec.family for spec in FAMILY_SPECS if spec.seeded_supported)
 
 
-def generate_seeded_family(*, family: str, n: int, seed: int, max_attempts_per_node: int):
+def generate_seeded_family(*, family: str, n: int, seed: int, max_attempts_per_node: int, num_colors: int = 3):
     spec = get_family_spec(family)
     if not spec.seeded_supported or spec.seeded_generator_name is None:
         raise ValueError(f"family {family!r} does not support seeded instance generation")
+    validate_num_colors(num_colors)
+    if num_colors != 3 and not spec.k_color_yes_supported:
+        raise ValueError(f"family {family!r} does not support num_colors={num_colors}")
+    if not spec.graph_generator_attr:
+        raise ValueError(f"family {family!r} is only supported by native instance generation")
     graph_generator_fn = _load_graph_generator_fn(spec.graph_generator_attr)
-    graph = graph_generator_fn(
-        n,
-        save=False,
-        rng=random.Random(seed),
-        max_attempts_per_node=max_attempts_per_node,
-    )
+    kwargs = {
+        "save": False,
+        "rng": random.Random(seed),
+        "max_attempts_per_node": max_attempts_per_node,
+    }
+    if spec.k_color_yes_supported:
+        kwargs["num_colors"] = num_colors
+    graph = graph_generator_fn(n, **kwargs)
     return graph, spec.seeded_generator_name
 
 

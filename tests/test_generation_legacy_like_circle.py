@@ -81,6 +81,20 @@ class FastLegacyLikeCircleGenerationTests(unittest.TestCase):
         self.assertTrue(all("level" not in attrs for _, attrs in graph.nodes(data=True)))
         self.assertTrue(all("color" in attrs for _, attrs in graph.nodes(data=True)))
 
+    def test_generate_random_circle_graph_yes_fast_supports_larger_palette(self) -> None:
+        graph = generate_random_circle_graph_yes_fast(
+            8,
+            rng=random.Random(29),
+            max_attempts_per_node=10_000,
+            num_colors=4,
+        )
+
+        self.assertTrue(_verify_k_coloring(graph, 4))
+
+    def test_generate_random_circle_graph_yes_fast_rejects_invalid_num_colors(self) -> None:
+        with self.assertRaisesRegex(ValueError, "num_colors"):
+            generate_random_circle_graph_yes_fast(8, rng=random.Random(29), num_colors=0)
+
     def test_generate_random_circle_graph_yes_fast_matches_legacy_backend_on_small_seed_matrix(self) -> None:
         for n in range(4, 9):
             for seed in range(1, 21):
@@ -116,6 +130,16 @@ def _colored_graph_signature(graph) -> tuple:
     )
     edge_signature = tuple(sorted(tuple(sorted(edge)) for edge in graph.edges()))
     return node_signature, edge_signature
+
+
+def _verify_k_coloring(graph, num_colors: int) -> bool:
+    for _node_id, attrs in graph.nodes(data=True):
+        if attrs["color"] not in range(1, num_colors + 1):
+            return False
+    for left, right in graph.edges():
+        if graph.nodes[left]["color"] == graph.nodes[right]["color"]:
+            return False
+    return True
 
 
 if __name__ == "__main__":

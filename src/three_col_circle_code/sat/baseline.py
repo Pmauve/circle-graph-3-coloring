@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import sys
 
 LEGACY_PYSMT_MSAT = "legacy-pysmt-msat"
 PYSAT_CADICAL = "pysat-cadical"
@@ -12,6 +13,7 @@ class BaselineSolveResult:
     backend: str
     n_vertices: int
     m_edges: int
+    elapsed_time_source: str
 
 
 def solve_3color_baseline(graph, backend=PYSAT_CADICAL):
@@ -22,6 +24,11 @@ def solve_3color_baseline(graph, backend=PYSAT_CADICAL):
 
         return solve_pysat_cadical(graph)
     if backend == PYSAT_KISSAT404:
+        if sys.platform == "win32":
+            raise ValueError(
+                "SAT backend 'pysat-kissat404' is not supported on Windows; "
+                "use 'pysat-cadical' or a native SAT backend instead"
+            )
         from three_col_circle_code.sat.pysat_baseline import solve_pysat_kissat404
 
         return solve_pysat_kissat404(graph)
@@ -41,4 +48,5 @@ def _solve_legacy_pysmt_msat(graph):
         backend=LEGACY_PYSMT_MSAT,
         n_vertices=len(graph.nodes),
         m_edges=len(graph.edges),
+        elapsed_time_source="mathsat_solve_timer",
     )

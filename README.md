@@ -1,119 +1,157 @@
-# 3-coloring-code
+# Circle Graph 3-Coloring: Can Simplicity Beat SAT?
 
-This code was used in [[1]](#1) for the evaluation of the 3-coloring algorithm proposed in [[2]](#2).
-This repository also contains the graphs used for the evaluation in [[1]](#1).
+This repository contains the code used for the experiments in
+*Circle Graph 3-Coloring: Can Simplicity Beat SAT?*
 
-## Installing
+The repository started from the experimental code accompanying Bachmann, Rutter,
+and Stumpf, *On 3-Coloring Circle Graphs* (GD 2023). It has since been
+extended for the experiments in the current paper. The main additions are Rust
+implementations of the SOSA solver, native SAT baselines, new generators, and a
+Python benchmark runner.
 
-After cloning the repository, open a terminal at ```path_to_repo/3-col-code/``` and execute the following commands to install this project:
+## Repository Status
+
+Main workflow:
+
+- native SOSA implementation for circle graph 3-coloring;
+- native circle graph instance generation and validation;
+- native SAT baselines using CaDiCaL/Kissat through RustSAT;
+- Python scripts for benchmark planning, execution, merging, and reports.
+
+Reference and compatibility code:
+
+- older Python coloring and SAT implementations;
+- PySMT/MathSAT-based legacy paths.
+
+For the paper experiments, use the native Rust tools through the Python
+benchmark runner.
+
+## Quick Start
+
+Install the Python package in editable mode:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -U pip
+python -m pip install -e ".[dev]"
 ```
-python3 -m venv venv
-source venv/bin/activate
-pip install -e .
-pip install -U pip
-pip install -e .
+
+Build and test the native tools:
+
+```bash
+cd native
+cargo test
+cargo build --release
 cd ..
-pysmt-install --msat
+export THREE_COL_NATIVE_BIN="$PWD/native/target/release/three_col_native"
 ```
 
-To verify if the installation was successful, execute:
-
-```
-which benchmark_run
-```
-
-If the response is ```path_to_repo/3-col-code/venv/bin/benchmark_run``` then the project has been successfully installed.
-To verify that the SAT solver has been successfully installed, execute ```pysmt-install --check```.
-You should see that the msat solver is installed.
-
-You can now use the following scripts.
-
-## Generating test instances: ```generate_graphs.sh <generator> <size>```
-
-To generate a random graph, execute the script using the two parameters ```generator``` and ```size```.
-
-| Generator  | Description                       |
-|------------|-----------------------------------|
-| r          | a random graph                    |
-| ry         | a random, 3-colorable graph       |
-| rc         | a random circle graph             |
-| rcy        | a random 3-colorable circle graph |
-
-| Size | Number of vertices $n$  |
-|------|-------------------------|
-| s    | $3 \leq n \leq 250$     |
-| m    | $250 \leq n \leq 750$   |
-| l    | $750 \leq n \leq 1500$  |
-| xl   | $1500 \leq n \leq 5000$ |
-
-The generated graph are stored at ```eval/graph_data/<generator>/<size>```.
-
-
-## Evaluate coloring strategy: ```eval_coloring.sh <generator> <size>```
-
-Colors all graphs found under ```eval/graph_data/<generator>/<size>``` using the strategy from [[2]](#2) 
-and checks if the coloring is valid.
-
-## Assign variables using naive backtracking: ```var_bt_eval.sh <generator> <size>```
-
-Generates SAT formula $\Phi$ for all graphs found under ```eval/graph_data/<generator>/<size>``` and
-checks if $\Phi$ has a valid truth assignment using naive backtracking.
-Note that the procedure terminates after one hour if no solution is found.
-
-## Assign variables using modified backtracking: ```bt_eval.sh <generator> <size>```
-
-Generates SAT formula $\Phi$ for all graphs found under ```eval/graph_data/<generator>/<size>``` and
-checks if $\Phi$ has a valid truth assignment using the modified backtracking from [[2]](#2).
-Note that the procedure terminates after one hour if no solution is found.
-
-## How to use results
-
-The aforementioned scripts create single csv files per graph. 
-In order to merge these files to e.g. generate plots, you may use the ```plots.py``` script.
-Just add the functions you want to use to generate the respective plot to the ```main()``` function.
-
-## Benchmark runs
-
-The newer benchmark tooling uses spec-driven run directories under `eval/runs/`.
-
-Run one benchmark spec with:
+Run a small local benchmark smoke test:
 
 ```bash
-benchmark_run --spec path/to/spec.json
+benchmark_run --spec eval/sample_specs/pipeline-parallel-smoke.json --jobs 4
 ```
 
-A minimal tracked example spec lives at `eval/sample_specs/sosa-smoke.json`.
-It is paired with a tiny curated starter pool in `eval/instances/`, so you can run it without generating instances first.
-Because the run directory is derived from the spec filename stem, running that file writes to `eval/runs/sosa-smoke/`.
+This creates a small run, generates the needed instances, runs the trials, and
+writes an HTML report under `eval/runs/`.
+
+On Windows PowerShell, set the native binary path with:
+
+```powershell
+$env:THREE_COL_NATIVE_BIN = "$PWD\native\target\release\three_col_native.exe"
+```
+
+If `benchmark_run` is not found, make sure the virtual environment is active and
+rerun `python -m pip install -e ".[dev]"`.
+
+## Benchmarks
+
+Local benchmark runs use `benchmark_run`:
 
 ```bash
-benchmark_run --spec eval/sample_specs/sosa-smoke.json
+benchmark_run --spec eval/sample_specs/pipeline-smoke.json --jobs 4
 ```
 
-Each run directory stores:
+The repository keeps only three example specs:
 
-- `spec.json`
-- `manifest.json`
-- `results.jsonl`
-- `summary_by_n.csv`
-- `summary_by_bucket.csv`
-- `summary_overall.csv`
-- `report.html`
+- `pipeline-smoke.json`: minimal end-to-end benchmark smoke test.
+- `pipeline-parallel-smoke.json`: smoke test with local parallel execution.
+- `native-sat-sosa-zykov-smoke.json`: example with SOSA, SAT, and ZykovColor entries.
 
-The run directory name is derived from the spec filename stem, so rerunning the same spec file automatically resumes the same run directory.
+The same run can also be staged step by step:
 
-## Support
+```bash
+benchmark_plan --spec path/to/spec.json --run-id my-run --force
+benchmark_generate_instance --plan-dir eval/benchmark_plans/my-run --index 1
+benchmark_run_trial --plan-dir eval/benchmark_plans/my-run --index 1
+benchmark_merge --plan-dir eval/benchmark_plans/my-run --output-root eval/runs --force
+```
 
-For questions or comments feel free to reach out to [bachmanp@fim.uni-passau.de](mailto:bachmanp@fim.uni-passau.de) 
+Generated benchmark directories are ignored by git:
 
-## References
+- `eval/benchmark_plans/`
+- `eval/benchmark_work/`
+- `eval/runs/`
+- generated files under `eval/instances/`
 
-<a id="1">[1]</a>
-P. Bachmann, I. Rutter, P. Stumpf. On 3-Coloring Circle Graphs. 
-In Proceedings of the 31st International Symposium on Graph Drawing and Network Visualization (GD'23),
-pages 152-160. Springer Cham, 2023. [doi.org/10.1007/978-3-031-49272-3_11](https://doi.org/10.1007/978-3-031-49272-3_11).
+## Paper Artifacts
 
-<a id="2">[2]</a> 
-W. Unger. The complexity of colouring circle graphs. In Proceedings of the 9th Annual
-Symposium on Theoretical Aspects of Computer Science (STACS’92), pages 389–400. Springer
-Berlin Heidelberg, 1992. [doi:10.1007/3-540-55210-3_199](https://doi.org/10.1007/3-540-55210-3_199).
+Summary data for the main benchmark run is included under:
+
+```text
+eval/paper_runs/native-density-yes-main-seed10-v2/
+```
+
+This directory contains the benchmark spec, sanitized run metadata, CSV
+summaries used for the paper plots, and a static HTML report. The raw
+trial-level `results.jsonl` file is omitted because it is large and contains
+environment-specific metadata.
+
+## Instance Families
+
+The paper uses descriptive family names. Benchmark specs use shorter internal
+identifiers:
+
+| Paper name | Internal family |
+| --- | --- |
+| `random-any` | `rc_fast` |
+| `simple-yes` | `rcy_fast` |
+| `alpha-dense-yes` | `rccy_alpha` with `params.alpha` |
+
+The native generator documentation is in `docs/native-generators.md`. The
+DIMACS-circle format is documented in `docs/dimacs-circle.md`.
+
+## External Solvers
+
+The native SOSA solver and native SAT baseline are part of this repository.
+Some comparison runs need additional solver support:
+
+- CaDiCaL and Kissat are used through RustSAT in the native SAT baseline.
+- ZykovColor is an optional external solver; see `docs/zykovcolor.md`.
+- MathSAT/PySMT paths are retained for legacy comparison only and are not needed
+  for the primary workflow.
+
+Solver availability depends on the platform and local build environment. The
+smoke specs avoid optional solvers where possible.
+
+## Provenance
+
+This repository builds on the experimental code released with:
+
+P. Bachmann, I. Rutter, P. Stumpf. *On 3-Coloring Circle Graphs*. Proceedings of
+the 31st International Symposium on Graph Drawing and Network Visualization
+(GD 2023), pages 152-160. Springer Cham, 2023.
+<https://doi.org/10.1007/978-3-031-49272-3_11>
+
+The original project metadata declared the MIT license. This repository includes
+a top-level MIT license file for clarity.
+
+## Citation
+
+If you use this repository, please cite the accompanying paper. Citation
+metadata will be updated after publication.
+
+## License
+
+This repository is released under the MIT license. See `LICENSE`.

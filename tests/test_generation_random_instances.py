@@ -9,7 +9,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from three_col_circle_code.generation.random_instances import (
     generate_instance,
     generate_many,
+    instance_output_path,
     write_instance,
+    write_instance_to_path,
 )
 from three_col_circle_code.instances.io import load_instance
 from three_col_circle_code.instances.validate import validate_instance, validate_instance_file
@@ -22,7 +24,9 @@ class RandomInstanceGenerationTests(unittest.TestCase):
 
         self.assertEqual(_graph_signature(first.graph), _graph_signature(second.graph))
         self.assertEqual(first.metadata.instance_id, second.metadata.instance_id)
+        self.assertEqual(first.metadata.instance_id, "rc-k03-n0008-seed17")
         self.assertEqual(first.metadata.m, second.metadata.m)
+        self.assertEqual(first.metadata.num_colors, 3)
         self.assertIsNotNone(first.metadata.generation_time_seconds)
         self.assertGreaterEqual(first.metadata.generation_time_seconds, 0.0)
         self.assertEqual(first.metadata.max_attempts_per_node, 10_000)
@@ -41,6 +45,7 @@ class RandomInstanceGenerationTests(unittest.TestCase):
 
         self.assertTrue(report.ok)
         self.assertEqual(record.metadata.family, "rcy_fast")
+        self.assertEqual(record.metadata.num_colors, 3)
         self.assertEqual(record.metadata.generator, "seeded_random_circle_graph_yes_fast_legacy_like")
         self.assertTrue(all("level" not in attrs for _, attrs in record.graph.nodes(data=True)))
         self.assertTrue(all("color" not in attrs for _, attrs in record.graph.nodes(data=True)))
@@ -90,6 +95,7 @@ class RandomInstanceGenerationTests(unittest.TestCase):
 
             self.assertTrue(report.ok, msg=f"{family} did not validate")
             self.assertEqual(record.metadata.family, family)
+            self.assertEqual(record.metadata.num_colors, 3)
             self.assertEqual(record.metadata.generator, expected_generator)
             self.assertTrue(all("level" not in attrs for _, attrs in record.graph.nodes(data=True)))
             self.assertTrue(all("color" not in attrs for _, attrs in record.graph.nodes(data=True)))
@@ -107,6 +113,10 @@ class RandomInstanceGenerationTests(unittest.TestCase):
         records = generate_many(family="rc", n=6, root_seed=10, count=3)
 
         self.assertEqual([record.metadata.seed for record in records], [10, 11, 12])
+        self.assertEqual(
+            [record.metadata.instance_id for record in records],
+            ["rc-k03-n0006-seed10", "rc-k03-n0006-seed11", "rc-k03-n0006-seed12"],
+        )
         self.assertEqual(len({record.metadata.instance_id for record in records}), 3)
         self.assertEqual(
             [record.metadata.max_attempts_per_node for record in records],
@@ -136,27 +146,55 @@ class RandomInstanceGenerationTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 generate_instance(family=family, n=8, seed=17)
 
+    def test_generate_instance_records_custom_num_colors_in_metadata_and_id(self) -> None:
+        record = generate_instance(family="rcy_fast", n=8, seed=17, num_colors=4)
+
+        self.assertEqual(record.metadata.instance_id, "rcy_fast-k04-n0008-seed17")
+        self.assertEqual(record.metadata.num_colors, 4)
+
+    def test_generate_instance_rejects_unsupported_custom_num_colors(self) -> None:
+        with self.assertRaisesRegex(ValueError, "num_colors=4"):
+            generate_instance(family="rc", n=8, seed=17, num_colors=4)
+
+    def test_generate_instance_rejects_invalid_num_colors(self) -> None:
+        with self.assertRaisesRegex(ValueError, "num_colors"):
+            generate_instance(family="rcy_fast", n=8, seed=17, num_colors=0)
+
     def test_write_instance_saves_canonical_envelope(self) -> None:
         record = generate_instance(family="rc", n=6, seed=5)
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output_dir = Path(tmpdir)
             path = write_instance(record, output_dir)
-            payload = json.loads(path.read_text(encoding="utf-8"))
+            text = path.read_text(encoding="utf-8")
             loaded = load_instance(path)
             report = validate_instance_file(path)
 
         self.assertEqual(
             path,
-            output_dir / record.metadata.family / record.metadata.bucket / f"{record.metadata.instance_id}.json",
+            instance_output_path(record, output_dir),
         )
-        self.assertIn("metadata", payload)
-        self.assertIn("graph", payload)
+        self.assertEqual(path.suffix, ".col")
+        self.assertIn("c format version 1\n", text)
+        self.assertIn("c average degree ", text)
+        self.assertIn("p edge ", text)
         self.assertEqual(loaded.metadata.instance_id, record.metadata.instance_id)
+        self.assertEqual(loaded.metadata.num_colors, 3)
         self.assertIsNotNone(loaded.metadata.generation_time_seconds)
         self.assertGreaterEqual(loaded.metadata.generation_time_seconds, 0.0)
         self.assertEqual(loaded.metadata.max_attempts_per_node, 10_000)
         self.assertTrue(report.ok)
+
+    def test_write_instance_to_path_supports_atomic_write(self) -> None:
+        record = generate_instance(family="rc", n=6, seed=5)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "custom" / "instance.json"
+            returned = write_instance_to_path(record, path, atomic=True)
+            loaded = load_instance(path)
+
+        self.assertEqual(returned, path)
+        self.assertEqual(loaded.metadata.instance_id, record.metadata.instance_id)
 
     def test_generate_instance_records_custom_attempt_limit_in_metadata(self) -> None:
         record = generate_instance(family="rc_fast", n=8, seed=17, max_attempts_per_node=321)

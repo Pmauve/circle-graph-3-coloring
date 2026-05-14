@@ -8,12 +8,16 @@ from pysmt.shortcuts import Symbol, And, Or, Not, Solver, EqualsOrIff, Implies, 
 from three_col_circle_code.timer import Timer
 from three_col_circle_code.util import *
 
-solver_timer = Timer(name="solver", text="Solving 3-SAT instance took {:0.6} seconds")
+solver_timer = Timer(name="solver", text="Solving 3-SAT instance took {:0.6} seconds", logger=None)
 
 computing_c_timer = Timer(name="computing_cl", text="Computing clauses for c* took {:0.6f} seconds")
 solving_c_timer = Timer(name="solving_c", text="Solving SAT for c^* took {:0.6f} seconds")
 five_cycle_bt_timer = Timer(name="five_cycle_backtrack", text="Backtracking 5-cycles took {:0.6f} seconds")
 big_cycle_bt_timer = Timer(name="big_cycle_backtrack", text="Backtracking big cycles took {:0.6f} seconds")
+
+
+def _make_msat_solver():
+    return Solver(name="msat")
 
 
 def is_three_colorable(graph):
@@ -52,19 +56,20 @@ def is_three_colorable(graph):
         must_not_be_both_green = Or(Not(u_g), Not(v_g))
         clauses.append(must_not_be_both_green)
     formula = And(*clauses)
-    solver = Solver(name="msat")
+    solver = _make_msat_solver()
     solver.add_assertion(formula)
     solver_timer.start()
     can_solve = solver.solve()
     elapsed_time = solver_timer.stop()
     if can_solve:
-        print("we have a solution")
+        # print("we have a solution")
         partial_model = [EqualsOrIff(variables[c], solver.get_value(variables[c])) for c in
                          variable_names]
         # print("partial model: " + str(partial_model))
     else:
-        print("we have no solution")
-        print("unsat core:", get_unsat_core(clauses))
+        # print("we have no solution")
+        # print("unsat core:", get_unsat_core(clauses))
+        pass
     return can_solve, elapsed_time
 
 
@@ -75,8 +80,8 @@ class ImportantSubgraphFormulaBuilder:
     domain_vars = dict()  # maps frozensets to formula symbols
     important_subgraph_vars = set()  # keep track which c* values are relevant for coloring important subgraphs
     btt_important_subgraph_vars = set()
-    solver = Solver(name="msat")
-    btt_solver = Solver(name="msat")
+    solver = None
+    btt_solver = None
     tailtriangles = []
     boxslashes = []
     four_cycles = []
@@ -101,8 +106,8 @@ class ImportantSubgraphFormulaBuilder:
     sat_graph = nx.DiGraph()
     sat_graph_dict = dict()
     var_not = frozenset({'not'})
-    hull_solver = Solver(name="msat")
-    bc_clause_solver = Solver(name="msat")
+    hull_solver = None
+    bc_clause_solver = None
     value_bt_tree = nx.Graph()
 
     val_bt_timelimit_start = 0
@@ -111,6 +116,10 @@ class ImportantSubgraphFormulaBuilder:
         self.c_graph = c_graph
         self.sat_graph = nx.DiGraph()
         self.sat_graph_dict = dict()
+        self.solver = _make_msat_solver()
+        self.btt_solver = _make_msat_solver()
+        self.hull_solver = _make_msat_solver()
+        self.bc_clause_solver = _make_msat_solver()
         self.get_c_domain()
         self.tailtriangles = important_subgraphs.get(TAILTRIANGLE_STR)
         self.boxslashes = important_subgraphs.get(BOXSLASH_STR)
@@ -124,10 +133,6 @@ class ImportantSubgraphFormulaBuilder:
         self.five_cycle_cnf_clauses = self.cnf_clauses_for_5cycle()
         self.five_cycle_dnf_clauses = self.dnf_clauses_for_5cycle()
         computing_c_timer.stop()
-        self.solver.reset_assertions()
-        self.btt_solver.reset_assertions()
-        self.hull_solver.reset_assertions()
-        self.bc_clause_solver.reset_assertions()
         self.is_three_colorable = False
         self.formula = {}
         self.five_cycle_backtrack_was_success = False

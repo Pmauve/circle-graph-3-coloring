@@ -1,1 +1,0 @@
-{"directed": false, "multigraph": false, "graph": {}, "nodes": [{"color": 2, "l": 0, "r": 4, "id": 1}, {"color": 3, "l": 1, "r": 6, "id": 3}, {"color": 1, "l": 2, "r": 7, "id": 2}, {"color": 1, "l": 3, "r": 5, "id": 0}], "links": [{"source": 1, "target": 3}, {"source": 1, "target": 2}, {"source": 1, "target": 0}, {"source": 3, "target": 2}]}

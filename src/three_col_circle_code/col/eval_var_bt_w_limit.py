@@ -9,12 +9,12 @@ from three_col_circle_code.col.main import *
 def main():
     _generator = sys.argv[1:][0]
     _size = sys.argv[1:][1]
-    slurm_job_id = int(os.getenv('SLURM_ARRAY_TASK_ID') if os.getenv('SLURM_ARRAY_TASK_ID') else 0)
+    task_index = int(os.getenv("TASK_INDEX", "0"))
     GRAPH_PATH = Path(
         __file__).absolute().parent.parent.parent.parent / "eval" / "graph_data" / _generator / _size
     CSV_PATH = Path(
         __file__).absolute().parent.parent.parent.parent / "eval" / "csv" / "val_bt_eval_w_limit" / _generator / _size
-    graph_id = os.listdir(str(GRAPH_PATH))[slurm_job_id].replace(".json", "")
+    graph_id = os.listdir(str(GRAPH_PATH))[task_index].replace(".json", "")
     csv_file_path = CSV_PATH / ("bt_eval_limited_" + graph_id + ".csv")
     _graph = fix_graph_wo_level(read_graph_from_json(GRAPH_PATH / (graph_id + ".json")))
     # for f in os.listdir(str(GRAPH_PATH)):

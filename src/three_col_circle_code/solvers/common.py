@@ -13,6 +13,7 @@ class SolverConfig:
     solver: str
     backend: Optional[str] = None
     params: dict[str, Any] = field(default_factory=dict)
+    label: Optional[str] = None
 
     @classmethod
     def from_mapping(
@@ -21,12 +22,14 @@ class SolverConfig:
         *,
         backend: Optional[str] = None,
         params: Optional[Mapping[str, Any]] = None,
+        label: Optional[str] = None,
     ) -> "SolverConfig":
         """Build a config from optional mapping inputs."""
         return cls(
             solver=solver,
             backend=backend,
             params=dict(params or {}),
+            label=label,
         )
 
     @property
@@ -43,11 +46,14 @@ class SolverResult:
     backend: Optional[str]
     status: str
     wall_time_s: Optional[float]
-    is_three_colorable: Optional[bool]
+    is_colorable: Optional[bool]
     n_vertices: int
     m_edges: int
     details: dict[str, Any] = field(default_factory=dict)
     error: Optional[str] = None
+    core_time_s: Optional[float] = None
+    total_native_time_s: Optional[float] = None
+    peak_rss_kb: Optional[int] = None
 
 
 def solver_target(solver: str, backend: Optional[str] = None) -> str:

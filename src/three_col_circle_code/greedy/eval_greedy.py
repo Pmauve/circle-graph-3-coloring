@@ -11,17 +11,17 @@ from three_col_circle_code.util import read_graph_from_json, verify_3coloring
 
 def main():
     bt_timer = Timer(name="solver", text="Solving 3-SAT instance took {:0.6} seconds")
-    slurm_job_id = int(os.getenv('SLURM_ARRAY_TASK_ID') if os.getenv('SLURM_ARRAY_TASK_ID') is not None else 0)
+    task_index = int(os.getenv("TASK_INDEX", "0"))
     generator = sys.argv[1:][0]
     size = sys.argv[1:][1]
 
     GRAPH_PATH = Path(__file__).absolute().parent.parent.parent.parent / "eval" / "graph_data"
     CSV_PATH = Path(__file__).absolute().parent.parent.parent.parent / "eval" / "csv" / "greedy" / generator / size
-    graph_id = os.listdir(str(GRAPH_PATH / generator / size))[slurm_job_id].replace(".json", "")
+    graph_id = os.listdir(str(GRAPH_PATH / generator / size))[task_index].replace(".json", "")
     _graph = read_graph_from_json(GRAPH_PATH / generator / size / (graph_id + ".json"))
 
     if _graph is not None:
-        print("found graph for slurm id", slurm_job_id, ": ", graph_id)
+        print("found graph for task index", task_index, ": ", graph_id)
         bt_timer.start()
         result = start_greedy(_graph)
         elapsed_time = bt_timer.stop()
@@ -43,7 +43,7 @@ def main():
             writer.writeheader()
             writer.writerows(row)
     else:
-        print("could not find graph for slurm job id", slurm_job_id, "and graph id", graph_id)
+        print("could not find graph for task index", task_index, "and graph id", graph_id)
 
 
 if __name__ == "__main__":

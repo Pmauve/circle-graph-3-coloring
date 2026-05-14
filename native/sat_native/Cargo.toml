@@ -1,0 +1,12 @@
+[package]
+name = "sat_native"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+circle_core = { path = "../circle_core" }
+
+[target.'cfg(unix)'.dependencies]
+rustsat = { version = "0.7.5", default-features = false }
+rustsat-cadical = { version = "0.7.5", default-features = false, features = ["quiet", "v1-9-5"] }
+rustsat-kissat = { version = "0.7.5", default-features = false, features = ["quiet", "v4-0-4"] }

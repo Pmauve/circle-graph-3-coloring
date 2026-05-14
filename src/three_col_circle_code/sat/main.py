@@ -6,11 +6,11 @@ from three_col_circle_code.sat.baseline import LEGACY_PYSMT_MSAT, solve_3color_b
 from three_col_circle_code.util import *
 
 
-slurm_job_id = int(os.getenv('SLURM_ARRAY_TASK_ID') if os.getenv('SLURM_ARRAY_TASK_ID') is not None else 0)
+task_index = int(os.getenv("TASK_INDEX", "0"))
 
 
 def main():
-    global slurm_job_id
+    global task_index
     generator = sys.argv[1:][0]
     size = sys.argv[1:][1]
     backend = sys.argv[1:][2] if len(sys.argv[1:]) > 2 else LEGACY_PYSMT_MSAT
@@ -23,11 +23,11 @@ def main():
 
     GRAPH_PATH = Path(__file__).absolute().parent.parent.parent.parent / "eval" / "graph_data"
     CSV_PATH = Path(__file__).absolute().parent.parent.parent.parent / "eval" / "csv" / generator / size
-    graph_id = os.listdir(str(GRAPH_PATH / generator / size))[slurm_job_id].replace(".json", "")
+    graph_id = os.listdir(str(GRAPH_PATH / generator / size))[task_index].replace(".json", "")
     _graph = read_graph_from_json(GRAPH_PATH / generator / size / (graph_id + ".json"))
 
     if _graph is not None:
-        print("found graph for slurm id", slurm_job_id, ": ", graph_id)
+        print("found graph for task index", task_index, ": ", graph_id)
         print(_graph)
         # run solver
         result = solve_3color_baseline(_graph, backend=backend)
@@ -46,7 +46,7 @@ def main():
             writer.writeheader()
             writer.writerows(row)
     else:
-        print("could not find graph for slurm job id", slurm_job_id, "and graph id", graph_id)
+        print("could not find graph for task index", task_index, "and graph id", graph_id)
 
 
 if __name__ == "main":

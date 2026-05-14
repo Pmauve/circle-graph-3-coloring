@@ -8,7 +8,7 @@ from three_col_circle_code.col.coloring import *
 
 _generator = sys.argv[1:][0]
 _size = sys.argv[1:][1]
-slurm_job_id = int(os.getenv('SLURM_ARRAY_TASK_ID')if os.getenv('SLURM_ARRAY_TASK_ID') is not None else 0)
+task_index = int(os.getenv("TASK_INDEX", "0"))
 GRAPH_PATH = Path(
         __file__).absolute().parent.parent.parent.parent / "eval" / "graph_data" / _generator / _size
 CSV_PATH = Path(
@@ -20,7 +20,7 @@ def main():
 
 
 def eval_coloring_w_solver():
-    graph_id = os.listdir(str(GRAPH_PATH))[slurm_job_id].replace(".json", "")
+    graph_id = os.listdir(str(GRAPH_PATH))[task_index].replace(".json", "")
     _graph = fix_graph_wo_level(read_graph_from_json(GRAPH_PATH / (graph_id + ".json")))
     if _graph is None:
         print("error reading", GRAPH_PATH / (graph_id + ".json"))

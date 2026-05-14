@@ -11,7 +11,7 @@ GRAPH_PATH = Path(
     __file__).absolute().parent.parent.parent.parent / "eval" / "graph_data" / _generator / _size
 CSV_PATH = Path(
     __file__).absolute().parent.parent.parent.parent / "eval" / "csv" / "regular_bt_eval" / _generator / _size
-slurm_job_id = int(os.getenv('SLURM_ARRAY_TASK_ID')if os.getenv('SLURM_ARRAY_TASK_ID') is not None else 0)
+task_index = int(os.getenv("TASK_INDEX", "0"))
 
 
 def main():
@@ -19,7 +19,7 @@ def main():
 
 
 def eval_regular_bt():
-    graph_id = os.listdir(str(GRAPH_PATH))[slurm_job_id].replace(".json", "")
+    graph_id = os.listdir(str(GRAPH_PATH))[task_index].replace(".json", "")
     _graph = read_graph(graph_id)
     if _graph is None:
         print("error reading", GRAPH_PATH / (graph_id + ".json"))

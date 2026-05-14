@@ -1,0 +1,285 @@
+use std::fs;
+use std::process::Command;
+
+fn binary() -> String {
+    env!("CARGO_BIN_EXE_three_col_native").to_string()
+}
+
+#[test]
+fn inspect_outputs_concise_json() {
+    let path = fixture_path("inspect-valid.col");
+    write_valid_instance(&path);
+
+    let output = Command::new(binary())
+        .args(["instance", "inspect", path.to_str().unwrap()])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8(output.stdout).unwrap().trim(),
+        r#"{"status":"ok","instance_id":"sample","family":"rc","n":3,"m":3,"num_colors":3}"#
+    );
+}
+
+#[test]
+fn validate_reports_invalid_input_as_json() {
+    let path = fixture_path("invalid.col");
+    fs::write(
+        &path,
+        "\
+c hord endpoint order START
+c 1 1
+c hord endpoint order END
+p edge 1 1
+e 1 1
+",
+    )
+    .unwrap();
+
+    let output = Command::new(binary())
+        .args(["instance", "validate", path.to_str().unwrap()])
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(2));
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains(r#""status":"error""#));
+    assert!(stdout.contains("self-loop"));
+}
+
+#[test]
+fn generate_writes_valid_col_instance() {
+    let path = fixture_path("generated.col");
+    let output = Command::new(binary())
+        .args([
+            "instance",
+            "generate",
+            "--family",
+            "rc_fast",
+            "--n",
+            "8",
+            "--seed",
+            "17",
+            "--output",
+            path.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains(r#""status":"ok""#));
+    assert!(stdout.contains(r#""instance_id":"rc_fast-k03-n0008-seed17""#));
+
+    let validate_output = Command::new(binary())
+        .args(["instance", "validate", path.to_str().unwrap()])
+        .output()
+        .unwrap();
+
+    assert!(validate_output.status.success());
+}
+
+#[test]
+fn generate_sequence_writes_requested_sizes() {
+    let mut output_dir = std::env::temp_dir();
+    output_dir.push(format!("three-col-native-sequence-{}", std::process::id()));
+    let output = Command::new(binary())
+        .args([
+            "instance",
+            "generate-sequence",
+            "--family",
+            "rcy_fast",
+            "--start-n",
+            "4",
+            "--stop-n",
+            "6",
+            "--step-n",
+            "2",
+            "--seed",
+            "19",
+            "--output-dir",
+            output_dir.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let first = output_dir
+        .join("rcy_fast")
+        .join("s")
+        .join("rcy_fast-k03-n0004-seed19.circle");
+    let second = output_dir
+        .join("rcy_fast")
+        .join("s")
+        .join("rcy_fast-k03-n0006-seed19.circle");
+
+    assert!(first.exists());
+    assert!(second.exists());
+}
+
+#[test]
+fn materialize_circle_writes_sorted_edges() {
+    let input = fixture_path("materialize.circle");
+    let output = fixture_path("materialize.circle.col");
+    fs::write(
+        &input,
+        "\
+c format version 1
+c instance id materialize
+c family rc
+c n 2
+c m 1
+c num colors 3
+c hord endpoint order START
+c 2 1 2 1
+c hord endpoint order END
+p circle 2 1
+",
+    )
+    .unwrap();
+
+    let command_output = Command::new(binary())
+        .args([
+            "instance",
+            "materialize-circle",
+            input.to_str().unwrap(),
+            "--output",
+            output.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+
+    assert!(command_output.status.success());
+    let materialized = fs::read_to_string(output).unwrap();
+    assert!(materialized.contains("p edge 2 1"));
+    let edge_lines: Vec<&str> = materialized
+        .lines()
+        .filter(|line| line.starts_with("e "))
+        .collect();
+    assert_eq!(edge_lines, vec!["e 1 2"]);
+}
+
+#[test]
+fn sat_solve_accepts_edge_source_argument() {
+    let path = fixture_path("sat-edge-source.col");
+    write_valid_instance(&path);
+
+    let output = Command::new(binary())
+        .args([
+            "sat",
+            "solve",
+            path.to_str().unwrap(),
+            "--backend",
+            "kissat-rustsat",
+            "--edge-source",
+            "circle_crossings",
+            "--timeout-s",
+            "60",
+        ])
+        .output()
+        .unwrap();
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(
+        !stdout.contains("unknown argument"),
+        "stdout should not report a CLI parser error: {stdout}"
+    );
+    if stdout.contains("backend is only available on Unix targets") {
+        return;
+    }
+    assert!(stdout.contains(r#""edge_source":"circle_crossings""#));
+    assert!(stdout.contains(r#""solver_status":"COLORABLE""#));
+    assert!(output.status.success());
+}
+
+#[test]
+fn generate_alpha_family_uses_readable_alpha_id() {
+    let path = fixture_path("generated-alpha.col");
+    let output = Command::new(binary())
+        .args([
+            "instance",
+            "generate",
+            "--family",
+            "rccy_alpha",
+            "--alpha",
+            "0.5",
+            "--n",
+            "8",
+            "--seed",
+            "17",
+            "--output",
+            path.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains(r#""instance_id":"rccy_alpha-alpha0p5-k03-n0008-seed17""#));
+    let contents = fs::read_to_string(path).unwrap();
+    assert!(contents.contains("c alpha 0.500000000000"));
+}
+
+#[test]
+fn generate_circle_output_omits_edge_lines() {
+    let path = fixture_path("generated.circle");
+    let output = Command::new(binary())
+        .args([
+            "instance",
+            "generate",
+            "--family",
+            "rccy_alpha",
+            "--alpha",
+            "1",
+            "--n",
+            "8",
+            "--seed",
+            "17",
+            "--output-format",
+            "circle",
+            "--output",
+            path.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let contents = fs::read_to_string(&path).unwrap();
+    assert!(contents.contains("p circle 8 "));
+    assert!(!contents.lines().any(|line| line.starts_with("e ")));
+
+    let inspect_output = Command::new(binary())
+        .args(["instance", "inspect", path.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(inspect_output.status.success());
+}
+
+fn fixture_path(name: &str) -> std::path::PathBuf {
+    let mut path = std::env::temp_dir();
+    path.push(format!("three-col-native-{}-{name}", std::process::id()));
+    path
+}
+
+fn write_valid_instance(path: &std::path::Path) {
+    fs::write(
+        path,
+        "\
+c format version 1
+c instance id sample
+c family rc
+c n 3
+c m 3
+c num colors 3
+c hord endpoint order START
+c 1 2 3 1 2 3
+c hord endpoint order END
+p edge 3 3
+e 1 2
+e 1 3
+e 2 3
+",
+    )
+    .unwrap();
+}

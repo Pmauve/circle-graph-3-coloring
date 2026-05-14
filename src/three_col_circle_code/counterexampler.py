@@ -19,7 +19,6 @@ good_bt_leaves = 0
 
 def main():
     # find_random_counterexample()
-    # graph = read_graph_from_json(Path(__file__).absolute().parent.parent.parent / "counterexample.json")
     # nx.draw_planar(graph)
     # plt.show()
     # brute_force_all_embeddings(graph)

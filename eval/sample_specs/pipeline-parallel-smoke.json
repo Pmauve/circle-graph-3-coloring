@@ -1,0 +1,38 @@
+{
+  "instance_pool_root": "eval/instances",
+  "repetitions": 2,
+  "warmup_repetitions": 1,
+  "instances": [
+    {
+      "family": "rcy_fast",
+      "n": {
+        "start": 4,
+        "stop": 8,
+        "step": 4
+      },
+      "seeds": [1]
+    }
+  ],
+  "solvers": [
+    {
+      "target": "sosa-3-col-exact",
+      "label": "SOSA exact base 4",
+      "params": {
+        "base_case_n": 4,
+        "base_case_algorithm": "backtracking",
+        "num_colors": 3,
+        "produce_witness": false
+      }
+    },
+    {
+      "target": "sosa-3-col-exact",
+      "label": "SOSA exact base 8",
+      "params": {
+        "base_case_n": 8,
+        "base_case_algorithm": "backtracking",
+        "num_colors": 3,
+        "produce_witness": false
+      }
+    }
+  ]
+}
