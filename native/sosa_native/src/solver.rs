@@ -125,6 +125,15 @@ fn solve_full_branch(
         chords_contained_in_left_right_arcs(&full.instance, &full.partition);
     let left_n = left_vertices.count_ones();
     let right_n = right_vertices.count_ones();
+    // The two sets are disjoint, so this checks that every chord lies in exactly one of them.
+    if left_n + right_n != full.instance.n {
+        return Err(SosaError::Internal(format!(
+            "fully separated branch puts only {} of {} chords into I_L or I_R (partition {:?})",
+            left_n + right_n,
+            full.instance.n,
+            full.partition
+        )));
+    }
     let (first_vertices, second_vertices) = if left_n <= right_n {
         (&left_vertices, &right_vertices)
     } else {
@@ -157,6 +166,7 @@ mod tests {
 
     use circle_core::colors::{ColorMask, ALL_COLORS, BLUE, GREEN, RED};
     use circle_core::dimacs_circle::DimacsCircleGeometry;
+    use circle_core::partition::CirclePartition;
 
     use super::*;
 
@@ -413,6 +423,21 @@ p circle 20 53
             }
         }
         assert!(uncolorable > 0);
+    }
+
+    #[test]
+    fn full_branch_rejects_partition_that_leaves_a_chord_out() {
+        // The first chord runs from L = [0, 1) into T = [1, 2), so it belongs to neither side.
+        let instance = restricted_instance(&[0, 0, 1, 1], &[ALL_COLORS; 2]);
+        let full = FullySeparatedInstance {
+            partition: CirclePartition::new(instance.endpoint_count(), 0, 1, 2, 0).unwrap(),
+            instance,
+        };
+
+        let error =
+            solve_full_branch(full, SolveConfig::default(), &mut Stats::default(), 0).unwrap_err();
+
+        assert!(error.to_string().contains("only 1 of 2 chords"), "{error}");
     }
 
     fn solve_with_threshold(instance: CircleInstance, base_case_n: usize) -> bool {
