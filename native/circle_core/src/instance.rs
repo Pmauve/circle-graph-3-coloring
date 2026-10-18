@@ -349,13 +349,34 @@ impl CircleInstance {
             adj,
             allowed: rebuilt_allowed,
         };
-        let rebuilt_partition = CirclePartition::new(
-            new_endpoint_count,
-            new_boundaries[0],
-            new_boundaries[1],
-            new_boundaries[2],
-            new_boundaries[3],
-        )?;
+        let collapsed = new_endpoint_count > 0
+            && new_boundaries
+                .iter()
+                .all(|&boundary| boundary == new_boundaries[0]);
+        let rebuilt_partition = if collapsed {
+            // All surviving endpoints came from one old arc, which now covers the whole circle.
+            let survivor = active
+                .iter_ones()
+                .next()
+                .expect("a non-empty rebuilt instance has an active vertex");
+            let full_arc = partition
+                .endpoint_arc(self.left[survivor] as usize)
+                .ok_or_else(|| {
+                    SosaError::Internal(format!(
+                        "endpoint {} of vertex {survivor} lies in no partition arc",
+                        self.left[survivor]
+                    ))
+                })?;
+            CirclePartition::new_full_arc(new_endpoint_count, new_boundaries[0], full_arc)?
+        } else {
+            CirclePartition::new(
+                new_endpoint_count,
+                new_boundaries[0],
+                new_boundaries[1],
+                new_boundaries[2],
+                new_boundaries[3],
+            )?
+        };
         Ok((rebuilt, rebuilt_partition))
     }
 
@@ -536,6 +557,7 @@ fn normalize_edges_trusted(
 #[cfg(test)]
 mod tests {
     use crate::dimacs_circle::parse_dimacs_circle;
+    use crate::partition::ArcName;
 
     use super::*;
 
@@ -809,6 +831,46 @@ e 1 2
 
         assert_eq!(rebuilt.n, 0);
         assert_eq!(rebuilt_partition, CirclePartition::empty(0));
+    }
+
+    #[test]
+    fn rebuilds_partition_whose_surviving_chords_fill_one_arc() {
+        let instance = two_separate_chords_instance();
+        // L = [0, 2) holds chord 1 and R = [2, 4) holds chord 2; T and B are empty.
+        let partition = CirclePartition::new(instance.endpoint_count(), 0, 2, 2, 0).unwrap();
+
+        for (deleted, full_arc) in [(0, ArcName::R), (1, ArcName::L)] {
+            let mut active = BitSet::full(2);
+            active.clear(deleted);
+
+            let (rebuilt, rebuilt_partition) = instance
+                .rebuild_from_active_with_partition(&active, instance.allowed.clone(), &partition)
+                .unwrap();
+
+            // All four boundaries collapse onto one position, but the surviving chord must
+            // still lie in the arc it came from.
+            assert_eq!(rebuilt.n, 1);
+            for position in 0..rebuilt.endpoint_count() {
+                assert_eq!(rebuilt_partition.endpoint_arc(position), Some(full_arc));
+            }
+            assert_eq!(
+                rebuilt_partition.positions(full_arc).collect::<Vec<_>>(),
+                vec![0, 1]
+            );
+        }
+    }
+
+    fn two_separate_chords_instance() -> CircleInstance {
+        let dimacs = parse_dimacs_circle(
+            "\
+c hord endpoint order START
+c 1 1 2 2
+c hord endpoint order END
+p edge 2 0
+",
+        )
+        .unwrap();
+        CircleInstance::from_dimacs(dimacs).unwrap()
     }
 
     fn triangle_instance() -> CircleInstance {

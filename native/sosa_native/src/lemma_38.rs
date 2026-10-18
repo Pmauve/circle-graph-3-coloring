@@ -62,7 +62,8 @@ where
 }
 
 pub fn is_fully_separated_instance(full: &FullySeparatedInstance) -> bool {
-    full.partition.top_boundary == full.partition.right_boundary
+    !matches!(full.partition.full_arc(), Some(ArcName::T | ArcName::B))
+        && full.partition.top_boundary == full.partition.right_boundary
         && full.partition.bottom_boundary == full.partition.left_boundary
         && chords_between_arcs(
             &full.instance,
@@ -171,6 +172,15 @@ fn choose_x_arc(instance: &CircleInstance, partition: &CirclePartition) -> (ArcN
 fn collapse_empty_top_and_bottom(
     partition: &CirclePartition,
 ) -> Result<CirclePartition, SosaError> {
+    match partition.full_arc() {
+        Some(ArcName::L | ArcName::R) => return Ok(partition.clone()),
+        Some(full_arc) => {
+            return Err(SosaError::Internal(format!(
+                "Lemma 3.8 cannot collapse a partition whose {full_arc:?} arc covers the circle"
+            )))
+        }
+        None => {}
+    }
     CirclePartition::new(
         partition.n_endpoints,
         partition.left_boundary,
@@ -187,34 +197,39 @@ fn partition_for_single_endpoint_case(
 ) -> Result<CirclePartition, SosaError> {
     let h_lx = chords_between_arcs(instance, partition, ArcName::L, partition, chosen_arc);
     let h_xr = chords_between_arcs(instance, partition, chosen_arc, partition, ArcName::R);
+    // The arc absorbing X covers the whole circle if the other arcs are empty.
     match chosen_arc {
-        ArcName::T if h_lx.count_ones() == 0 => CirclePartition::new(
+        ArcName::T if h_lx.count_ones() == 0 => CirclePartition::new_or_full_arc(
             partition.n_endpoints,
             partition.left_boundary,
             partition.top_boundary,
             partition.top_boundary,
             partition.bottom_boundary,
+            ArcName::R,
         ),
-        ArcName::T if h_xr.count_ones() == 0 => CirclePartition::new(
+        ArcName::T if h_xr.count_ones() == 0 => CirclePartition::new_or_full_arc(
             partition.n_endpoints,
             partition.left_boundary,
             partition.right_boundary,
             partition.right_boundary,
             partition.bottom_boundary,
+            ArcName::L,
         ),
-        ArcName::B if h_lx.count_ones() == 0 => CirclePartition::new(
+        ArcName::B if h_lx.count_ones() == 0 => CirclePartition::new_or_full_arc(
             partition.n_endpoints,
             partition.left_boundary,
             partition.top_boundary,
             partition.right_boundary,
             partition.left_boundary,
+            ArcName::R,
         ),
-        ArcName::B if h_xr.count_ones() == 0 => CirclePartition::new(
+        ArcName::B if h_xr.count_ones() == 0 => CirclePartition::new_or_full_arc(
             partition.n_endpoints,
             partition.bottom_boundary,
             partition.top_boundary,
             partition.right_boundary,
             partition.bottom_boundary,
+            ArcName::L,
         ),
         _ => Err(SosaError::Internal(
             "Lemma 3.8 single-endpoint case could not choose an empty side".to_string(),

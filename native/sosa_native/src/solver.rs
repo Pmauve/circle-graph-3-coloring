@@ -155,6 +155,9 @@ mod tests {
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
+    use circle_core::colors::{ColorMask, ALL_COLORS, BLUE, GREEN, RED};
+    use circle_core::dimacs_circle::DimacsCircleGeometry;
+
     use super::*;
 
     #[test]
@@ -295,6 +298,192 @@ e 1 2
         .unwrap();
         assert_eq!(skipped.status, SolveStatus::Colorable);
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn rejects_k4_reproducer_at_every_low_threshold() {
+        // Six chords containing the clique {0, 2, 3, 4}. Before the full-arc fix, every
+        // threshold below 6 accepted a branch whose chords had silently been dropped.
+        let word = [3, 4, 5, 0, 1, 2, 1, 5, 3, 4, 0, 2];
+        for allowed in [vec![5, 6, 7, 3, 5, 6], vec![ALL_COLORS; 6]] {
+            for input in both_representations(restricted_instance(&word, &allowed)) {
+                for base_case_n in 1..=6 {
+                    assert!(
+                        !solve_with_threshold(input.clone(), base_case_n),
+                        "allowed={allowed:?}, base_case_n={base_case_n}, lazy={}",
+                        !input.has_adjacency()
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn rejects_uncolorable_generated_instance_below_base_case_size() {
+        // `three_col_native instance generate --family rc_fast --n 20 --seed 8`; not
+        // 3-colorable (checked independently with CaDiCaL).
+        let path = write_temp_col(
+            "\
+c hord endpoint order START
+c 6 13 8 15 14 5 4 8 7 12 3 5 17 14 1 10 12 20 16 7 2 20 9 17 16 3 11 10 9 1 11 18
+c 19 6 4 19 18 13 2 15
+c hord endpoint order END
+p circle 20 53
+",
+        );
+
+        for base_case_n in [1, 2, 4, 8, 16, 19, 20, 128] {
+            let summary = solve_dimacs_circle_file(
+                &path,
+                SolveConfig {
+                    base_case_n,
+                    input_mode: crate::SosaInputMode::LazyCircleNeighbors,
+                    validate_graph: false,
+                    ..SolveConfig::default()
+                },
+            )
+            .unwrap();
+            assert_eq!(
+                summary.status,
+                SolveStatus::NotColorable,
+                "base_case_n={base_case_n}"
+            );
+        }
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn matches_exhaustive_search_on_random_restricted_circle_graphs() {
+        // Random restricted circle graphs (n = 3..9), compared against plain exhaustive search
+        // instead of the solver's own base case.
+        let mut next = lcg(92_673);
+        let mut checks = 0;
+        let mut uncolorable = 0;
+        for trial in 0..500 {
+            let n = 3 + (next() % 7) as usize;
+            let word = random_endpoint_word(n, &mut next);
+            let allowed = (0..n)
+                .map(|_| {
+                    if trial % 4 == 0 {
+                        ALL_COLORS
+                    } else {
+                        [3, 5, 6, 7][(next() % 4) as usize]
+                    }
+                })
+                .collect::<Vec<_>>();
+            let instance = restricted_instance(&word, &allowed);
+            let exact = exhaustively_colorable(&instance);
+            uncolorable += usize::from(!exact);
+            for input in both_representations(instance) {
+                for base_case_n in [1, 2, 3, 4, 5, 6, 8, 128] {
+                    assert_eq!(
+                        solve_with_threshold(input.clone(), base_case_n),
+                        exact,
+                        "trial={trial}, word={word:?}, allowed={allowed:?}, \
+                         base_case_n={base_case_n}, lazy={}",
+                        !input.has_adjacency()
+                    );
+                    checks += 1;
+                }
+            }
+        }
+        assert_eq!(checks, 8_000);
+        assert!(uncolorable > 0);
+    }
+
+    #[test]
+    fn matches_exhaustive_search_on_larger_unrestricted_circle_graphs() {
+        let mut next = lcg(20_261_018);
+        let mut uncolorable = 0;
+        for trial in 0..300 {
+            let n = 8 + (next() % 7) as usize;
+            let word = random_endpoint_word(n, &mut next);
+            let instance = restricted_instance(&word, &vec![ALL_COLORS; n]);
+            let exact = exhaustively_colorable(&instance);
+            uncolorable += usize::from(!exact);
+            for input in both_representations(instance) {
+                for base_case_n in [1, 2, 3, 5, 8] {
+                    assert_eq!(
+                        solve_with_threshold(input.clone(), base_case_n),
+                        exact,
+                        "trial={trial}, word={word:?}, base_case_n={base_case_n}, lazy={}",
+                        !input.has_adjacency()
+                    );
+                }
+            }
+        }
+        assert!(uncolorable > 0);
+    }
+
+    fn solve_with_threshold(instance: CircleInstance, base_case_n: usize) -> bool {
+        let config = SolveConfig {
+            base_case_n,
+            ..SolveConfig::default()
+        };
+        solve_instance_recursively(instance, config, &mut Stats::default(), 0).unwrap()
+    }
+
+    /// Builds a lazy-neighbor instance from a zero-based endpoint word and color masks.
+    fn restricted_instance(word: &[u32], allowed: &[ColorMask]) -> CircleInstance {
+        let mut instance =
+            CircleInstance::from_dimacs_geometry_without_adjacency(DimacsCircleGeometry {
+                n: allowed.len(),
+                m_declared: 0,
+                chord_endpoint_order: word.iter().map(|vertex| vertex + 1).collect(),
+            })
+            .unwrap();
+        instance.allowed = allowed.to_vec();
+        instance
+    }
+
+    fn both_representations(lazy: CircleInstance) -> [CircleInstance; 2] {
+        let mut listed = lazy.clone();
+        listed.materialize_crossing_adjacency().unwrap();
+        [lazy, listed]
+    }
+
+    fn lcg(seed: u64) -> impl FnMut() -> u64 {
+        let mut state = seed;
+        move || {
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1);
+            state
+        }
+    }
+
+    fn random_endpoint_word(n: usize, next: &mut impl FnMut() -> u64) -> Vec<u32> {
+        let mut word = (0..n as u32).chain(0..n as u32).collect::<Vec<_>>();
+        for i in (1..word.len()).rev() {
+            let j = (next() % (i + 1) as u64) as usize;
+            word.swap(i, j);
+        }
+        word
+    }
+
+    /// Plain depth-first enumeration of list colorings; independent of `base_case`.
+    fn exhaustively_colorable(instance: &CircleInstance) -> bool {
+        fn extend(instance: &CircleInstance, colors: &mut Vec<ColorMask>) -> bool {
+            let vertex = colors.len();
+            if vertex == instance.n {
+                return true;
+            }
+            for color in [RED, GREEN, BLUE] {
+                let conflicts = (0..vertex).any(|other| {
+                    colors[other] == color && instance.crosses(other as u32, vertex as u32)
+                });
+                if instance.allowed[vertex] & color == 0 || conflicts {
+                    continue;
+                }
+                colors.push(color);
+                if extend(instance, colors) {
+                    return true;
+                }
+                colors.pop();
+            }
+            false
+        }
+        extend(instance, &mut Vec::with_capacity(instance.n))
     }
 
     fn write_temp_col(content: &str) -> PathBuf {

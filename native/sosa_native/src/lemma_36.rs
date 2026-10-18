@@ -8,7 +8,7 @@ use circle_core::bitset::BitSet;
 use circle_core::colors::{ColorMask, BLUE, GREEN, RED};
 use circle_core::error::SosaError;
 use circle_core::instance::CircleInstance;
-use circle_core::partition::CirclePartition;
+use circle_core::partition::{ArcName, CirclePartition};
 
 const COLOR_BRANCH_ORDER: [ColorMask; 3] = [RED, GREEN, BLUE];
 
@@ -50,6 +50,7 @@ pub(crate) struct PartitionDedupKey {
     top_boundary: usize,
     right_boundary: usize,
     bottom_boundary: usize,
+    full_arc: Option<ArcName>,
 }
 
 impl InstanceDedupKey {
@@ -69,6 +70,7 @@ impl PartitionDedupKey {
             top_boundary: partition.top_boundary,
             right_boundary: partition.right_boundary,
             bottom_boundary: partition.bottom_boundary,
+            full_arc: partition.full_arc(),
         }
     }
 }

@@ -148,6 +148,24 @@ mod tests {
     }
 
     #[test]
+    fn left_right_split_keeps_chords_when_one_side_fills_the_circle() {
+        let instance = nested_instance();
+        let partition = CirclePartition::new(instance.endpoint_count(), 0, 2, 2, 0).unwrap();
+        let mut active = BitSet::full(instance.n);
+        active.clear(0);
+        let (only_right, collapsed) = instance
+            .rebuild_from_active_with_partition(&active, instance.allowed.clone(), &partition)
+            .unwrap();
+
+        let (left, right) = chords_contained_in_left_right_arcs(&only_right, &collapsed);
+
+        assert_eq!(left.count_ones(), 0);
+        assert_eq!(right.iter_ones().collect::<Vec<_>>(), vec![0]);
+        assert_eq!(count_endpoints_in_arc(&only_right, &collapsed, R), 2);
+        assert_eq!(count_endpoints_in_arc(&only_right, &collapsed, T), 0);
+    }
+
+    #[test]
     fn advances_boundary_by_active_endpoint_count() {
         let instance = triangle_instance();
         let partition = CirclePartition::new(instance.endpoint_count(), 0, 2, 5, 5).unwrap();
