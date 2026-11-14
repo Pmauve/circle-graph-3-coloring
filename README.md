@@ -1,7 +1,8 @@
 # Circle Graph 3-Coloring: Can Simplicity Beat SAT?
 
 This repository contains the code used for the experiments in
-*Circle Graph 3-Coloring: Can Simplicity Beat SAT?*
+*Circle Graph 3-Coloring: Can Simplicity Beat SAT?* (GD 2026),
+<https://doi.org/10.4230/LIPIcs.GD.2026.29>
 
 The repository started from the experimental code accompanying Bachmann, Rutter,
 and Stumpf, *On 3-Coloring Circle Graphs* (GD 2023). It has since been
@@ -149,8 +150,27 @@ a top-level MIT license file for clarity.
 
 ## Citation
 
-If you use this repository, please cite the accompanying paper. Citation
-metadata will be updated after publication.
+If you use this repository, please cite the accompanying paper:
+
+R. Ganian, P. Mauve, V. Surianarayanan. *Circle Graph 3-Coloring: Can Simplicity
+Beat SAT?* 34th International Symposium on Graph Drawing and Network
+Visualization (GD 2026), LIPIcs 396, pages 29:1-29:12, 2026.
+<https://doi.org/10.4230/LIPIcs.GD.2026.29>
+
+```bibtex
+@InProceedings{ganian_et_al:LIPIcs.GD.2026.29,
+  author    = {Ganian, Robert and Mauve, Philipp and Surianarayanan, Vaishali},
+  title     = {{Circle Graph 3-Coloring: Can Simplicity Beat SAT?}},
+  booktitle = {34th International Symposium on Graph Drawing and Network Visualization (GD 2026)},
+  pages     = {29:1--29:12},
+  series    = {Leibniz International Proceedings in Informatics (LIPIcs)},
+  year      = {2026},
+  volume    = {396},
+  editor    = {L\"{o}ffler, Maarten and Miksch, Silvia},
+  publisher = {Schloss Dagstuhl -- Leibniz-Zentrum f{\"u}r Informatik},
+  doi       = {10.4230/LIPIcs.GD.2026.29}
+}
+```
 
 ## License
 
